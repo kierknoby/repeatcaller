@@ -1,0 +1,20 @@
+<module>
+	<rawname>repeatcaller</rawname>
+	<repo>unsupported</repo>
+	<name>Repeat Caller</name>
+	<version>1.0.0</version>
+	<publisher>20tele.com</publisher>
+	<license>GPLv3+</license>
+	<licenselink>http://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
+	<category>Reports</category>
+	<description>Repeat Caller detects repeated inbound call journeys, creates actionable incidents, and supports GUI, email, and Alert Call notifications for FreePBX/PBXact 16 and 17.</description>
+	<menuitems>
+		<repeatcaller>Repeat Caller</repeatcaller>
+	</menuitems>
+	<depends>
+		<version>16.0|17.0</version>
+	</depends>
+	<supported>
+		<version>16.0|17.0</version>
+	</supported>
+</module>
