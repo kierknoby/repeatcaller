@@ -1769,6 +1769,18 @@
 		return true;
 	}
 
+	function splitCallerListValues(rawValue) {
+		var parts = String(rawValue || '').split(/[\s,]+/);
+		var values = [];
+		$.each(parts, function (_, part) {
+			var value = $.trim(String(part || ''));
+			if (value !== '') {
+				values.push(value);
+			}
+		});
+		return values;
+	}
+
 	function renderAlertCallDestinations(rawValue, defaultKeepTryingEnabled) {
 		var destinations = normaliseAlertCallDestinationEntries(rawValue, defaultKeepTryingEnabled);
 		var $list = $('#rc-rule-alert-call-destination-list');
@@ -1798,10 +1810,7 @@
 	}
 
 	function callerExcludeValues() {
-		return String($('#rc-rule-caller-exclude').val() || '')
-			.split(/\n+/)
-			.map(function (value) { return $.trim(String(value || '')); })
-			.filter(function (value) { return value !== ''; });
+		return splitCallerListValues($('#rc-rule-caller-exclude').val());
 	}
 
 	function ensureCallerExcludeDestination(rawValue) {
@@ -1814,7 +1823,7 @@
 			return false;
 		}
 		values.push(candidate);
-		$('#rc-rule-caller-exclude').val(values.join('\n'));
+		$('#rc-rule-caller-exclude').val(values.join(', '));
 		return true;
 	}
 
@@ -1940,8 +1949,7 @@
 		var excludeEnabled = callerMode !== 'withheld_only';
 		var includeUnavailableText = '';
 		var excludeUnavailableText = '';
-		var baseIncludeHelpText = 'Only these callers will trigger this rule.';
-		var baseExcludeHelpText = 'Calls from these numbers will not trigger this rule.';
+		var baseCallerListHelpText = 'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.';
 		var formatHint = getCallerFormatHint($('#rc-setting-country').val());
 		var formatExample = getCallerFormatExample($('#rc-setting-country').val());
 		var e164Example = getCallerE164Example($('#rc-setting-country').val());
@@ -1953,8 +1961,8 @@
 			excludeUnavailableText = 'Caller number lists are not used for withheld-only rules.';
 		}
 
-		var includeHelpText = baseIncludeHelpText + ' ' + formatHint;
-		var excludeHelpText = baseExcludeHelpText + ' ' + formatHint;
+		var includeHelpText = baseCallerListHelpText;
+		var excludeHelpText = baseCallerListHelpText;
 
 		$('#rc-rule-caller-include').prop('disabled', !includeEnabled).toggleClass('rc-control-disabled', !includeEnabled).attr('aria-required', requiresSpecificCallers ? 'true' : 'false').attr('placeholder', formatExample);
 		$('#rc-rule-caller-exclude').prop('disabled', !excludeEnabled).toggleClass('rc-control-disabled', !excludeEnabled).attr('placeholder', formatExample);
@@ -2229,8 +2237,8 @@
 			}
 		}
 
-		var callerIncludes = String($('#rc-rule-caller-include').val() || '').split(/\n+/).map(function (v) { return $.trim(v); }).filter(Boolean);
-		var callerExcludes = String($('#rc-rule-caller-exclude').val() || '').split(/\n+/).map(function (v) { return $.trim(v); }).filter(Boolean);
+		var callerIncludes = splitCallerListValues($('#rc-rule-caller-include').val());
+		var callerExcludes = splitCallerListValues($('#rc-rule-caller-exclude').val());
 		var callers = [];
 		$.each(callerIncludes, function (_, value) { callers.push({list_type: 'include', raw_value: value}); });
 		$.each(callerExcludes, function (_, value) { callers.push({list_type: 'exclude', raw_value: value}); });
@@ -2337,8 +2345,8 @@
 			var excludeCallers = [];
 			$.each((rule.caller_lists && rule.caller_lists.include) || [], function (_, row) { includeCallers.push(row.raw_value || row.normalized_value || ''); });
 			$.each((rule.caller_lists && rule.caller_lists.exclude) || [], function (_, row) { excludeCallers.push(row.raw_value || row.normalized_value || ''); });
-			$('#rc-rule-caller-include').val(includeCallers.join('\n'));
-			$('#rc-rule-caller-exclude').val(excludeCallers.join('\n'));
+			$('#rc-rule-caller-include').val(includeCallers.join(', '));
+			$('#rc-rule-caller-exclude').val(excludeCallers.join(', '));
 
 			$('#rc-did-include-list').empty();
 			$('#rc-did-exclude-list').empty();

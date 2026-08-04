@@ -92,8 +92,8 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Repeat Alerts: reminder timing for active incidents.
 - Caller Scope: Any caller, withheld-only, or specific callers.
 - Exclude withheld callers: excludes withheld identities from this rule.
-- Caller Includes: callers to include when using specific-caller scope.
-- Caller Excludes: callers to exclude.
+- Caller Includes: callers to include when using specific-caller scope. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.
+- Caller Excludes: callers to exclude. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.
 - DID Scope: All DIDs or Selected DIDs only.
 - Inbound Routes: route selector used for DID include/exclude actions.
 - Included Routes: routes monitored when Selected DIDs only is used.

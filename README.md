@@ -280,7 +280,7 @@ them against enabled rules.
 
 Matching can include:
 
-- caller scope (any, withheld-only, specific caller lists)
+- caller scope (any, withheld-only, specific caller lists). Caller lists accept spaces, commas or new lines as separators and save back as comma-separated values.
 - inbound route scope (all routes with optional exclusions, or selected-route
   inclusions only)
 - schedule windows (day/time segments)

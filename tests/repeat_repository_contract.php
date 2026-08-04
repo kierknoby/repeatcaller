@@ -265,6 +265,67 @@ try {
 	assert_same('+441234567890', $callers[$ruleId]['include'][0]['normalized_value'], 'caller includes should round-trip correctly');
 	assert_same('+441230000001', $callers[$ruleId]['exclude'][0]['normalized_value'], 'caller exclusions should round-trip correctly');
 
+	$mixedCallerRuleId = $repo->saveRule([
+		'name' => 'Mixed Caller Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'specific_only',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [
+			['list_type' => 'include', 'raw_value' => '01234567890', 'normalized_value' => '+441234567890'],
+			['list_type' => 'include', 'raw_value' => '07876543210', 'normalized_value' => '+447876543210'],
+			['list_type' => 'include', 'raw_value' => '01234567890', 'normalized_value' => '+441234567890'],
+			['list_type' => 'exclude', 'raw_value' => '01632960000', 'normalized_value' => '+441632960000'],
+			['list_type' => 'exclude', 'raw_value' => '07700900123', 'normalized_value' => '+447700900123'],
+		],
+		'dids' => [],
+	], '2026-07-13 09:10:00');
+	$mixedCallerRule = $repo->loadRule($mixedCallerRuleId);
+		assert_same(3, count($mixedCallerRule['caller_lists']['include']), 'repository should preserve the caller include rows it is given, including duplicates');
+	assert_same('01234567890', (string)$mixedCallerRule['caller_lists']['include'][0]['raw_value'], 'caller include order should preserve the first caller');
+	assert_same('07876543210', (string)$mixedCallerRule['caller_lists']['include'][1]['raw_value'], 'caller include order should preserve the second caller');
+		assert_same('01234567890', (string)$mixedCallerRule['caller_lists']['include'][2]['raw_value'], 'caller include order should preserve duplicate rows when passed directly to the repository');
+	assert_same(2, count($mixedCallerRule['caller_lists']['exclude']), 'caller exclude entries should remain independent from include entries');
+	assert_same('01632960000', (string)$mixedCallerRule['caller_lists']['exclude'][0]['raw_value'], 'caller exclude order should preserve the first excluded caller');
+	assert_same('07700900123', (string)$mixedCallerRule['caller_lists']['exclude'][1]['raw_value'], 'caller exclude order should preserve the second excluded caller');
+
+	$emptyCallerRuleId = $repo->saveRule([
+		'name' => 'Empty Caller Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'specific_only',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:11:00');
+	$emptyCallerRule = $repo->loadRule($emptyCallerRuleId);
+	assert_same(0, count($emptyCallerRule['caller_lists']['include']), 'empty caller include lists should persist as empty');
+	assert_same(0, count($emptyCallerRule['caller_lists']['exclude']), 'empty caller exclude lists should persist as empty');
+
 	$dids = $repo->loadDidLists([$ruleId]);
 	assert_same('18005550001|', $dids[$ruleId]['include'][0]['route_key'], 'selected DIDs should round-trip correctly');
 	assert_same('18005550002|', $dids[$ruleId]['exclude'][0]['route_key'], 'DID exclusions should round-trip correctly');

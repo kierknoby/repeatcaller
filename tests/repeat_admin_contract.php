@@ -22,6 +22,23 @@ function assert_same($expected, $actual, string $message): void {
 	}
 }
 
+if (!class_exists('FreePBX')) {
+	class FreePBX {
+		private static ?PDO $database = null;
+
+		public static function setDatabase(PDO $database): void {
+			self::$database = $database;
+		}
+
+		public static function Database(): PDO {
+			if (!self::$database instanceof PDO) {
+				throw new RuntimeException('Test FreePBX database is not configured.');
+			}
+			return self::$database;
+		}
+	}
+}
+
 function make_db(): PDO {
 	$db = new PDO('sqlite::memory:');
 	$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -76,6 +93,11 @@ function make_db(): PDO {
 		did_value TEXT,
 		cid_value TEXT,
 		created_at TEXT
+	)');
+	$db->exec('CREATE TABLE repeatcaller_settings (
+		setting_key TEXT PRIMARY KEY,
+		setting_value TEXT,
+		updated_at TEXT
 	)');
 	$db->exec('CREATE TABLE repeatcaller_incidents (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,13 +191,96 @@ function make_db(): PDO {
 		cidnum TEXT,
 		description TEXT
 	)');
+	$db->prepare('INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute(['default_country_code', '44', '2026-07-13 09:00:00']);
 
 	return $db;
 }
 
 $db = make_db();
+$dbForController = $db;
+FreePBX::setDatabase($dbForController);
 $repo = new RepeatCallerRepository($db);
 $now = '2026-07-13 10:00:00';
+
+$parserDb = make_db();
+FreePBX::setDatabase($parserDb);
+$parserRepo = new RepeatCallerRepository($parserDb);
+$controller = new \FreePBX\modules\Repeatcaller(new stdClass());
+$parseCallers = new ReflectionMethod($controller, 'rcParseCallers');
+$parseCallers->setAccessible(true);
+
+$newlineCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => "01234567890\n07876543210"]]);
+assert_same(2, count($newlineCallers), 'newline-separated callers should parse into two entries');
+
+$commaCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => '01234567890, 07876543210']]);
+assert_same(2, count($commaCallers), 'comma-separated callers should parse into two entries');
+
+$spaceCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => '01234567890 07876543210']]);
+assert_same(2, count($spaceCallers), 'space-separated callers should parse into two entries');
+
+$tabCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => "01234567890\t07876543210"]]);
+assert_same(2, count($tabCallers), 'tab-separated callers should parse into two entries');
+
+$mixedCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => "01234567890, 07876543210\n01632960000 07700900123\n02079460000,\n03301234567"]]);
+assert_same(6, count($mixedCallers), 'mixed delimiter caller list should parse into six separate entries');
+
+$duplicateCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => '01234567890, 01234567890']]);
+assert_same(1, count($duplicateCallers), 'duplicate caller values should be removed during parsing');
+
+$emptyCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => " , \n\t ,"]]);
+assert_same(0, count($emptyCallers), 'empty caller values should be ignored during parsing');
+
+$mixedListRuleId = $parserRepo->saveRule([
+	'name' => 'Mixed Caller List Rule',
+	'enabled' => 1,
+	'email_enabled' => 0,
+	'alert_call_enabled' => 0,
+	'alert_call_destinations' => '',
+	'alert_call_recording_id' => null,
+	'mode' => 'repeat',
+	'threshold_count' => 2,
+	'observation_window_minutes' => 60,
+	'caller_mode' => 'specific_only',
+	'exclude_withheld' => 0,
+	'did_scope_mode' => 'all',
+	'repeat_mode_override' => '',
+	'suppression_minutes_override' => null,
+	'schedules' => [],
+	'callers' => $mixedCallers,
+	'dids' => [],
+], $now);
+$mixedListRule = $parserRepo->loadRule($mixedListRuleId);
+assert_same(6, count($mixedListRule['caller_lists']['include']), 'mixed delimiter caller list should persist six include entries');
+assert_same('01234567890', (string)$mixedListRule['caller_lists']['include'][0]['raw_value'], 'mixed delimiter caller list should preserve original order');
+assert_same('+441234567890', (string)$mixedListRule['caller_lists']['include'][0]['normalized_value'], 'caller numbers should be normalized independently');
+
+$independentCallerRuleId = $parserRepo->saveRule([
+	'name' => 'Independent Caller Lists',
+	'enabled' => 1,
+	'email_enabled' => 0,
+	'alert_call_enabled' => 0,
+	'alert_call_destinations' => '',
+	'alert_call_recording_id' => null,
+	'mode' => 'repeat',
+	'threshold_count' => 2,
+	'observation_window_minutes' => 60,
+	'caller_mode' => 'specific_only',
+	'exclude_withheld' => 0,
+	'did_scope_mode' => 'all',
+	'repeat_mode_override' => '',
+	'suppression_minutes_override' => null,
+	'schedules' => [],
+	'callers' => [
+		['list_type' => 'include', 'raw_value' => '01234567890', 'normalized_value' => '+441234567890'],
+		['list_type' => 'exclude', 'raw_value' => '01234567890', 'normalized_value' => '+441234567890'],
+	],
+	'dids' => [],
+], $now);
+$independentCallerRule = $parserRepo->loadRule($independentCallerRuleId);
+assert_same(1, count($independentCallerRule['caller_lists']['include']), 'include caller list should remain independent of exclude list');
+assert_same(1, count($independentCallerRule['caller_lists']['exclude']), 'exclude caller list should remain independent of include list');
+
+FreePBX::setDatabase($db);
 
 $ruleId = $repo->saveRule([
 	'name' => 'Main Rule',
@@ -601,9 +706,11 @@ assert_true(strpos($jsSource, "var requiresSpecificCallers = callerMode === 'spe
 assert_true(strpos($jsSource, "var includeEnabled = requiresSpecificCallers;") !== false && strpos($jsSource, "var excludeEnabled = callerMode !== 'withheld_only';") !== false, 'Caller Scope semantics should keep exclude active for Any callers while disabling both lists for Withheld only');
 assert_true(strpos($jsSource, "if (callerMode === 'any') {") !== false && strpos($jsSource, "includeUnavailableText = 'This field is only used when Specific callers is selected.';") !== false, 'Any caller mode should disable include input with a clear unavailable reason');
 assert_true(strpos($jsSource, "} else if (callerMode === 'withheld_only') {") !== false && strpos($jsSource, "excludeUnavailableText = 'Caller number lists are not used for withheld-only rules.';") !== false, 'Withheld only mode should disable both caller number fields with a clear unavailable reason');
+assert_true(strpos($jsSource, "var baseCallerListHelpText = 'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.';") !== false, 'caller list helper text should describe the new canonical mixed-delimiter format');
 assert_true(strpos($jsSource, "$('#rc-rule-caller-include').prop('disabled', !includeEnabled).toggleClass('rc-control-disabled', !includeEnabled).attr('aria-required', requiresSpecificCallers ? 'true' : 'false').attr('placeholder', formatExample);") !== false, 'caller include input should be enabled only for Specific callers, marked required, and have country-specific placeholder');
 assert_true(strpos($jsSource, "$('#rc-rule-caller-exclude').prop('disabled', !excludeEnabled).toggleClass('rc-control-disabled', !excludeEnabled).attr('placeholder', formatExample);") !== false, 'caller exclude input should remain enabled for Any and Specific callers, disabled for Withheld only, with country-specific placeholder');
-assert_true(strpos($jsSource, "$('#rc-caller-include-help').text(includeHelpText).toggleClass('text-danger', requiresSpecificCallers);") !== false, 'Caller include help text should update with country-based format examples and visibly emphasize the requirement in Specific callers mode');
+assert_true(strpos($jsSource, "$('#rc-caller-include-help').text(includeHelpText).toggleClass('text-danger', requiresSpecificCallers);") !== false, 'Caller include help text should show mixed-delimiter canonical formatting guidance');
+assert_true(strpos($jsSource, "$('#rc-caller-exclude-help').text(excludeHelpText);") !== false, 'Caller exclude help text should show the same mixed-delimiter canonical formatting guidance');
 assert_true(strpos($jsSource, "var countryCallerFormats = {") !== false && strpos($jsSource, "'44': { name: 'UK', local:") !== false && strpos($jsSource, "'1': { name: 'US/Canada', local:") !== false, 'Country caller format mapping should include country names and local format examples for major calling codes');
 assert_true(strpos($jsSource, "'44': { name: 'UK', local: '07812345678'") !== false, 'UK format mapping should have leading 0 trunk prefix to provide country context in examples');
 assert_true(strpos($jsSource, "'1': { name: 'US/Canada', local: '2125551234'") !== false, 'US/Canada format mapping should have local number without trunk prefix, prepended with country code by helper');
@@ -748,11 +855,13 @@ assert_true(strpos($jsSource, "var handleCallerIdUpstream = $('#rc-rule-alert-ca
 assert_true(strpos($jsSource, "callerIdHelpText = 'Not used because caller presentation is managed elsewhere.';") !== false, 'managed-elsewhere help text should use the new wording');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';") !== false, 'enabled help text should explain that Repeat Caller will set the Caller ID');
 assert_true((bool)preg_match('/prop\(\'checked\', parseInt\(rule\.alert_call_handle_callerid_upstream \|\| 0, 10\) === 1\);[\s\S]*updateAlertCallCallerIdState\(\);/', $jsSource), 'edit-rule loading should restore the checkbox before syncing caller-ID state');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-strategy').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'create and edit modes should both leave the Alert Call strategy tied to the Alert Call checkbox');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'create and edit modes should both leave the Alert Call destination input tied to the Alert Call checkbox');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'create and edit modes should both leave System Recording tied to the Alert Call checkbox');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);") !== false, 'create and edit modes should both leave the Caller ID managed elsewhere checkbox tied to the Alert Call checkbox');
-assert_true(strpos($jsSource, "$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);") !== false, 'create and edit modes should both leave email recipients tied to the Email checkbox');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-strategy').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the strategy selector');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the destination input');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-list').find('input, button').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate destination remove, reorder and Keep Trying controls');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the System Recording selector');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the Caller ID managed elsewhere checkbox');
+assert_true(strpos($jsSource, "$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);") !== false, 'Email enabled state should gate email recipients independently of edit mode');
+assert_true(strpos($jsSource, "var baseCallerListHelpText = 'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.';") !== false, 'caller list helper text should describe the new canonical mixed-delimiter format');
 
 $behaviorScript = <<<'NODE'
 const fs = require('fs');
@@ -1292,8 +1401,8 @@ assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').off('k
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').off('input.repeatcaller keyup.repeatcaller change.repeatcaller paste.repeatcaller').on('input.repeatcaller keyup.repeatcaller change.repeatcaller paste.repeatcaller', function () {") !== false, 'rule editor should refresh the Add button as the destination input changes');
 assert_true(strpos($jsSource, 'updateAlertCallDestinationAddButtonState();') !== false, 'rule editor should refresh the Add button after destination add, remove, render, and alert-call state changes');
 assert_true(strpos($jsSource, 'rc-alert-call-destination-remove') !== false && strpos($jsSource, 'updateAlertCallDestinationAddButtonState();') !== false, 'removing a destination should immediately re-evaluate the Add button state');
-assert_true(strpos($jsSource, "var callerExcludes = String($('#rc-rule-caller-exclude').val() || '').split(/\\n+/).map(function (v) { return $.trim(v); }).filter(Boolean);") !== false, 'save should preserve Ignore callers exactly as entered and should not silently repopulate missing Alert Call destinations');
-assert_true(strpos($jsSource, "$('#rc-rule-caller-exclude').val(excludeCallers.join('\\n'));") !== false, 'editing an existing rule should load Ignore callers exactly as saved without auto-populating missing Alert Call destinations');
+assert_true(strpos($jsSource, "var callerExcludes = splitCallerListValues($('#rc-rule-caller-exclude').val());") !== false, 'save should split Ignore callers with mixed separators while keeping Alert Call destinations independent');
+assert_true(strpos($jsSource, "$('#rc-rule-caller-exclude').val(excludeCallers.join(', '));") !== false, 'editing an existing rule should reload Ignore callers as a canonical comma-space list without auto-populating missing Alert Call destinations');
 assert_true(strpos($jsSource, 'rc-alert-call-destination-drag-handle" draggable="true"') !== false, 'destination rows should render a dedicated drag handle');
 assert_true(strpos($jsSource, 'fa fa-bars') !== false, 'drag handle should render a visible grip icon');
 assert_true(strpos($jsSource, '$dragHandle.on(\'dragstart\'') !== false, 'destination dragging must start from the dedicated handle');
@@ -1320,9 +1429,9 @@ assert_true(strpos($viewSource, 'Caller ID will be managed elsewhere') !== false
 assert_true(strpos($viewSource, 'Repeat Caller will not set the Caller ID for Alert Calls. Caller presentation is managed elsewhere, for example by Outbound Routes, trunks, another module, an SBC, or your network provider.') === false, 'legacy managed-elsewhere explanatory sentence should be removed from the view');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-callerid-help"') !== false, 'rule editor should include a dedicated help container for dynamic Alert Call Caller ID state text');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Only monitor these callers\'); ?></label>') !== false, 'Rule editor should use clear caller-monitor label wording');
-assert_true(strpos($viewSource, '<p class="help-block" id="rc-caller-include-help"><?php echo _(\'Only these callers will trigger this rule.\'); ?></p>') !== false, 'Rule editor should explain specific-caller requirement in helper text');
+assert_true(strpos($viewSource, '<p class="help-block" id="rc-caller-include-help"><?php echo _(\'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.\'); ?></p>') !== false, 'Rule editor should explain caller-list separators and canonical storage in helper text');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Ignore these callers\'); ?></label>') !== false, 'Rule editor should use clear caller-ignore label wording');
-assert_true(strpos($viewSource, '<p class="help-block" id="rc-caller-exclude-help"><?php echo _(\'Calls from these numbers will not trigger this rule.\'); ?></p>') !== false, 'Rule editor should explain caller-ignore behavior in helper text');
+assert_true(strpos($viewSource, '<p class="help-block" id="rc-caller-exclude-help"><?php echo _(\'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.\'); ?></p>') !== false, 'Rule editor should explain caller-list separators and canonical storage in helper text');
 assert_true(strpos($viewSource, 'id="rc-caller-include-unavailable"') !== false && strpos($viewSource, 'id="rc-caller-exclude-unavailable"') !== false, 'Rule editor should include explicit unavailable helper containers for disabled caller fields');
 assert_true(strpos($viewSource, 'placeholder="+441234567890"') !== false, 'Alert Call caller ID placeholder must match exact release guidance');
 assert_true(strpos($viewSource, '<option value=""><?php echo _(\'None\'); ?></option>') !== false, 'System Recording selector must default to a None option');

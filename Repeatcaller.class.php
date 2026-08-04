@@ -900,27 +900,32 @@ class Repeatcaller implements \BMO {
 
 	private function rcParseCallers($raw): array {
 		require_once __DIR__ . '/src/DetectionEngine.php';
-		$items = $this->rcDecodePayloadList($raw);
+		$items = is_string($raw) && trim($raw) !== ''
+			? [['list_type' => 'include', 'raw_value' => $raw]]
+			: $this->rcDecodePayloadList($raw);
 		$normalized = [];
+		$seenByListType = ['include' => [], 'exclude' => []];
 		$country = trim((string)($this->rcSettings()['default_country_code'] ?? ''));
 		foreach ($items as $item) {
 			$listType = (string)($item['list_type'] ?? 'include');
 			if (!in_array($listType, ['include', 'exclude'], true)) {
 				continue;
 			}
-			$rawValue = trim((string)($item['raw_value'] ?? ''));
-			if ($rawValue === '') {
-				continue;
-			}
-			if (strtolower($rawValue) === 'withheld') {
-				$norm = 'withheld';
-			} else {
-				$norm = \FreePBX\modules\Repeatcaller\DetectionEngine::normaliseCaller($rawValue, $country);
-				if ($norm === null || $norm === '') {
+			foreach ($this->splitCallerListValues((string)($item['raw_value'] ?? '')) as $rawValue) {
+				if (strtolower($rawValue) === 'withheld') {
+					$norm = 'withheld';
+				} else {
+					$norm = \FreePBX\modules\Repeatcaller\DetectionEngine::normaliseCaller($rawValue, $country);
+					if ($norm === null || $norm === '') {
+						continue;
+					}
+				}
+				if (isset($seenByListType[$listType][$norm])) {
 					continue;
 				}
+				$seenByListType[$listType][$norm] = true;
+				$normalized[] = ['list_type' => $listType, 'raw_value' => $rawValue, 'normalized_value' => $norm];
 			}
-			$normalized[] = ['list_type' => $listType, 'raw_value' => $rawValue, 'normalized_value' => $norm];
 		}
 		return $normalized;
 	}
@@ -980,6 +985,21 @@ class Repeatcaller implements \BMO {
 		}
 		$decoded = json_decode($raw, true);
 		return is_array($decoded) ? $decoded : [];
+	}
+
+	private function splitCallerListValues(string $raw): array {
+		$parts = preg_split('/[\s,]+/', trim($raw));
+		if (!is_array($parts)) {
+			return [];
+		}
+		$values = [];
+		foreach ($parts as $part) {
+			$value = trim((string)$part);
+			if ($value !== '') {
+				$values[] = $value;
+			}
+		}
+		return $values;
 	}
 
 	private function normaliseAlertCallDestinations(string $raw): array {
