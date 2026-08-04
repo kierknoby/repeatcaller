@@ -92,8 +92,8 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Repeat Alerts: reminder timing for active incidents.
 - Caller Scope: Any caller, withheld-only, or specific callers.
 - Exclude withheld callers: excludes withheld identities from this rule.
-- Caller Includes: callers to include when using specific-caller scope. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.
-- Caller Excludes: callers to exclude. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.
+- Caller Includes: callers to include when using specific-caller scope. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
+- Caller Excludes: callers to exclude. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
 - DID Scope: All DIDs or Selected DIDs only.
 - Inbound Routes: route selector used for DID include/exclude actions.
 - Included Routes: routes monitored when Selected DIDs only is used.
@@ -103,7 +103,7 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Alert Call: optional phone-call notifications.
 - Email: optional email notifications.
 - Alert Call Destinations: accepts one or more internal extensions and/or external telephone numbers separated by commas. External numbers should normally be entered in the same national dialling format an administrator would use from a FreePBX extension. The example/placeholder follows the configured Default Country Code.
-- Alert Call destination safeguard: when you add an Alert Call destination, Repeat Caller automatically adds the same value to Ignore these callers and shows a one-time warning. Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.
+- Alert Call destination safeguard: adding an Alert Call destination behaves the same whether you use Add or Enter. It automatically adds the same value to Ignore these callers and shows a one-time warning. Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.
@@ -398,6 +398,7 @@ and incident lifecycle data are not deleted.
 
 Use Run Now to trigger the normal monitor process immediately.
 
+- Run Now availability on page load reflects the current monitoring state.
 - It does not replace the scheduled job.
 - Use it after controlled test calls or configuration changes.
 - Review Engine Status and Alert History afterwards.
