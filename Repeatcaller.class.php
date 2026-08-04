@@ -668,7 +668,7 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleSetSnooze(): array {
 		$seconds = isset($_REQUEST['seconds']) ? (int)$_REQUEST['seconds'] : 0;
-		if (!in_array($seconds, [300, 900, 1800, 3600, 86400], true)) {
+		if (!in_array($seconds, [300, 900, 1800, 3600, 10800, 21600, 43200, 86400], true)) {
 			return ['status' => false, 'message' => _('Invalid snooze duration.')];
 		}
 		$this->setSetting('global_snoozed_until', date('Y-m-d H:i:s', strtotime($this->now()) + $seconds));

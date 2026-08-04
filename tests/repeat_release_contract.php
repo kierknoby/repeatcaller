@@ -201,6 +201,8 @@ assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should 
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
 assert_true(strpos($readmeSource, '### 1.0.1, patch release, 4 August 2026') !== false, 'README should include the 1.0.1 release history heading');
 assert_true(strpos($readmeSource, 'Rule explanation-row state colouring now uses explicit Repeat Caller') !== false, 'README should record the 1.0.1 explanation-row colouring consistency fix');
+assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
+assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable Rules and Disable Rules') !== false, 'README release history should document global control wording updates');
 assert_true(strpos($readmeSource, '## Requirements') !== false, 'README should include Requirements section');
 assert_true(strpos($readmeSource, '## Installing') !== false, 'README should include Installing section');
 assert_true(strpos($readmeSource, '## Updating Repeat Caller') !== false, 'README should include Updating Repeat Caller section');
@@ -226,7 +228,10 @@ assert_true(strpos($readmeSource, 'Stored legacy repeat mode values from earlier
 assert_true(strpos($readmeSource, '## Suppression') !== false, 'README should include Suppression section');
 assert_true(strpos($readmeSource, '## Data Retention') !== false, 'README should include Data Retention section');
 assert_true(strpos($readmeSource, '## Snooze Monitoring') !== false, 'README should include Snooze Monitoring section');
+assert_true(strpos($readmeSource, 'Snooze Monitoring is a global control in Engine Status.') !== false, 'README should keep Snooze Monitoring terminology for global snooze state');
+assert_true(strpos($readmeSource, 'Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours,') !== false && strpos($readmeSource, '12 hours, and 24 hours.') !== false, 'README should list all supported Snooze Monitoring durations including 30m/3h/6h/12h/24h');
 assert_true(strpos($readmeSource, '## User Interface') !== false, 'README should include User Interface section');
+assert_true(strpos($readmeSource, 'Enable Rules/Disable Rules, Snooze, Resume, Run Now.') !== false, 'README user-interface summary should use Enable Rules/Disable Rules terminology');
 assert_true(strpos($readmeSource, '## Security Model') !== false, 'README should include Security Model section');
 assert_true(strpos($readmeSource, '## Current Limitations') !== false, 'README should include Current Limitations section');
 assert_true(strpos($readmeSource, '## Validation') !== false, 'README should include Validation section');

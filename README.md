@@ -40,6 +40,15 @@ Use with FreePBX/PBXact 16 or 17.
   state classes on rule-table cells so enabled, disabled, temporary Status,
   and editing presentations are consistent across FreePBX and PBXact.
 
+#### Snooze controls
+
+- Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.
+
+#### Global controls
+
+- Renames the global Enable Monitoring and Disable Monitoring buttons to
+  Enable Rules and Disable Rules for clearer rule-processing terminology.
+
 ## Requirements
 
 - FreePBX/PBXact 16 or 17
@@ -380,6 +389,9 @@ Available pruning schedule options are:
 
 Snooze Monitoring is a global control in Engine Status.
 
+Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours,
+12 hours, and 24 hours.
+
 - While snoozed, detection and incident lifecycle processing continue.
 - Alert Call and Email deliveries are deferred while snooze is active.
 - Resume can be triggered manually before snooze expiry.
@@ -390,7 +402,7 @@ Snooze Monitoring is a global control in Engine Status.
 Reports > Repeat Caller includes these main sections:
 
 - Engine Status: enabled rules, active incidents, last run, run state, PBX
-  time, Enable/Disable Monitoring, Snooze, Resume, Run Now.
+  time, Enable Rules/Disable Rules, Snooze, Resume, Run Now.
 - Global Settings: country code, lookback, global suppression, global repeat,
   pruning policies, and maintenance actions.
 - Rules: summary table plus Add Rule editor for mode/threshold/window, caller

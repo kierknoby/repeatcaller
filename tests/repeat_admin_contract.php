@@ -440,8 +440,9 @@ assert_true($incidentStateAfterDelete['active_subject_key'] === null || $inciden
 $controllerSource = file_get_contents(__DIR__ . '/../Repeatcaller.class.php');
 assert_true($controllerSource !== false, 'Repeatcaller controller source should be readable');
 
-assert_true((bool)preg_match('/in_array\(\$seconds, \[300, 900, 1800, 3600, 86400\], true\)/', $controllerSource), '15-minute snooze duration (900 seconds) must remain accepted by the snooze handler');
+assert_true((bool)preg_match('/in_array\(\$seconds, \[300, 900, 1800, 3600, 10800, 21600, 43200, 86400\], true\)/', $controllerSource), 'snooze handler must accept existing durations and longer 3h/6h/12h/24h durations up to 86400 seconds');
 assert_true((bool)preg_match('/setSetting\(\'global_snooze_selected_seconds\', \(string\)\$seconds\);/', $controllerSource), 'setting a snooze duration must persist global_snooze_selected_seconds (e.g. "900" for 15m)');
+assert_true(strpos($controllerSource, "'message' => _('Monitoring snoozed.')") !== false, 'snooze action response message should remain Monitoring snoozed.');
 assert_true((bool)preg_match('/\'selected_snooze_seconds\'\s*=>\s*\$selectedSnoozeSeconds/', $controllerSource), 'engine status must expose selected_snooze_seconds from persisted settings');
 assert_true((bool)preg_match('/rcHandleResumeMonitoring\(\): array\s*\{[\s\S]*setSetting\(\'global_snoozed_until\', \'\'\);[\s\S]*setSetting\(\'global_snooze_selected_seconds\', \'\'\);/', $controllerSource), 'resume must clear global_snoozed_until and global_snooze_selected_seconds');
 assert_true((bool)preg_match('/if \(\$enabled !== \'1\'\) \{[\s\S]*setSetting\(\'global_snoozed_until\', \'\'\);[\s\S]*setSetting\(\'global_snooze_selected_seconds\', \'\'\);[\s\S]*\}/', $controllerSource), 'disabling monitoring must clear both global_snoozed_until and global_snooze_selected_seconds');
@@ -467,6 +468,20 @@ assert_true(substr_count($viewSource, 'class="rc-engine-summary-item"') === 5, '
 assert_true((bool)preg_match('/id="rc-engine-summary-row"[\s\S]*Run Status[\s\S]*id="rc-run-status"[\s\S]*id="rc-lock-state"[\s\S]*PBX Time[\s\S]*id="rc-pbx-time"/', $viewSource), 'Run Status and PBX Time should be separate summary items within the same shared row');
 assert_true(strpos($viewSource, '<strong><?php echo _(\'Run Status\'); ?>:</strong><span class="rc-engine-summary-value" id="rc-run-status">') !== false, 'Run Status summary item should include an explicit inline value element directly after the label');
 assert_true(strpos($viewSource, '<strong><?php echo _(\'PBX Time\'); ?>:</strong><span class="rc-engine-summary-value" id="rc-pbx-time">') !== false, 'PBX Time summary item should include an explicit inline value element directly after the label');
+assert_true(strpos($viewSource, 'id="rc-enable"><?php echo _(\'Enable Rules\'); ?></button>') !== false, 'Engine Status global enable button should use Enable Rules wording');
+assert_true(strpos($viewSource, 'id="rc-disable"><?php echo _(\'Disable Rules\'); ?></button>') !== false, 'Engine Status global disable button should use Disable Rules wording');
+assert_true(strpos($viewSource, 'Enable Monitoring') === false, 'legacy Enable Monitoring button label should be removed from the view');
+assert_true(strpos($viewSource, 'Disable Monitoring') === false, 'legacy Disable Monitoring button label should be removed from the view');
+assert_true(substr_count($viewSource, 'class="btn btn-primary rc-snooze"') === 8, 'Engine Status should render exactly eight Snooze buttons');
+assert_true(strpos($viewSource, 'data-seconds="300"><?php echo _(\'Snooze 5m\'); ?></button>') !== false, 'Snooze 5m button should map to 300 seconds');
+assert_true(strpos($viewSource, 'data-seconds="900"><?php echo _(\'Snooze 15m\'); ?></button>') !== false, 'Snooze 15m button should map to 900 seconds');
+assert_true(strpos($viewSource, 'data-seconds="1800"><?php echo _(\'Snooze 30m\'); ?></button>') !== false, 'Snooze 30m button should map to 1800 seconds');
+assert_true(strpos($viewSource, 'data-seconds="3600"><?php echo _(\'Snooze 1h\'); ?></button>') !== false, 'Snooze 1h button should map to 3600 seconds');
+assert_true(strpos($viewSource, 'data-seconds="10800"><?php echo _(\'Snooze 3h\'); ?></button>') !== false, 'Snooze 3h button should map to 10800 seconds');
+assert_true(strpos($viewSource, 'data-seconds="21600"><?php echo _(\'Snooze 6h\'); ?></button>') !== false, 'Snooze 6h button should map to 21600 seconds');
+assert_true(strpos($viewSource, 'data-seconds="43200"><?php echo _(\'Snooze 12h\'); ?></button>') !== false, 'Snooze 12h button should map to 43200 seconds');
+assert_true(strpos($viewSource, 'data-seconds="86400"><?php echo _(\'Snooze 24h\'); ?></button>') !== false, 'Snooze 24h button should map to 86400 seconds');
+assert_true(strpos($viewSource, 'id="rc-resume"><?php echo _(\'Resume\'); ?></button>') !== false, 'Resume button should remain present and unchanged');
 assert_true((bool)preg_match('/\.repeatcaller \.rc-engine-summary-row \{[\s\S]*display: flex;[\s\S]*\}/', $cssSource), 'Engine Status should use one shared five-item flex summary row');
 assert_true((bool)preg_match('/\.repeatcaller \.rc-engine-summary-item \{[\s\S]*flex: 1 1 calc\(20% - 10px\);[\s\S]*white-space: nowrap;[\s\S]*\}/', $cssSource), 'each summary item should be equal-width and non-wrapping for label/value pairs at desktop widths');
 assert_true((bool)preg_match('/\.repeatcaller \.rc-engine-summary-value \{[\s\S]*margin-left: 0\.35em;[\s\S]*\}/', $cssSource), 'CSS should provide explicit spacing between every summary label and value');
@@ -479,6 +494,7 @@ assert_true(strpos($jsSource, 'minimumVisibleMs: 3000') !== false, 'Run Status s
 assert_true(strpos($jsSource, "runStatusUi.backendRunning = String(lockState || '').toLowerCase() === 'running';") !== false, 'Run Status should treat active lock state as Running');
 assert_true(strpos($jsSource, "setRunStatusText('Waiting');") !== false, 'Run Status should display Waiting when inactive');
 assert_true(strpos($jsSource, "setRunStatusText('Processing');") !== false, 'Run Status should display Processing while active or within the visible-minimum window');
+assert_true(strpos($jsSource, "var banner = enabled ? 'Monitoring enabled.' : 'Monitoring disabled.';") !== false, 'Engine banner should describe current monitoring state with Monitoring enabled/disabled wording');
 assert_true(strpos($jsSource, 'if (runStatusUi.runningVisibleSinceMs === 0) {') !== false, 'Run Status should set Running baseline once and avoid timer restarts during ordinary refreshes');
 assert_true(strpos($jsSource, 'runStatusUi.holdTimerId = window.setTimeout(function () {') !== false, 'Run Status should schedule post-minimum Waiting transition without delaying backend monitor flow');
 assert_true(strpos($jsSource, '}, runStatusUi.minimumVisibleMs - elapsedMs);') !== false, 'Run Status should hold Running only for the remaining minimum-visible duration');

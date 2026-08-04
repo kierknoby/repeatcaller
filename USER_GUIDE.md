@@ -41,12 +41,12 @@ Main sections:
 - Alert History
 - Run Now
 
-The top Engine Status section contains the operational controls: Enable Monitoring, Disable Monitoring, Snooze, Resume, and Run Now.
+The top Engine Status section contains the operational controls: Enable Rules, Disable Rules, Snooze, Resume, and Run Now.
 
 ## First-Time Setup
 
 1. Open Global Settings.
-2. Enable Repeat Caller monitoring.
+2. Enable rules globally.
 3. Set the default country code if needed.
 4. Configure incident, alert, and suppression history retention policies.
 5. Configure rule conditions, alert actions, and schedules as required.
@@ -329,6 +329,8 @@ Operational notes:
 ## Snooze Monitoring
 
 Snooze Monitoring is global.
+
+Available Snooze buttons are 5m, 15m, 30m, 1h, 3h, 6h, 12h, and 24h.
 
 While snoozed:
 
