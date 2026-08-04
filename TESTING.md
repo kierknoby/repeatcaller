@@ -62,7 +62,7 @@ Expected v1 fresh-install tables include:
 15. Accept an active incident using the GUI and confirm it moves to accepted history/state.
 16. If Alert Call is enabled, answer the Alert Call, press 1, and confirm the incident is accepted.
 17. Trigger a post-accept matching call and confirm the same accepted incident updates without new reminders.
-18. Snooze globally, confirm deferred Alert Call and Email delivery, then resume and confirm deferred delivery.
+18. Snooze globally, confirm deferred Alert Call and Email delivery, then select Resume All Rules and confirm deferred delivery.
 19. Delete a rule with an active incident and confirm the rule disappears while incident history remains visible.
 20. Confirm the available pruning schedule options:
 	- Never

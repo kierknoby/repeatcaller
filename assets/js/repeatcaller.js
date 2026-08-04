@@ -154,23 +154,29 @@
 
 	function updateBulkEngineActionState(enabled, isSnoozed) {
 		var $button = $('#rc-bulk-rule-action');
-		var buttonText = 'Enable Rules';
+		var buttonText = 'Enable All Rules';
+		var stateButtonClass = 'btn-success';
 
 		if (isSnoozed) {
 			currentBulkEngineAction = 'resume';
-			buttonText = 'Resume';
+			buttonText = 'Resume All Rules';
+			stateButtonClass = 'btn-success';
 		} else if (enabled) {
 			currentBulkEngineAction = 'disable';
-			buttonText = 'Disable Rules';
+			buttonText = 'Disable All Rules';
+			stateButtonClass = 'btn-danger';
 		} else {
 			currentBulkEngineAction = 'enable';
-			buttonText = 'Enable Rules';
+			buttonText = 'Enable All Rules';
+			stateButtonClass = 'btn-success';
 		}
 
 		if ($button.length) {
 			$button
 				.text(buttonText)
 				.prop('disabled', false)
+				.removeClass('btn-default btn-success btn-danger')
+				.addClass(stateButtonClass)
 				.removeClass('disabled')
 				.attr('aria-disabled', 'false')
 				.attr('data-action', currentBulkEngineAction);

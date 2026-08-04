@@ -61,7 +61,7 @@ Use with FreePBX/PBXact 16 or 17.
 #### Global controls
 
 - Renames the global Enable Monitoring and Disable Monitoring buttons to
-  Enable Rules and Disable Rules for clearer rule-processing terminology.
+  Enable All Rules and Disable All Rules for clearer rule-processing terminology.
 
 #### Alert Call self-trigger safeguard
 
@@ -451,7 +451,7 @@ Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 ho
 
 - While snoozed, detection and incident lifecycle processing continue.
 - Alert Call and Email deliveries are deferred while snooze is active.
-- Resume can be triggered manually before snooze expiry.
+- Resume All Rules can be triggered manually before snooze expiry.
 - There is no per-rule or per-incident snooze.
 
 ## User Interface
@@ -459,7 +459,7 @@ Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 ho
 Reports > Repeat Caller includes these main sections:
 
 - Engine Status: enabled rules, active incidents, last run, run state, PBX
-  time, Enable Rules/Disable Rules, Snooze, Resume, Run Now.
+  time, Enable All Rules/Disable All Rules, Snooze, Resume All Rules, Run Now.
 - Global Settings: country code, lookback, global suppression, global repeat,
   pruning policies, and maintenance actions.
 - Rules: summary table plus Add Rule editor for mode/threshold/window, caller

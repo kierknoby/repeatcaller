@@ -203,7 +203,7 @@ assert_true(strpos($readmeSource, '## Release History') !== false, 'README shoul
 assert_true(strpos($readmeSource, '### 1.0.1, patch release, 4 August 2026') !== false, 'README should include the 1.0.1 release history heading');
 assert_true(strpos($readmeSource, 'Rule explanation-row state colouring now uses explicit Repeat Caller') !== false, 'README should record the 1.0.1 explanation-row colouring consistency fix');
 assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
-assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable Rules and Disable Rules') !== false, 'README release history should document global control wording updates');
+assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable All Rules and Disable All Rules') !== false, 'README release history should document global control wording updates');
 assert_true(strpos($readmeSource, '#### DID scope controls') !== false, 'README release history should include a DID scope controls subsection for 1.0.1');
 assert_true(strpos($readmeSource, 'Allows individual inbound routes to be excluded when All DIDs is selected.') !== false, 'README DID scope release notes should document exclusions in All DIDs mode');
 assert_true(strpos($readmeSource, 'Keeps Selected DIDs only mode limited to explicit route inclusions.') !== false, 'README DID scope release notes should document Selected DIDs include-only behavior');
@@ -238,7 +238,7 @@ assert_true(strpos($readmeSource, '## Snooze Monitoring') !== false, 'README sho
 assert_true(strpos($readmeSource, 'Snooze Monitoring is a global control in Engine Status.') !== false, 'README should keep Snooze Monitoring terminology for global snooze state');
 assert_true(strpos($readmeSource, 'Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours,') !== false && strpos($readmeSource, '12 hours, and 24 hours.') !== false, 'README should list all supported Snooze Monitoring durations including 30m/3h/6h/12h/24h');
 assert_true(strpos($readmeSource, '## User Interface') !== false, 'README should include User Interface section');
-assert_true(strpos($readmeSource, 'Enable Rules/Disable Rules, Snooze, Resume, Run Now.') !== false, 'README user-interface summary should use Enable Rules/Disable Rules terminology');
+assert_true(strpos($readmeSource, 'Enable All Rules/Disable All Rules, Snooze, Resume All Rules, Run Now.') !== false, 'README user-interface summary should use Enable All Rules/Disable All Rules terminology');
 assert_true(strpos($readmeSource, 'The Start as control is used only when creating a new rule') !== false, 'README should explain that Start as applies only to new rules');
 assert_true(strpos($readmeSource, 'existing rule is being edited, those row actions are greyed out and cannot be') !== false, 'README should explain that rule row actions are disabled while editing');
 assert_true(strpos($readmeSource, '## Security Model') !== false, 'README should include Security Model section');

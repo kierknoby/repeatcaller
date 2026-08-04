@@ -41,12 +41,12 @@ Main sections:
 - Alert History
 - Run Now
 
-The top Engine Status section contains the operational controls: Enable Rules, Disable Rules, Snooze, Resume, and Run Now.
+The top Engine Status section contains the operational controls: Enable All Rules, Disable All Rules, Snooze, Resume All Rules, and Run Now.
 
 ## First-Time Setup
 
 1. Open Global Settings.
-2. Enable rules globally.
+2. Select Enable All Rules globally.
 3. Set the default country code if needed.
 4. Configure incident, alert, and suppression history retention policies.
 5. Configure rule conditions, alert actions, and schedules as required.
