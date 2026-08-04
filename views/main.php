@@ -53,7 +53,6 @@ $assetVer = max(
 	<div class="row">
 		<div class="col-sm-12">
 			<h1><?php echo _('Repeat Caller'); ?> <small class="text-muted">v<?php echo htmlspecialchars((string)$moduleVersion, ENT_QUOTES, 'UTF-8'); ?></small></h1>
-			<p class="lead"><?php echo _('Detect repeated inbound call journeys and turn them into actionable incidents. It is built for GUI review, email notifications, and live Alert Call handling on FreePBX/PBXact 16 and 17.'); ?></p>
 			<p><?php echo _('Rules support repeat and invert detection modes, caller and DID scoping, schedule windows, repeat-notification modes, and suppression controls. The admin page presents active and historical lifecycle views so operators can review incidents, acceptances, alerts, and suppression decisions in one place.'); ?></p>
 			<div id="rc-message" class="alert" style="display:none;"></div>
 		</div>
