@@ -903,9 +903,21 @@ class Repeatcaller implements \BMO {
 
 	private function rcParseCallers($raw): array {
 		require_once __DIR__ . '/src/DetectionEngine.php';
-		$items = is_string($raw) && trim($raw) !== ''
-			? [['list_type' => 'include', 'raw_value' => $raw]]
-			: $this->rcDecodePayloadList($raw);
+		if (is_string($raw)) {
+			$trimmedRaw = trim($raw);
+			if ($trimmedRaw === '') {
+				$items = [];
+			} else {
+				$decoded = json_decode($trimmedRaw, true);
+				if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+					$items = $decoded;
+				} else {
+					$items = [['list_type' => 'include', 'raw_value' => $raw]];
+				}
+			}
+		} else {
+			$items = $this->rcDecodePayloadList($raw);
+		}
 		$normalized = [];
 		$seenByListType = ['include' => [], 'exclude' => []];
 		$country = trim((string)($this->rcSettings()['default_country_code'] ?? ''));

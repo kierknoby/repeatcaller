@@ -236,6 +236,62 @@ assert_same(1, count($duplicateCallers), 'duplicate caller values should be remo
 $emptyCallers = $parseCallers->invoke($controller, [['list_type' => 'include', 'raw_value' => " , \n\t ,"]]);
 assert_same(0, count($emptyCallers), 'empty caller values should be ignored during parsing');
 
+$browserCallerSaveDb = make_db();
+FreePBX::setDatabase($browserCallerSaveDb);
+$browserCallerSaveRepo = new RepeatCallerRepository($browserCallerSaveDb);
+$browserCallerSaveController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$browserCallerSaveMethod = new ReflectionMethod($browserCallerSaveController, 'rcHandleSaveRule');
+$browserCallerSaveMethod->setAccessible(true);
+$savedRequest = $_REQUEST;
+$_REQUEST = [
+	'rule_id' => '0',
+	'name' => 'Browser Caller JSON Rule',
+	'enabled' => '1',
+	'email_enabled' => '0',
+	'alert_call_enabled' => '0',
+	'alert_call_destinations' => '',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => '1',
+	'alert_call_recording_id' => '',
+	'mode' => 'repeat',
+	'threshold_count' => '2',
+	'observation_window_minutes' => '60',
+	'caller_mode' => 'specific_only',
+	'exclude_withheld' => '0',
+	'did_scope_mode' => 'all',
+	'repeat_mode_override' => 'never',
+	'email_recipients' => '',
+	'suppression_minutes_override' => '',
+	'schedules' => '[]',
+	'callers' => json_encode([
+		['list_type' => 'include', 'raw_value' => '01234567890'],
+		['list_type' => 'include', 'raw_value' => '07876543210'],
+		['list_type' => 'include', 'raw_value' => '01234567890'],
+		['list_type' => 'exclude', 'raw_value' => '01234567890'],
+		['list_type' => 'exclude', 'raw_value' => '02079460000'],
+		['list_type' => 'exclude', 'raw_value' => '02079460000'],
+	]),
+	'dids' => '[]',
+];
+$browserCallerSaveResponse = $browserCallerSaveMethod->invoke($browserCallerSaveController);
+$_REQUEST = $savedRequest;
+assert_true(($browserCallerSaveResponse['status'] ?? false) === true, 'controller save should accept browser-shaped callers JSON payload');
+$browserCallerSavedRule = $browserCallerSaveResponse['rule'] ?? [];
+assert_same(2, count(($browserCallerSavedRule['caller_lists']['include'] ?? [])), 'specific_only save path should persist two unique include callers from browser JSON payload');
+assert_same(2, count(($browserCallerSavedRule['caller_lists']['exclude'] ?? [])), 'specific_only save path should persist two unique exclude callers from browser JSON payload');
+assert_same('01234567890', (string)($browserCallerSavedRule['caller_lists']['include'][0]['raw_value'] ?? ''), 'browser JSON payload should preserve include caller order on save');
+assert_same('01234567890', (string)($browserCallerSavedRule['caller_lists']['exclude'][0]['raw_value'] ?? ''), 'include and exclude caller lists should remain independent when caller exists in both');
+$browserCallerReloadedRule = $browserCallerSaveRepo->loadRule((int)($browserCallerSavedRule['id'] ?? 0));
+assert_same(2, count(($browserCallerReloadedRule['caller_lists']['include'] ?? [])), 'reloaded rule should keep include callers from browser JSON payload');
+assert_same(2, count(($browserCallerReloadedRule['caller_lists']['exclude'] ?? [])), 'reloaded rule should keep exclude callers from browser JSON payload');
+assert_same('01234567890, 07876543210', implode(', ', array_map(function (array $row): string {
+	return (string)($row['raw_value'] ?? '');
+}, $browserCallerReloadedRule['caller_lists']['include'] ?? [])), 'include callers should remain in canonical comma-space presentation order after reload');
+assert_same('01234567890, 02079460000', implode(', ', array_map(function (array $row): string {
+	return (string)($row['raw_value'] ?? '');
+}, $browserCallerReloadedRule['caller_lists']['exclude'] ?? [])), 'exclude callers should remain in canonical comma-space presentation order after reload');
+FreePBX::setDatabase($db);
+
 $mixedListRuleId = $parserRepo->saveRule([
 	'name' => 'Mixed Caller List Rule',
 	'enabled' => 1,
@@ -665,6 +721,8 @@ assert_true(strpos($jsSource, 'setRunStatusRunningFromRunStart();') !== false, '
 assert_true(strpos($jsSource, 'function isProcessingVisible() {') !== false, 'Run Status should compute whether Processing visibility must still be preserved');
 assert_true(strpos($jsSource, 'function updateRunNowButtonState() {') !== false, 'Run Status logic should control Run Now button availability from Processing state');
 assert_true(strpos($jsSource, 'var runNowAvailableFromEngine = false;') !== false, 'Run Now availability should track global monitoring enabled/snoozed state');
+assert_true(strpos($jsSource, 'function initializeRunNowAvailabilityFromBootstrap() {') !== false && strpos($jsSource, "runNowAvailableFromEngine = enabled && !isSnoozed;") !== false, 'Run Now availability should initialize from bootstrap engine enabled/snoozed state before async refresh');
+assert_true(strpos($jsSource, 'initializeRunNowAvailabilityFromBootstrap();') !== false, 'page initialization should synchronize Run Now guard state before event bindings and async refreshes');
 assert_true(strpos($jsSource, "if (isProcessingVisible() || !runNowAvailableFromEngine) {") !== false && strpos($jsSource, "\$button.prop('disabled', true).addClass('disabled');") !== false, 'Run Now should be disabled and greyed while Processing is visible or monitoring is disabled/snoozed');
 assert_true(strpos($jsSource, "\$button.prop('disabled', false).removeClass('disabled');") !== false, 'Run Now should be re-enabled only after Processing visibility has ended');
 assert_true(strpos($jsSource, "if (\$button.prop('disabled')) {") !== false, 'Run Now click handler should guard against additional clicks while Processing is active');
@@ -767,7 +825,7 @@ assert_true(strpos($jsSource, "function getCallerFormatHint(countryCode) {") !==
 assert_true(strpos($jsSource, "function getCallerFormatExample(countryCode) {") !== false && strpos($jsSource, "if (localNumber.charAt(0) === '0') {") !== false && strpos($jsSource, "return code + localNumber;") !== false, 'National format example helper should prepend country code when number does not start with 0 to ensure country context is always visible');
 assert_true(strpos($jsSource, "var localNumber = String(format.local || '');") !== false && strpos($jsSource, "// If local number starts with 0 (trunk prefix), use as-is; leading 0 provides country context") !== false, 'Format example helper should document logic for showing country code context in examples');
 assert_true(strpos($jsSource, "function getCallerE164Example(countryCode) {") !== false && strpos($jsSource, "replace(/^0+/, '')") !== false && strpos($jsSource, "return '+' + code + nationalNumber;") !== false, 'E.164 format example helper should remove leading zeros and prepend country code with +');
-assert_true(strpos($jsSource, "var formatExample = getCallerFormatExample($('#rc-setting-country').val());") !== false && strpos($jsSource, "var e164Example = getCallerE164Example($('#rc-setting-country').val());") !== false, 'Both national and E.164 format examples should be generated from country code');
+assert_true(strpos($jsSource, "var formatExample = getCallerFormatExample($('#rc-setting-country').val());") !== false, 'Caller scope helper should generate the national format example from country code');
 assert_true(strpos($jsSource, ".attr('placeholder', formatExample)") !== false, 'Caller textarea placeholders should be set to the national format example');
 assert_true(strpos($jsSource, "var callerIdPlaceholder = '';") !== false && strpos($jsSource, ".attr('placeholder', callerIdPlaceholder)") !== false, 'Alert Call Caller ID placeholder should be blank when managed elsewhere is checked and use E.164 only when editable and empty');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').attr('placeholder', '2001, 2002, ' + formatExample);") !== false, 'Alert Call Destinations placeholder should show national dialling format example (not E.164) with example extensions');
@@ -1261,6 +1319,13 @@ $.each = function (collection, callback) {
 
 $.isArray = Array.isArray;
 
+$.inArray = function (value, array) {
+	if (!Array.isArray(array)) {
+		return -1;
+	}
+	return array.indexOf(value);
+};
+
 function createCheckbox(id) {
 	const element = makeId(id, 'input');
 	element.attrs.type = 'checkbox';
@@ -1317,6 +1382,7 @@ createGeneric('rc-rule-alert-call-callerid', 'input');
 createGeneric('rc-rule-alert-call-callerid-help');
 createGeneric('rc-setting-country', 'input');
 byId['rc-setting-country'].value = '44';
+createButton('rc-run-now', ['btn', 'btn-warning']);
 createGeneric('rc-rules-table', 'table');
 const rulesTbody = createGeneric('rc-rules-table-body', 'tbody');
 byId['rc-rules-table'].append(rulesTbody);
@@ -1340,7 +1406,12 @@ const context = {
 	console,
 	jQuery: $, 
 	$: $, 
-	window: {},
+	window: {
+		repeatCallerBootstrap: {
+			engineStatus: { enabled: 1, global_snoozed_until: '' },
+			systemRecordings: []
+		}
+	},
 	document: {},
 	setTimeout,
 	clearTimeout,
@@ -1370,9 +1441,35 @@ const context = {
 
 vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState };\n})(jQuery);');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 const hooks = context.window.__hooks;
+const warningNotieAlerts = [];
+const genericToasts = [];
+const fallbackTimeoutsMs = [];
+let syntheticTimeoutId = 0;
+
+context.window.notie = {
+	alert: function (type, message, durationSeconds) {
+		warningNotieAlerts.push({
+			type: parseInt(type || 0, 10),
+			message: String(message || ''),
+			durationSeconds: parseInt(durationSeconds || 0, 10)
+		});
+	}
+};
+context.window.setTimeout = function (handler, delayMs) {
+	fallbackTimeoutsMs.push(parseInt(delayMs || 0, 10));
+	syntheticTimeoutId += 1;
+	return syntheticTimeoutId;
+};
+context.window.clearTimeout = function () {};
+context.window.fpbxToast = function (message, title, type) {
+	genericToasts.push({
+		message: String(message || ''),
+		type: String(type || '')
+	});
+};
 
 function assert(condition, message) {
 	if (!condition) {
@@ -1501,6 +1598,145 @@ $('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
 hooks.updateAlertCallAndEmailState();
 assert($('#rc-rule-alert-call-callerid').val() === '', 'reopening after cancel should not resurrect an unsaved Caller ID value');
 
+function makeSyntheticEvent(keyValue) {
+	const event = {
+		key: keyValue || '',
+		which: keyValue === 'Enter' ? 13 : 0,
+		keyCode: keyValue === 'Enter' ? 13 : 0,
+		preventDefaultCalled: false,
+		stopPropagationCalled: false,
+		preventDefault: function () { this.preventDefaultCalled = true; },
+		stopPropagation: function () { this.stopPropagationCalled = true; }
+	};
+	return event;
+}
+
+function resetAlertDestinationFlow(destination) {
+	$('#rc-rule-alert-call-enabled').prop('checked', true);
+	$('#rc-rule-caller-exclude').val('');
+	$('#rc-rule-alert-call-destination-list').empty();
+	$('#rc-rule-alert-call-destination-input').val(destination);
+	hooks.updateAlertCallAndEmailState();
+	hooks.updateAlertCallDestinationAddButtonState();
+}
+
+const warningText = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
+
+// 1) Click Add with new destination: adds destination + Ignore entry + warns.
+const warningCountBeforeClickAdd = warningNotieAlerts.length;
+resetAlertDestinationFlow('2001');
+const clickAddEvent = makeSyntheticEvent('MouseClick');
+const clickAddResult = hooks.triggerAlertCallDestinationAdd(clickAddEvent);
+assert(clickAddEvent.preventDefaultCalled === true, 'click add should prevent default action');
+assert(clickAddResult && clickAddResult.autoAddedIgnoreEntries === 1, 'click add should report one auto-added Ignore callers entry for a new destination');
+assert($('#rc-rule-alert-call-destination-list').find('li').length === 1, 'click add should create one Alert Call destination row for a new destination');
+assert($('#rc-rule-caller-exclude').val() === '2001', 'click add should auto-add the same destination to Ignore callers');
+assert(warningNotieAlerts.length === warningCountBeforeClickAdd + 1, 'click add should show a warning when Ignore callers is auto-added');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].message === warningText, 'click add warning should use the self-trigger guidance text');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].type === 2, 'click add warning should be emitted as warning notie type 2');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].durationSeconds === 6, 'click add warning should be shown for 6 seconds');
+
+// 2) Enter does identical.
+const warningCountBeforeEnterAdd = warningNotieAlerts.length;
+resetAlertDestinationFlow('2002');
+const enterAddEvent = makeSyntheticEvent('Enter');
+const enterAddReturn = hooks.handleAlertCallDestinationInputKeydown(enterAddEvent);
+assert(enterAddReturn === false, 'enter add should return false to stop form submission');
+assert(enterAddEvent.preventDefaultCalled === true, 'enter add should prevent default form submission');
+assert($('#rc-rule-alert-call-destination-list').find('li').length === 1, 'enter add should create one Alert Call destination row for a new destination');
+assert($('#rc-rule-caller-exclude').val() === '2002', 'enter add should auto-add the same destination to Ignore callers');
+assert(warningNotieAlerts.length === warningCountBeforeEnterAdd + 1, 'enter add should show a warning when Ignore callers is auto-added');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].message === warningText, 'enter add warning should use the same self-trigger guidance text as click add');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].type === 2, 'enter add warning should be emitted as warning notie type 2');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].durationSeconds === 6, 'enter add warning should be shown for 6 seconds');
+
+// 3) Click restores removed Ignore entry + warns.
+const warningCountBeforeClickRestore = warningNotieAlerts.length;
+resetAlertDestinationFlow('3001');
+hooks.addAlertCallDestinationsFromInput();
+$('#rc-rule-caller-exclude').val('');
+$('#rc-rule-alert-call-destination-input').val('3001');
+hooks.updateAlertCallDestinationAddButtonState();
+assert($('#rc-rule-alert-call-destination-add').prop('disabled') === false, 'Add should be available when destination exists but Ignore callers is missing that value');
+const clickRestoreEvent = makeSyntheticEvent('MouseClick');
+const clickRestoreResult = hooks.triggerAlertCallDestinationAdd(clickRestoreEvent);
+assert(clickRestoreResult && clickRestoreResult.autoAddedIgnoreEntries === 1, 'click restore should report one restored Ignore callers entry');
+assert($('#rc-rule-alert-call-destination-list').find('li').length === 1, 'click restore should not duplicate the destination row');
+assert($('#rc-rule-caller-exclude').val() === '3001', 'click restore should restore missing Ignore callers value');
+assert(warningNotieAlerts.length === warningCountBeforeClickRestore + 2, 'click restore path should warn for initial add and restore add');
+
+// 4) Enter restores removed Ignore entry + warns.
+const warningCountBeforeEnterRestore = warningNotieAlerts.length;
+resetAlertDestinationFlow('3002');
+hooks.addAlertCallDestinationsFromInput();
+$('#rc-rule-caller-exclude').val('');
+$('#rc-rule-alert-call-destination-input').val('3002');
+hooks.updateAlertCallDestinationAddButtonState();
+const enterRestoreEvent = makeSyntheticEvent('Enter');
+const enterRestoreReturn = hooks.handleAlertCallDestinationInputKeydown(enterRestoreEvent);
+assert(enterRestoreReturn === false, 'enter restore should return false to stop form submission');
+assert(enterRestoreEvent.preventDefaultCalled === true, 'enter restore should prevent default form submission');
+assert($('#rc-rule-alert-call-destination-list').find('li').length === 1, 'enter restore should not duplicate the destination row');
+assert($('#rc-rule-caller-exclude').val() === '3002', 'enter restore should restore missing Ignore callers value');
+assert(warningNotieAlerts.length === warningCountBeforeEnterRestore + 2, 'enter restore path should warn for initial add and restore add');
+
+// 5) Neither method duplicates destination.
+resetAlertDestinationFlow('4001');
+hooks.addAlertCallDestinationsFromInput();
+$('#rc-rule-alert-call-destination-input').val('4001');
+hooks.updateAlertCallDestinationAddButtonState();
+assert($('#rc-rule-alert-call-destination-add').prop('disabled') === true, 'Add should be disabled when destination already exists and Ignore callers already contains it');
+const listCountBeforeClickDuplicate = $('#rc-rule-alert-call-destination-list').find('li').length;
+const warningCountBeforeClickDuplicate = warningNotieAlerts.length;
+hooks.triggerAlertCallDestinationAdd(makeSyntheticEvent('MouseClick'));
+assert($('#rc-rule-alert-call-destination-list').find('li').length === listCountBeforeClickDuplicate, 'click duplicate add should not duplicate destination rows');
+assert(warningNotieAlerts.length === warningCountBeforeClickDuplicate, 'click duplicate add should not warn when no change occurs');
+resetAlertDestinationFlow('4002');
+hooks.addAlertCallDestinationsFromInput();
+$('#rc-rule-alert-call-destination-input').val('4002');
+hooks.updateAlertCallDestinationAddButtonState();
+const listCountBeforeEnterDuplicate = $('#rc-rule-alert-call-destination-list').find('li').length;
+const warningCountBeforeEnterDuplicate = warningNotieAlerts.length;
+hooks.handleAlertCallDestinationInputKeydown(makeSyntheticEvent('Enter'));
+assert($('#rc-rule-alert-call-destination-list').find('li').length === listCountBeforeEnterDuplicate, 'enter duplicate add should not duplicate destination rows');
+assert(warningNotieAlerts.length === warningCountBeforeEnterDuplicate, 'enter duplicate add should not warn when no change occurs');
+
+// 6) Neither warns when nothing changes.
+
+// 7) Fallback warning remains visible for 6000ms when notie is unavailable.
+const fallbackCountBefore = fallbackTimeoutsMs.length;
+const originalNotie = context.window.notie;
+const originalFpbxToast = context.window.fpbxToast;
+context.window.notie = null;
+context.window.fpbxToast = null;
+hooks.showAlertCallSelfTriggerWarning();
+assert(fallbackTimeoutsMs.length === fallbackCountBefore + 1, 'fallback warning should schedule one hide timer');
+assert(fallbackTimeoutsMs[fallbackTimeoutsMs.length - 1] === 6000, 'fallback warning hide timer should be 6000ms');
+context.window.notie = originalNotie;
+context.window.fpbxToast = originalFpbxToast;
+
+// 8) Generic Repeat Caller messages should continue using fpbxToast path.
+const genericToastCountBefore = genericToasts.length;
+hooks.showMessage('Generic warning path check', 'warning');
+assert(genericToasts.length === genericToastCountBefore + 1, 'generic Repeat Caller messages should continue to use fpbxToast path');
+assert(genericToasts[genericToasts.length - 1].type === 'warning', 'generic Repeat Caller warning should be emitted through fpbxToast with warning level');
+
+// 9) No global toast settings are mutated.
+assert(typeof context.window.toastr === 'undefined' || typeof context.window.toastr.options === 'undefined', 'warning logic should not mutate global toastr options');
+
+$('#rc-run-now').prop('disabled', true);
+context.window.repeatCallerBootstrap.engineStatus = { enabled: 1, global_snoozed_until: '' };
+hooks.initializeRunNowAvailabilityFromBootstrap();
+assert($('#rc-run-now').prop('disabled') === false, 'Run Now should be enabled immediately on page-load sync when monitoring is enabled and not snoozed');
+
+context.window.repeatCallerBootstrap.engineStatus = { enabled: 1, global_snoozed_until: '2026-07-13 11:00:00' };
+hooks.initializeRunNowAvailabilityFromBootstrap();
+assert($('#rc-run-now').prop('disabled') === true, 'Run Now should be disabled immediately on page-load sync when monitoring is snoozed');
+
+context.window.repeatCallerBootstrap.engineStatus = { enabled: 0, global_snoozed_until: '' };
+hooks.initializeRunNowAvailabilityFromBootstrap();
+assert($('#rc-run-now').prop('disabled') === true, 'Run Now should be disabled immediately on page-load sync when monitoring is disabled');
+
 process.stdout.write('OK');
 NODE;
 $behaviorOutput = shell_exec('node -e ' . escapeshellarg($behaviorScript));
@@ -1517,16 +1753,24 @@ assert_true(strpos($jsSource, "$('#rc-rule-suppression').val(rule.suppression_mi
 assert_true(strpos($jsSource, 'function normaliseAlertCallDestinationEntries(rawValue, defaultKeepTryingEnabled) {') !== false, 'rule editor should parse destination entries with per-destination keep-trying state');
 assert_true(strpos($jsSource, "values.push(destination + '|' + keepTryingFlag);") !== false, 'rule editor should persist each destination with its own keep-trying value');
 assert_true(strpos($jsSource, 'function alertCallDestinationExists(destination) {') !== false, 'rule editor should define a helper to detect existing Alert Call destinations in the current list');
+assert_true(strpos($jsSource, 'function callerExcludeContainsDestination(destination) {') !== false, 'rule editor should define a helper to detect whether Ignore callers already contains a destination value');
 assert_true(strpos($jsSource, 'function updateAlertCallDestinationAddButtonState() {') !== false, 'rule editor should define a helper to refresh the Add button from input and list state');
 assert_true(strpos($jsSource, "var rawInput = $('#rc-rule-alert-call-destination-input').val();") !== false, 'Add button state helper should read the current destination input value');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-list li')") !== false, 'Add button state helper should inspect the existing destination list');
 assert_true(strpos($jsSource, "var disabled = !alertCallEnabled || !hasAddableDestination;") !== false, 'Add button state helper should disable only when alert call is off or no addable destination exists');
+assert_true(strpos($jsSource, "if (!destinationExists || !callerExcludePresent) {") !== false, 'Add button state helper should allow re-adding an existing destination when Ignore callers is missing that value');
 assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarning = ') !== false && strpos($jsSource, 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.') !== false, 'rule editor should define the one-time Alert Call self-trigger warning text');
 assert_true(strpos($jsSource, 'function callerExcludeValues() {') !== false, 'rule editor should define a helper to read Ignore these callers values from the textarea');
 assert_true(strpos($jsSource, 'function ensureCallerExcludeDestination(rawValue) {') !== false, 'rule editor should define a helper that conditionally appends Alert Call destinations to Ignore these callers');
 assert_true(strpos($jsSource, 'addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);') !== false, 'Add action should still attempt to add Alert Call destination while preserving de-duplication');
 assert_true(strpos($jsSource, "if (ensureCallerExcludeDestination(destinationRow.destination)) {") !== false, 'Add action should ensure Ignore callers contains the destination even when the destination already exists');
-assert_true(strpos($jsSource, "if (autoAddedIgnoreEntries > 0) {") !== false && strpos($jsSource, "showMessage(alertCallSelfTriggerWarning, 'warning');") !== false, 'adding one or more new Alert Call destinations should show a one-time warning when Ignore callers entries are auto-added');
+assert_true(strpos($jsSource, "if (autoAddedIgnoreEntries > 0) {") !== false && strpos($jsSource, 'showAlertCallSelfTriggerWarning();') !== false, 'adding one or more new Alert Call destinations should show a one-time warning when Ignore callers entries are auto-added');
+assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarningDurationSeconds = 6;') !== false && strpos($jsSource, 'var alertCallSelfTriggerWarningTimeoutMs = 6000;') !== false, 'self-trigger warning should define explicit 6-second duration constants for toast and local fallback paths');
+assert_true(strpos($jsSource, 'window.notie.alert(2, alertCallSelfTriggerWarning, alertCallSelfTriggerWarningDurationSeconds);') !== false, 'self-trigger warning should use notie alert type 2 with explicit 6-second duration when available');
+assert_true(strpos($jsSource, "window.fpbxToast(alertCallSelfTriggerWarning, '', 'warning', alertCallSelfTriggerWarningTimeoutMs);") === false, 'self-trigger warning should not call fpbxToast with an unsupported per-message timeout argument');
+assert_true(strpos($jsSource, 'toastr.options') === false, 'self-trigger warning changes should not mutate global toast settings');
+assert_true(strpos($jsSource, 'function triggerAlertCallDestinationAdd(event) {') !== false && strpos($jsSource, 'return addAlertCallDestinationsFromInput();') !== false, 'click and Enter should share one add trigger that delegates to the same add function');
+assert_true(strpos($jsSource, "triggerAlertCallDestinationAdd(event);") !== false, 'destination input Enter handler should invoke the same shared add trigger as click');
 assert_true(strpos($jsSource, 'if ($.inArray(candidate, values) !== -1) {') !== false, 'auto-added Ignore callers entries should not create duplicates');
 assert_true(strpos($jsSource, "if (!destination || unique[destination]) {") !== false, 'duplicate Add actions should not create duplicate Alert Call destination entries');
 assert_true(strpos($jsSource, "if (exists) {") !== false && strpos($jsSource, 'return false;') !== false, 'duplicate Alert Call destinations should be ignored during list add operations');

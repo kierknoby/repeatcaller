@@ -46,6 +46,9 @@
 	var ruleStatusTimers = {};
 	var didRouteActionMode = '';
 	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
+	var alertCallSelfTriggerWarningDurationSeconds = 6;
+	var alertCallSelfTriggerWarningTimeoutMs = 6000;
+	var alertCallSelfTriggerWarningHideTimerId = null;
 	var alertCallCallerIdSessionValue = '';
 	var alertCallCallerIdManagedElsewhere = false;
 	var editingRuleId = 0;
@@ -253,6 +256,14 @@
 		});
 	}
 
+	function initializeRunNowAvailabilityFromBootstrap() {
+		var engine = (window.repeatCallerBootstrap && window.repeatCallerBootstrap.engineStatus) || {};
+		var enabled = !!engine.enabled;
+		var isSnoozed = $.trim(String(engine.global_snoozed_until || '')) !== '';
+		runNowAvailableFromEngine = enabled && !isSnoozed;
+		updateRunNowButtonState();
+	}
+
 	function formatClockYmdHms(msValue) {
 		var dt = new Date(msValue);
 		function pad2(n) {
@@ -383,6 +394,32 @@
 			$msg.addClass('alert-success');
 		}
 		$msg.text(text).show();
+	}
+
+	function clearAlertCallSelfTriggerWarningTimer() {
+		if (alertCallSelfTriggerWarningHideTimerId !== null) {
+			window.clearTimeout(alertCallSelfTriggerWarningHideTimerId);
+			alertCallSelfTriggerWarningHideTimerId = null;
+		}
+	}
+
+	function showAlertCallSelfTriggerWarning() {
+		clearAlertCallSelfTriggerWarningTimer();
+		if (window && window.notie && typeof window.notie.alert === 'function') {
+			try {
+				window.notie.alert(2, alertCallSelfTriggerWarning, alertCallSelfTriggerWarningDurationSeconds);
+				$('#rc-message').hide();
+				return;
+			} catch (e1) {
+			}
+		}
+
+		var $msg = $('#rc-message');
+		$msg.removeClass('alert-success alert-danger alert-info alert-warning').addClass('alert-warning').text(alertCallSelfTriggerWarning).show();
+		alertCallSelfTriggerWarningHideTimerId = window.setTimeout(function () {
+			$msg.hide();
+			alertCallSelfTriggerWarningHideTimerId = null;
+		}, alertCallSelfTriggerWarningTimeoutMs);
 	}
 
 	function ajax(command, payload, done, onComplete, options) {
@@ -1615,14 +1652,6 @@
 		return ordered;
 	}
 
-	function normaliseAlertCallDestinations(rawValue) {
-		var ordered = [];
-		$.each(normaliseAlertCallDestinationEntries(rawValue, true), function (_, row) {
-			ordered.push(row.destination);
-		});
-		return ordered;
-	}
-
 	function updateAlertCallDestinationHiddenField() {
 		var values = [];
 		$('#rc-rule-alert-call-destination-list li').each(function () {
@@ -1657,6 +1686,14 @@
 		return exists;
 	}
 
+	function callerExcludeContainsDestination(destination) {
+		var candidate = $.trim(String(destination || ''));
+		if (candidate === '') {
+			return false;
+		}
+		return $.inArray(candidate, callerExcludeValues()) !== -1;
+	}
+
 	function updateAlertCallDestinationAddButtonState() {
 		var $button = $('#rc-rule-alert-call-destination-add');
 		if (!$button.length) {
@@ -1667,7 +1704,12 @@
 		var hasAddableDestination = false;
 
 		$.each(normaliseAlertCallDestinationEntries(rawInput, true), function (_, destinationRow) {
-			if (destinationRow.destination !== '' && !alertCallDestinationExists(destinationRow.destination)) {
+			if (destinationRow.destination === '') {
+				return;
+			}
+			var destinationExists = alertCallDestinationExists(destinationRow.destination);
+			var callerExcludePresent = callerExcludeContainsDestination(destinationRow.destination);
+			if (!destinationExists || !callerExcludePresent) {
 				hasAddableDestination = true;
 				return false;
 			}
@@ -1834,9 +1876,39 @@
 		});
 		$('#rc-rule-alert-call-destination-input').val('');
 		if (autoAddedIgnoreEntries > 0) {
-			showMessage(alertCallSelfTriggerWarning, 'warning');
+			showAlertCallSelfTriggerWarning();
 		}
 		updateAlertCallDestinationAddButtonState();
+		return {
+			autoAddedIgnoreEntries: autoAddedIgnoreEntries
+		};
+	}
+
+	function triggerAlertCallDestinationAdd(event) {
+		if (event) {
+			event.preventDefault();
+			if (typeof event.stopPropagation === 'function') {
+				event.stopPropagation();
+			}
+		}
+		return addAlertCallDestinationsFromInput();
+	}
+
+	function isAlertCallDestinationSubmitKey(event) {
+		var key = String((event && event.key) || '');
+		if (key === 'Enter' || key === 'NumpadEnter') {
+			return true;
+		}
+		var keyCode = parseInt((event && (event.which || event.keyCode)) || 0, 10);
+		return keyCode === 13;
+	}
+
+	function handleAlertCallDestinationInputKeydown(event) {
+		if (!isAlertCallDestinationSubmitKey(event)) {
+			return true;
+		}
+		triggerAlertCallDestinationAdd(event);
+		return false;
 	}
 
 	function callerExcludeValues() {
@@ -1981,9 +2053,7 @@
 		var includeUnavailableText = '';
 		var excludeUnavailableText = '';
 		var baseCallerListHelpText = 'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.';
-		var formatHint = getCallerFormatHint($('#rc-setting-country').val());
 		var formatExample = getCallerFormatExample($('#rc-setting-country').val());
-		var e164Example = getCallerE164Example($('#rc-setting-country').val());
 
 		if (callerMode === 'any') {
 			includeUnavailableText = 'This field is only used when Specific callers is selected.';
@@ -2524,14 +2594,11 @@
 			updateTableRowBatching(selector);
 		});
 
-		$('#rc-rule-alert-call-destination-add').off('click.repeatcaller').on('click.repeatcaller', function () {
-			addAlertCallDestinationsFromInput();
+		$('#rc-rule-alert-call-destination-add').off('click.repeatcaller').on('click.repeatcaller', function (event) {
+			triggerAlertCallDestinationAdd(event);
 		});
 		$('#rc-rule-alert-call-destination-input').off('keydown.repeatcaller').on('keydown.repeatcaller', function (event) {
-			if (event.key === 'Enter') {
-				event.preventDefault();
-				addAlertCallDestinationsFromInput();
-			}
+			return handleAlertCallDestinationInputKeydown(event);
 		});
 		$('#rc-rule-alert-call-destination-input').off('input.repeatcaller keyup.repeatcaller change.repeatcaller paste.repeatcaller').on('input.repeatcaller keyup.repeatcaller change.repeatcaller paste.repeatcaller', function () {
 			updateAlertCallDestinationAddButtonState();
@@ -2824,6 +2891,7 @@
 	$(function () {
 		loadSystemRecordingsLookupFromBootstrap();
 		syncLiveClockFromValue('pbx', $('#rc-pbx-time').text(), true);
+		initializeRunNowAvailabilityFromBootstrap();
 		bindEvents();
 		resetRuleEditor();
 		loadInboundRoutes();

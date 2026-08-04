@@ -194,7 +194,7 @@ Schedules control when calls count for a rule.
 - Any day, 24 hours covers all times.
 - Specific day/time rows limit when matching calls are counted.
 - Calls outside schedule do not count for that rule.
-- Overnight ranges are not supported in 1.0.0 and should be split or avoided.
+- Overnight ranges are not supported in this release and should be split or avoided.
 
 ## Suppression
 
@@ -481,7 +481,7 @@ Check:
 - Rule Name present
 - valid threshold and window
 - caller includes present for Specific callers
-- route includes present for Selected inbound routes
+- route includes present for Selected DIDs only
 - valid schedule rows
 - no overnight schedule range
 
