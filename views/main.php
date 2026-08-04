@@ -38,6 +38,11 @@ $repeatModes = [
 ];
 
 $initialRunStatus = strtolower((string)($engineStatus['lock_state'] ?? '')) === 'running' ? 'Running' : 'Waiting';
+$initialMonitoringEnabled = !empty($engineStatus['enabled']);
+$initialMonitoringSnoozed = trim((string)($engineStatus['global_snoozed_until'] ?? '')) !== '';
+$initialBulkActionLabel = $initialMonitoringSnoozed
+	? _('Resume')
+	: ($initialMonitoringEnabled ? _('Disable Rules') : _('Enable Rules'));
 
 $assetVer = max(
 	@filemtime(__DIR__ . '/../assets/js/repeatcaller.js') ?: 0,
@@ -72,8 +77,7 @@ $assetVer = max(
 						<div class="rc-engine-summary-item"><strong><?php echo _('PBX Time'); ?>:</strong><span class="rc-engine-summary-value" id="rc-pbx-time"><?php echo htmlspecialchars((string)($engineStatus['pbx_time'] ?? '-'), ENT_QUOTES, 'UTF-8'); ?></span></div>
 					</div>
 					<div class="rc-actions">
-						<button type="button" class="btn btn-default" id="rc-enable"><?php echo _('Enable Rules'); ?></button>
-						<button type="button" class="btn btn-default" id="rc-disable"><?php echo _('Disable Rules'); ?></button>
+						<button type="button" class="btn btn-default" id="rc-bulk-rule-action"><?php echo htmlspecialchars((string)$initialBulkActionLabel, ENT_QUOTES, 'UTF-8'); ?></button>
 						<span role="group" aria-label="Snooze controls">
 							<button type="button" class="btn btn-primary rc-snooze" data-seconds="300"><?php echo _('Snooze 5m'); ?></button>
 							<button type="button" class="btn btn-primary rc-snooze" data-seconds="900"><?php echo _('Snooze 15m'); ?></button>
@@ -84,7 +88,6 @@ $assetVer = max(
 							<button type="button" class="btn btn-primary rc-snooze" data-seconds="43200"><?php echo _('Snooze 12h'); ?></button>
 							<button type="button" class="btn btn-primary rc-snooze" data-seconds="86400"><?php echo _('Snooze 24h'); ?></button>
 						</span>
-						<button type="button" class="btn btn-default" id="rc-resume"><?php echo _('Resume'); ?></button>
 						<button type="button" class="btn btn-primary" id="rc-run-now"><?php echo _('Run Now'); ?></button>
 					</div>
 				</div>

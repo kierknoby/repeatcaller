@@ -24,6 +24,8 @@
 		holdTimerId: null,
 		backendRunning: false
 	};
+	var runNowAvailableFromEngine = false;
+	var currentBulkEngineAction = 'enable';
 	var systemRecordingsById = {};
 	var currentRulesById = {};
 	var currentActiveIncidents = [];
@@ -143,11 +145,40 @@
 		if (!$button.length) {
 			return;
 		}
-		if (isProcessingVisible()) {
+		if (isProcessingVisible() || !runNowAvailableFromEngine) {
 			$button.prop('disabled', true).addClass('disabled');
 			return;
 		}
 		$button.prop('disabled', false).removeClass('disabled');
+	}
+
+	function updateBulkEngineActionState(enabled, isSnoozed) {
+		var $button = $('#rc-bulk-rule-action');
+		var buttonText = 'Enable Rules';
+
+		if (isSnoozed) {
+			currentBulkEngineAction = 'resume';
+			buttonText = 'Resume';
+		} else if (enabled) {
+			currentBulkEngineAction = 'disable';
+			buttonText = 'Disable Rules';
+		} else {
+			currentBulkEngineAction = 'enable';
+			buttonText = 'Enable Rules';
+		}
+
+		if ($button.length) {
+			$button
+				.text(buttonText)
+				.prop('disabled', false)
+				.removeClass('disabled')
+				.attr('aria-disabled', 'false')
+				.attr('data-action', currentBulkEngineAction);
+		}
+
+		runNowAvailableFromEngine = enabled && !isSnoozed;
+
+		updateRunNowButtonState();
 	}
 
 	function showRunStatusRunning() {
@@ -937,19 +968,15 @@
 		var selectedSnoozeSeconds = String(engine.selected_snooze_seconds || '');
 		var isSnoozed = snoozedUntil !== '';
 		var canSnooze = enabled && !isSnoozed;
-		var canResume = enabled && isSnoozed;
 		var $snoozeButtons = $('.rc-snooze');
 		var banner = enabled ? 'Monitoring enabled.' : 'Monitoring disabled.';
 		if (snoozedUntil !== '') {
 			banner += ' Snoozed until ' + snoozedUntil + '.';
 		}
 		$('#rc-engine-banner').text(banner);
-		$('#rc-enable').prop('disabled', enabled).toggleClass('disabled', enabled);
-		$('#rc-disable').prop('disabled', !enabled).toggleClass('disabled', !enabled);
 		$snoozeButtons.prop('disabled', !canSnooze).toggleClass('disabled', !canSnooze);
-		$('#rc-resume').prop('disabled', !canResume).toggleClass('disabled', !canResume);
 		$snoozeButtons.removeClass('rc-snooze-active');
-		if (canResume && selectedSnoozeSeconds !== '') {
+		if (enabled && isSnoozed && selectedSnoozeSeconds !== '') {
 			$snoozeButtons.filter(function () {
 				return String($(this).data('seconds')) === selectedSnoozeSeconds;
 			}).addClass('rc-snooze-active');
@@ -959,6 +986,7 @@
 		$('#rc-last-run').text(engine.last_successful_run || '-');
 		syncLiveClockFromValue('pbx', engine.pbx_time || '-', false);
 		updateRunStatusFromEngine(engine.lock_state || '');
+		updateBulkEngineActionState(enabled, isSnoozed);
 	}
 
 	function ruleScopeSummary(rule) {
@@ -2416,6 +2444,9 @@
 			if ($button.prop('disabled')) {
 				return;
 			}
+			if (!runNowAvailableFromEngine) {
+				return;
+			}
 			setRunStatusRunningFromRunStart();
 			beginAction();
 			withBusy($button, function (done) {
@@ -2451,27 +2482,45 @@
 			});
 		});
 
-		$('#rc-enable').off('click.repeatcaller').on('click.repeatcaller', function () {
+		$('#rc-bulk-rule-action').off('click.repeatcaller').on('click.repeatcaller', function () {
 			var $button = $(this);
+			if ($button.prop('disabled')) {
+				return;
+			}
+			var action = String(currentBulkEngineAction || 'enable');
 			var oldText = $button.text();
 			beginAction();
-			$('#rc-enable, #rc-disable').prop('disabled', true).addClass('disabled');
+			$('.rc-snooze, #rc-bulk-rule-action').prop('disabled', true).addClass('disabled');
+
+			if (action === 'resume') {
+				$button.text('Resuming...');
+				ajax('resumemonitoring', {}, function (response) {
+					showMessage(response.message || 'Monitoring resumed.', 'success');
+					renderEngine(response.engineStatus || {});
+					syncChangeToken();
+				}, function () {
+					$button.text(oldText);
+					$button.blur();
+					loadEngineStatus();
+					endAction();
+				});
+				return;
+			}
+
+			if (action === 'disable') {
+				$button.text('Disabling...');
+				saveGlobalSettings(0, function () {
+					$button.text(oldText);
+					$button.blur();
+					loadEngineStatus();
+					syncChangeToken();
+					endAction();
+				});
+				return;
+			}
+
 			$button.text('Enabling...');
 			saveGlobalSettings(1, function () {
-				$button.text(oldText);
-				$button.blur();
-				loadEngineStatus();
-				syncChangeToken();
-				endAction();
-			});
-		});
-		$('#rc-disable').off('click.repeatcaller').on('click.repeatcaller', function () {
-			var $button = $(this);
-			var oldText = $button.text();
-			beginAction();
-			$('#rc-enable, #rc-disable').prop('disabled', true).addClass('disabled');
-			$button.text('Disabling...');
-			saveGlobalSettings(0, function () {
 				$button.text(oldText);
 				$button.blur();
 				loadEngineStatus();
@@ -2557,28 +2606,10 @@
 			var $button = $(this);
 			var oldText = $button.text();
 			beginAction();
-			$('.rc-snooze, #rc-resume').prop('disabled', true).addClass('disabled');
+			$('.rc-snooze, #rc-bulk-rule-action').prop('disabled', true).addClass('disabled');
 			$button.text('Snoozing...');
 			ajax('setsnooze', {seconds: $(this).data('seconds')}, function (response) {
 				showMessage(response.message || 'Monitoring snoozed.', 'success');
-				renderEngine(response.engineStatus || {});
-				syncChangeToken();
-			}, function () {
-				$button.text(oldText);
-				$button.blur();
-				loadEngineStatus();
-				endAction();
-			});
-		});
-
-		$('#rc-resume').off('click.repeatcaller').on('click.repeatcaller', function () {
-			var $button = $(this);
-			var oldText = $button.text();
-			beginAction();
-			$('.rc-snooze, #rc-resume').prop('disabled', true).addClass('disabled');
-			$button.text('Resuming...');
-			ajax('resumemonitoring', {}, function (response) {
-				showMessage(response.message || 'Monitoring resumed.', 'success');
 				renderEngine(response.engineStatus || {});
 				syncChangeToken();
 			}, function () {
