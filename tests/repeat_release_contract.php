@@ -201,7 +201,7 @@ assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should i
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
 assert_true(strpos($readmeSource, '### 1.0.1, patch release, 5 August 2026') !== false, 'README should include the 1.0.1 release history heading');
-assert_true(strpos($readmeSource, 'Rule explanation-row state colouring now uses explicit Repeat Caller') !== false, 'README should record the 1.0.1 explanation-row colouring consistency fix');
+assert_true(strpos($readmeSource, 'Rule explanation-row styling is now consistent across enabled, disabled,') !== false && strpos($readmeSource, 'temporary Status, and editing states.') !== false, 'README should record the 1.0.1 explanation-row styling consistency fix');
 assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
 assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable All Rules and Disable All Rules') !== false, 'README release history should document global control wording updates');
 assert_true(strpos($readmeSource, '#### DID scope controls') !== false, 'README release history should include a DID scope controls subsection for 1.0.1');
@@ -209,7 +209,7 @@ assert_true(strpos($readmeSource, 'Allows individual inbound routes to be exclud
 assert_true(strpos($readmeSource, 'Keeps Selected DIDs only mode limited to explicit route inclusions.') !== false, 'README DID scope release notes should document Selected DIDs include-only behavior');
 assert_true(strpos($readmeSource, 'Clears stale opposite-mode route selections when the DID scope changes.') !== false, 'README DID scope release notes should document stale row cleanup on mode switch');
 assert_true(strpos($readmeSource, '#### Alert Call Caller ID handling') !== false, 'README release history should document the Alert Call Caller ID handling subsection');
-assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is now enabled by default for new rules') !== false, 'README release history should document the new default managed-elsewhere Caller ID handling');
+assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is enabled by default for new rules and appears') !== false && strpos($readmeSource, 'directly above Alert Call Caller ID in the rule editor.') !== false, 'README release history should document the current default managed-elsewhere Caller ID handling wording');
 assert_true(strpos($readmeSource, '## Requirements') !== false, 'README should include Requirements section');
 assert_true(strpos($readmeSource, '## Installing') !== false, 'README should include Installing section');
 assert_true(strpos($readmeSource, '## Updating Repeat Caller') !== false, 'README should include Updating Repeat Caller section');
