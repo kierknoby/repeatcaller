@@ -1192,16 +1192,17 @@ final class RepeatCallerRepository {
 				OR (
 					i.state = ?
 					AND s.last_alert_at IS NOT NULL
+					AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?)
 					AND i.last_matched_at > s.last_alert_at
 				)
 			 )
 				AND r.enabled = 1
 				AND ' . $isDeletedExpr . ' = 0
-				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
+				AND (i.state <> ? OR i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 			 ORDER BY i.first_matched_at ASC, i.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['active', 'claimed', $now]);
+		$stmt->execute(['active', 'claimed', $now, 'active', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1483,13 +1484,15 @@ final class RepeatCallerRepository {
 			 WHERE h.action_type = ?
 				AND h.delivery_status IN (?, ?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
-				AND i.state = ?
+				AND (
+					(i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?))
+					OR (i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?))
+				)
 				AND ' . $isDeletedExpr . ' = 0
-				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['email', 'pending', 'failed', 'snoozed', $now, 'active', $now]);
+		$stmt->execute(['email', 'pending', 'failed', 'snoozed', $now, 'active', $now, 'claimed', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1708,13 +1711,15 @@ final class RepeatCallerRepository {
 			 WHERE h.action_type = ?
 				AND h.delivery_status IN (?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
-				AND i.state = ?
+				AND (
+					(i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?))
+					OR (i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?))
+				)
 				AND ' . $isDeletedExpr . ' = 0
-				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['alert_call', 'pending', 'snoozed', $now, 'active', $now]);
+		$stmt->execute(['alert_call', 'pending', 'snoozed', $now, 'active', $now, 'claimed', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1741,12 +1746,14 @@ final class RepeatCallerRepository {
 				AND h.action_type = ?
 				AND h.delivery_status IN (?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
-				AND i.state = ?
+				AND (
+					(i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?))
+					OR (i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?))
+				)
 				AND ' . $isDeletedExpr . ' = 0
-				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 			 LIMIT 1'
 		);
-		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now]);
+		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now, 'claimed', $now]);
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		return is_array($row) ? $row : null;

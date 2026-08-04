@@ -285,6 +285,11 @@ needs, and troubleshooting expectations.
 
 Accepting records responsibility. First acceptance wins. Accepted incidents remain visible in history, and later matching calls may continue updating the same incident while its condition remains active.
 
+While suppression remains active for that rule and subject, accepted incidents
+do not reserve or send further reminders, emails, or Alert Calls. After the
+suppression expires, genuinely new qualifying activity can make the accepted
+incident alert-eligible again.
+
 ## Receiving Email Alerts
 
 Email notifications include practical context such as:

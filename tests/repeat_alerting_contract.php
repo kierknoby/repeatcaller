@@ -1073,6 +1073,50 @@ $callClock->now = '2026-07-13 10:06:00';
 $acceptedReminder = $callProcessor->run(settings());
 assert_same(0, $acceptedReminder['reminder_events'], 'accepted alert calls should stop further escalation');
 
+$acceptedRepeatClock = new TestClock('2026-07-13 10:00:00');
+$acceptedRepeatEmailSender = new FakeEmailSender();
+$acceptedRepeatCallSender = new FakeCallSender();
+[$acceptedRepeatDb, $acceptedRepeatProcessor] = create_alert_environment($acceptedRepeatClock, $acceptedRepeatEmailSender, $acceptedRepeatCallSender);
+$acceptedRepeatRule = insert_rule($acceptedRepeatDb, [
+	'name' => 'Accepted Repeat Rule',
+	'email_enabled' => 1,
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '400',
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => '5m',
+]);
+$acceptedRepeatIncident = insert_incident($acceptedRepeatDb, [
+	'rule_id' => $acceptedRepeatRule,
+	'subject_key' => 'accepted-repeat-subject',
+	'first_matched_at' => '2026-07-13 10:00:00',
+	'suppression_expires_at' => '2026-07-13 11:00:00',
+]);
+$acceptedRepeatProcessor->run(settings());
+$acceptedRepeatHistoryId = (int)$acceptedRepeatDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$acceptedRepeatIncident} AND action_type = 'alert_call' AND recipient = '400' LIMIT 1")->fetchColumn();
+assert_true($acceptedRepeatHistoryId > 0, 'accepted repeat scenario should create an initial alert call attempt before DTMF acceptance');
+(new RepeatCallerRepository($acceptedRepeatDb))->recordAlertCallDtmfResponse($acceptedRepeatHistoryId, $acceptedRepeatIncident, 'accepted', '400', '1', '2026-07-13 10:01:00');
+$acceptedRepeatDb->prepare('UPDATE repeatcaller_incidents SET last_matched_at = ?, matched_call_count = ? WHERE id = ?')->execute(['2026-07-13 10:03:00', 3, $acceptedRepeatIncident]);
+$acceptedRepeatClock->now = '2026-07-13 10:05:00';
+$acceptedRepeatProcessor->run(settings());
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND action_type = 'gui'"), 'DTMF-accepted incidents should not reserve GUI reminders while suppression remains active');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND action_type = 'email'"), 'DTMF-accepted incidents should not reserve email reminders while suppression remains active');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND action_type = 'alert_call'"), 'DTMF-accepted incidents should not reserve alert_call reminders while suppression remains active');
+$acceptedRepeatStateSuppressed = $acceptedRepeatDb->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedRepeatIncident}")->fetch(PDO::FETCH_ASSOC);
+assert_same('2026-07-13 10:00:00', (string)$acceptedRepeatStateSuppressed['last_alert_at'], 'DTMF-accepted incidents should keep the original last-alert checkpoint while suppression remains active');
+assert_same(0, (int)$acceptedRepeatStateSuppressed['reminders_sent'], 'DTMF-accepted incidents should not advance reminder count while suppression remains active');
+$acceptedRepeatDb->prepare('UPDATE repeatcaller_incidents SET last_matched_at = ?, matched_call_count = ?, suppression_expires_at = ? WHERE id = ?')->execute(['2026-07-13 11:05:00', 4, '2026-07-13 11:00:00', $acceptedRepeatIncident]);
+$acceptedRepeatClock->now = '2026-07-13 11:05:00';
+$acceptedRepeatProcessor->run(settings());
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'gui'"), 'DTMF-accepted incidents should reserve one fresh GUI reminder after suppression expiry and new activity');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'email'"), 'DTMF-accepted incidents should reserve one fresh email reminder after suppression expiry and new activity');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'alert_call'"), 'DTMF-accepted incidents should reserve one fresh alert_call reminder after suppression expiry and new activity');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 2"), 'DTMF-accepted incidents should restart reminder stages at the first fresh post-suppression stage');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND action_type = 'email' AND event_type = 'reminder' AND delivery_status = 'sent'"), 'DTMF-accepted incidents should deliver email once the fresh post-suppression reminder is reserved');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND action_type = 'alert_call' AND event_type = 'reminder' AND delivery_status = 'sent'"), 'DTMF-accepted incidents should deliver alert calls once the fresh post-suppression reminder is reserved');
+$acceptedRepeatStateExpired = $acceptedRepeatDb->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedRepeatIncident}")->fetch(PDO::FETCH_ASSOC);
+assert_same('2026-07-13 11:05:00', (string)$acceptedRepeatStateExpired['last_alert_at'], 'DTMF-accepted incidents should advance the reminder checkpoint once suppression has expired and a fresh reminder is reserved');
+assert_same(1, (int)$acceptedRepeatStateExpired['reminders_sent'], 'DTMF-accepted incidents should advance the reminder count once suppression has expired and a fresh reminder is reserved');
+
 $declineClock = new TestClock('2026-07-13 11:00:00');
 $declineSender = new FakeCallSender();
 [$declineDb, $declineProcessor] = create_alert_environment($declineClock, new FakeEmailSender(), $declineSender);
@@ -1469,10 +1513,11 @@ $processorG->run(settings());
 assert_same(0, count_history($dbG, "incident_id = {$incidentGlobal} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'default never mode should not trigger reminders for unset overrides');
 
 // 14, 15, 16: claimed/suppressed incident eligibility
-$clockCS = new TestClock('2026-07-13 10:00:00');
+$clockCS = new TestClock('2026-07-13 10:05:00');
 $senderCS = new FakeEmailSender();
-[$dbCS, $processorCS] = create_alert_environment($clockCS, $senderCS);
-$ruleCS = insert_rule($dbCS, ['email_enabled' => 0, 'alert_call_enabled' => 0, 'repeat_mode_override' => '5m']);
+$callSenderCS = new FakeCallSender();
+[$dbCS, $processorCS] = create_alert_environment($clockCS, $senderCS, $callSenderCS);
+$ruleCS = insert_rule($dbCS, ['email_enabled' => 1, 'alert_call_enabled' => 1, 'alert_call_destinations' => '301', 'alert_call_recording_id' => 55, 'repeat_mode_override' => '5m']);
 $claimedNoNewIncident = insert_incident($dbCS, [
 	'rule_id' => $ruleCS,
 	'subject_key' => 'claimed-no-new-subject',
@@ -1533,15 +1578,23 @@ $suppressedIncident = insert_incident($dbCS, [
 ]);
 $processorCS->run(settings());
 assert_same(0, count_history($dbCS, "incident_id = {$claimedNoNewIncident}"), 'claimed incidents with no new qualifying activity should not generate further alerts');
-assert_same(1, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'claimed incidents with new qualifying activity should generate a new alert event');
+assert_same(0, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'gui' AND event_type = 'reminder'"), 'claimed incidents with new qualifying activity should not reserve GUI reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'email' AND event_type = 'reminder'"), 'claimed incidents with new qualifying activity should not reserve email reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'alert_call' AND event_type = 'reminder'"), 'claimed incidents with new qualifying activity should not reserve alert_call reminders while suppression remains active');
+assert_same(0, count($senderCS->calls), 'claimed incidents with new qualifying activity should not send email while suppression remains active');
+assert_same(0, count($callSenderCS->calls), 'claimed incidents with new qualifying activity should not send alert calls while suppression remains active');
+
+$claimedWithNewState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedWithNewIncident}")->fetch(PDO::FETCH_ASSOC);
+assert_same('2026-07-13 10:01:00', (string)$claimedWithNewState['last_alert_at'], 'claimed incidents with new qualifying activity should not advance the last-alert checkpoint while suppression remains active');
+assert_same(0, (int)$claimedWithNewState['reminders_sent'], 'claimed incidents with new qualifying activity should not advance the reminder counter while suppression remains active');
 assert_same(0, count_history($dbCS, "incident_id = {$suppressedIncident}"), 'suppressed incidents should not generate further alerts');
 
-$claimedReservationConflict = insert_incident($dbCS, [
+$claimedAfterExpiry = insert_incident($dbCS, [
 	'rule_id' => $ruleCS,
-	'subject_key' => 'claimed-reservation-conflict',
+	'subject_key' => 'claimed-after-expiry',
 	'first_matched_at' => '2026-07-13 10:00:00',
-	'last_matched_at' => '2026-07-13 10:03:00',
-	'matched_call_count' => 3,
+	'last_matched_at' => '2026-07-13 11:05:00',
+	'matched_call_count' => 4,
 	'state' => 'claimed',
 	'suppression_expires_at' => '2026-07-13 11:00:00',
 ]);
@@ -1551,7 +1604,7 @@ $dbCS->prepare(
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
-	$claimedReservationConflict,
+	$claimedAfterExpiry,
 	$ruleCS,
 	'5m',
 	'2026-07-13 10:00:00',
@@ -1561,46 +1614,15 @@ $dbCS->prepare(
 	'2026-07-13 10:00:00',
 	'2026-07-13 10:01:00',
 ]);
-$dbCS->prepare(
-	'INSERT INTO repeatcaller_incident_alert_history
-		(incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient,
-		 delivery_status, attempted_at, successful_at, next_retry_at, failure_detail, repeat_mode, dedupe_key, created_at, updated_at)
-	 VALUES
-		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-)->execute([
-	$claimedReservationConflict,
-	$ruleCS,
-	'claimed-reservation-conflict',
-	'claimed-reservation-conflict',
-	'gui',
-	'reminder',
-	1,
-	null,
-	'recorded',
-	'2026-07-13 10:02:00',
-	'2026-07-13 10:02:00',
-	null,
-	null,
-	'5m',
-	'incident:' . $claimedReservationConflict . '|event:reminder|stage:1|action:gui|recipient:-',
-	'2026-07-13 10:02:00',
-	'2026-07-13 10:02:00',
-]);
-
-$clockCS->now = '2026-07-13 10:04:00';
+$clockCS->now = '2026-07-13 11:05:00';
 $processorCS->run(settings());
-$claimedReservationState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedReservationConflict}")->fetch(PDO::FETCH_ASSOC);
-assert_same('2026-07-13 10:01:00', (string)$claimedReservationState['last_alert_at'], 'claimed reminder checkpoint should not advance when stage reservation is a no-op');
-assert_same(0, (int)$claimedReservationState['reminders_sent'], 'claimed reminder counter should not advance when stage reservation is a no-op');
-assert_same(1, count_history($dbCS, "incident_id = {$claimedReservationConflict} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'failed claimed reminder reservation should not create a duplicate history row');
-
-$dbCS->exec("DELETE FROM repeatcaller_incident_alert_history WHERE incident_id = {$claimedReservationConflict} AND dedupe_key = 'incident:{$claimedReservationConflict}|event:reminder|stage:1|action:gui|recipient:-'");
-$clockCS->now = '2026-07-13 10:05:00';
-$processorCS->run(settings());
-$claimedReservationRecoveredState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedReservationConflict}")->fetch(PDO::FETCH_ASSOC);
-assert_same('2026-07-13 10:05:00', (string)$claimedReservationRecoveredState['last_alert_at'], 'claimed reminder checkpoint should advance once the stage can reserve a new history row');
-assert_same(1, (int)$claimedReservationRecoveredState['reminders_sent'], 'claimed reminder counter should advance once the stage reserves a new history row');
-assert_same(1, count_history($dbCS, "incident_id = {$claimedReservationConflict} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'claimed reminder activity should remain eligible until the new stage is actually reserved');
+$claimedAfterExpiryState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedAfterExpiry}")->fetch(PDO::FETCH_ASSOC);
+assert_same('2026-07-13 11:05:00', (string)$claimedAfterExpiryState['last_alert_at'], 'claimed incidents should advance the checkpoint once suppression has expired and fresh activity becomes alert-eligible');
+assert_same(1, (int)$claimedAfterExpiryState['reminders_sent'], 'claimed incidents should advance the reminder counter once suppression has expired and fresh activity becomes alert-eligible');
+assert_same(1, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'claimed incidents should reserve one fresh GUI reminder after suppression expires');
+assert_same(1, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND action_type = 'email' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'claimed incidents should deliver one fresh email reminder after suppression expires');
+assert_same(1, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'claimed incidents should deliver one fresh alert_call reminder after suppression expires');
+assert_same(0, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND event_type = 'reminder' AND stage_n = 2"), 'claimed incidents should not resume older reminder stages once suppression expires');
 
 // 16 and 17: global snooze handling
 $clockS = new TestClock('2026-07-13 11:00:00');

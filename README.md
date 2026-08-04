@@ -40,6 +40,14 @@ Use with FreePBX/PBXact 16 or 17.
   state classes on rule-table cells so enabled, disabled, temporary Status,
   and editing presentations are consistent across FreePBX and PBXact.
 
+#### Accepted incident suppression
+
+- Prevents accepted incidents from reserving or sending further alerts while
+  rule-and-subject suppression remains active.
+- Preserves normal Repeat Alerts for active unaccepted incidents.
+- Allows genuinely new qualifying activity after suppression expiry to trigger
+  a fresh alert stage.
+
 #### Snooze controls
 
 - Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.
@@ -350,6 +358,9 @@ qualifying attempts.
 Suppressed Incidents view shows audit rows including matching count, threshold
 window context, suppression expiry, and related incident.
 
+The Suppressed Incidents view shows prevented qualifying incident attempts, not
+every subject that is currently under suppression.
+
 Clear Suppression is available per suppression row. Clearing suppression allows
 immediate retrigger on the next qualifying condition and preserves the audit
 row by setting its cleared timestamp.
@@ -478,10 +489,11 @@ configuration choice that a PBX administrator may intentionally apply.
 ### Incident Acceptance Behaviour
 
 Accepting an incident stops ordinary future reminder stages for the current
-incident state. If a new qualifying call occurs after acceptance, the incident
-can enter the existing re-alert path where that behavior is configured. That is
-intentional: a new qualifying caller event represents new activity, not a
-continuation of the already-accepted alert stage.
+incident state while rule-and-subject suppression remains active. Later
+matching calls can still update the accepted incident internally during that
+suppression window, but no reminder stages or notifications are reserved or
+sent until suppression expires. After expiry, genuinely new qualifying
+activity can make the accepted incident alert-eligible again.
 
 ### Compatibility and Development Notes
 
