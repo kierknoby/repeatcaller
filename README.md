@@ -322,9 +322,9 @@ configured Default Country Code.
 
 When an Alert Call destination is added in the rule editor, Repeat Caller
 automatically adds the same value to Ignore these callers and shows a one-time
-warning. This reduces the risk of Repeat Caller triggering itself if an alert
-call routes back through a monitored DID. Administrators can remove the Ignore
-entry if required.
+warning. Alert Call destinations are automatically added to Ignore these
+callers to reduce the risk of self-triggering if an alert call routes back
+through a monitored DID.
 
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example

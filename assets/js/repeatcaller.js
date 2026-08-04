@@ -45,7 +45,7 @@
 	];
 	var ruleStatusTimers = {};
 	var didRouteActionMode = '';
-	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of Repeat Caller triggering itself if an alert call routes back through a monitored DID. You may remove the ignore entry if required.';
+	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 	var editingRuleId = 0;
 
 	// Country caller number formats for help text examples
