@@ -1,6 +1,6 @@
-# Repeat Caller 1.0.0 for FreePBX 16 and 17
+# Repeat Caller 1.0.1 for FreePBX 16 and 17
 
-**Release date:** 22 July 2026
+**Release date:** 4 August 2026
 
 ## Introduction
 
@@ -31,6 +31,14 @@ Use with FreePBX/PBXact 16 or 17.
 - FreePBX/PBXact 16 and 17
 - PHP 7.4+
 - MariaDB 5.5-compatible schema (utf8/InnoDB key-size compatible)
+
+## Release History
+
+### 1.0.1, patch release, 4 August 2026
+
+- UI fix: Rule explanation-row state colouring now uses explicit Repeat Caller
+  state classes on rule-table cells so enabled, disabled, temporary Status,
+  and editing presentations are consistent across FreePBX and PBXact.
 
 ## Requirements
 

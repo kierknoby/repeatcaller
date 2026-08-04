@@ -880,7 +880,7 @@
 		}
 		var $ruleRow = $('#rc-rules-table tbody tr[data-rule-id="' + numericRuleId + '"]');
 		var $explainerRow = $ruleRow.next('.rc-rule-explainer-row');
-		$explainerRow.toggleClass('rc-rule-status-active', !!enabled);
+		$explainerRow.toggleClass('rc-rule-explainer-status-active', !!enabled);
 	}
 
 	function showRuleStatus(ruleId, $button) {
@@ -1211,7 +1211,7 @@
 				+ '<button type="button" class="btn btn-xs btn-default rc-edit-rule">Edit</button> '
 				+ '<button type="button" class="btn btn-xs btn-danger rc-delete-rule" aria-label="Delete" title="Delete">X</button></td>'
 				+ '</tr>');
-			rows.push('<tr class="rc-rule-explainer-row' + (parseInt(rule.enabled || 0, 10) ? '' : ' rc-rule-disabled') + '">'
+			rows.push('<tr class="rc-rule-explainer-row ' + (parseInt(rule.enabled || 0, 10) ? 'rc-rule-explainer-enabled' : 'rc-rule-explainer-disabled') + '">' 
 				+ '<td colspan="' + columnCount + '"><span class="rc-rule-explainer-text">' + esc(ruleExplanationSentence(rule)) + '</span></td>'
 				+ '</tr>');
 		});
@@ -1228,11 +1228,11 @@
 
 	function setEditingRuleRow(ruleId) {
 		var editingRuleId = parseInt(ruleId || 0, 10);
-		$('#rc-rules-table tbody tr').removeClass('rc-rule-editing');
+		$('#rc-rules-table tbody tr').removeClass('rc-rule-editing rc-rule-explainer-editing');
 		if (!editingRuleId || editingRuleId < 1) {
 			return;
 		}
-		$('#rc-rules-table tbody tr[data-rule-id="' + editingRuleId + '"]').addClass('rc-rule-editing').next('.rc-rule-explainer-row').addClass('rc-rule-editing');
+		$('#rc-rules-table tbody tr[data-rule-id="' + editingRuleId + '"]').addClass('rc-rule-editing').next('.rc-rule-explainer-row').addClass('rc-rule-explainer-editing');
 	}
 
 	function renderIncidents(selector, incidents, active) {

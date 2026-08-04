@@ -13,7 +13,7 @@ namespace FreePBX\modules;
 class Repeatcaller implements \BMO {
 
 	/** Fallback only. Authoritative version lives in module.xml. */
-	const VERSION = '1.0.0';
+	const VERSION = '1.0.1';
 	const CSRF_SESSION_KEY = 'repeatcaller_csrf_token';
 	const REPEAT_MODE_NEVER = 'never';
 	const REPEAT_MODE_FIVE_MINUTES = '5m';

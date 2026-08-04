@@ -70,8 +70,8 @@ $root = dirname(__DIR__);
 
 $moduleXml = simplexml_load_file($root . '/module.xml');
 assert_true($moduleXml !== false, 'module.xml should parse');
-assert_same('1.0.0', (string)$moduleXml->version, 'module.xml version must be 1.0.0 for this release');
-assert_same('1.0.0', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.0');
+assert_same('1.0.1', (string)$moduleXml->version, 'module.xml version must be 1.0.1 for this release');
+assert_same('1.0.1', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.1');
 
 // --- 1-3: AJAX allowlist, dispatcher, and frontend command parity --------
 
@@ -188,8 +188,8 @@ assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-list"') !== 
 
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
-assert_true(strpos($readmeSource, '# Repeat Caller 1.0.0 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.0');
-assert_true(strpos($readmeSource, '**Release date:** 22 July 2026') !== false, 'README should declare the 1.0.0 release date');
+assert_true(strpos($readmeSource, '# Repeat Caller 1.0.1 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.1');
+assert_true(strpos($readmeSource, '**Release date:** 4 August 2026') !== false, 'README should declare the 1.0.1 release date');
 assert_true(strpos($readmeSource, 'Repeat Caller supports two distinct operating modes') !== false, 'README should describe the module in user-facing language');
 assert_true(strpos($readmeSource, 'fwconsole ma installlocal repeatcaller') !== false, 'README must keep installlocal warning text');
 assert_true(strpos($readmeSource, 'git reset --hard FETCH_HEAD') !== false, 'README must keep deterministic update sequence');
@@ -198,6 +198,9 @@ assert_true(strpos($readmeSource, 'USER_GUIDE.md') !== false, 'README should lin
 assert_true(strpos($readmeSource, 'TESTING.md') !== false, 'README should link to TESTING.md');
 assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should include Introduction section');
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
+assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
+assert_true(strpos($readmeSource, '### 1.0.1, patch release, 4 August 2026') !== false, 'README should include the 1.0.1 release history heading');
+assert_true(strpos($readmeSource, 'Rule explanation-row state colouring now uses explicit Repeat Caller') !== false, 'README should record the 1.0.1 explanation-row colouring consistency fix');
 assert_true(strpos($readmeSource, '## Requirements') !== false, 'README should include Requirements section');
 assert_true(strpos($readmeSource, '## Installing') !== false, 'README should include Installing section');
 assert_true(strpos($readmeSource, '## Updating Repeat Caller') !== false, 'README should include Updating Repeat Caller section');
@@ -239,8 +242,6 @@ assert_true(strpos($readmeSource, "cd /var/www/html/admin/modules/repeatcaller\n
 assert_true(strpos($readmeSource, "git clone https://github.com/kierknoby/repeatcaller.git repeatcaller\ncd repeatcaller\nfwconsole ma install repeatcaller") !== false, 'README should show the GitHub install command sequence');
 assert_true(strpos($readmeSource, 'Option 3: Install from a local copy') !== false, 'README should document local-copy installation path');
 assert_true(strpos($readmeSource, 'Option 3: Update from a local copy') !== false, 'README should document local-copy update path');
-assert_true(strpos($readmeSource, 'release history') === false, 'README must not reference release history documentation');
-assert_true(strpos($readmeSource, 'Release History') === false, 'README must not include a release history section');
 assert_true(strpos($readmeSource, 'Release Status') === false, 'README must not include release status section');
 
 $userGuideSource = file_get_contents($root . '/USER_GUIDE.md');
