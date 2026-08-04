@@ -407,7 +407,11 @@ final class RepeatCallerRepository {
 
 		$this->replaceRuleSchedules($ruleId, self::normalizeSchedules($payload['schedules'] ?? []), $now);
 		$this->replaceRuleCallers($ruleId, $payload['callers'] ?? [], $now);
-		$this->replaceRuleDids($ruleId, $payload['dids'] ?? [], $now);
+		$this->replaceRuleDids(
+			$ruleId,
+			$this->didsForScopeMode($payload['dids'] ?? [], (string)($payload['did_scope_mode'] ?? 'all')),
+			$now
+		);
 
 		return $ruleId;
 	}
@@ -2163,6 +2167,23 @@ final class RepeatCallerRepository {
 				$now,
 			]);
 		}
+	}
+
+	private function didsForScopeMode(array $dids, string $didScopeMode): array {
+		$mode = strtolower(trim($didScopeMode)) === 'selected' ? 'selected' : 'all';
+		$allowedListType = $mode === 'selected' ? 'include' : 'exclude';
+		$filtered = [];
+		foreach ($dids as $did) {
+			if (!is_array($did)) {
+				continue;
+			}
+			if ((string)($did['list_type'] ?? '') !== $allowedListType) {
+				continue;
+			}
+			$filtered[] = $did;
+		}
+
+		return $filtered;
 	}
 
 	private function placeholders(array $values): string {

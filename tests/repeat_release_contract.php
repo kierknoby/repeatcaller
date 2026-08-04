@@ -185,6 +185,7 @@ assert_true($viewSource !== false, 'views/main.php should be readable');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-strategy"') !== false, 'rule editor must expose alert_call_strategy selector');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-keep-trying"') === false, 'rule editor should not expose deprecated global alert_call_keep_trying toggle');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-list"') !== false, 'rule editor must expose ordered destination list UI');
+assert_true(strpos($viewSource, 'Selected DIDs only') !== false, 'rule editor DID scope selector should use Selected DIDs only wording');
 
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
@@ -203,6 +204,10 @@ assert_true(strpos($readmeSource, '### 1.0.1, patch release, 4 August 2026') !==
 assert_true(strpos($readmeSource, 'Rule explanation-row state colouring now uses explicit Repeat Caller') !== false, 'README should record the 1.0.1 explanation-row colouring consistency fix');
 assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
 assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable Rules and Disable Rules') !== false, 'README release history should document global control wording updates');
+assert_true(strpos($readmeSource, '#### DID scope controls') !== false, 'README release history should include a DID scope controls subsection for 1.0.1');
+assert_true(strpos($readmeSource, 'Allows individual inbound routes to be excluded when All DIDs is selected.') !== false, 'README DID scope release notes should document exclusions in All DIDs mode');
+assert_true(strpos($readmeSource, 'Keeps Selected DIDs only mode limited to explicit route inclusions.') !== false, 'README DID scope release notes should document Selected DIDs include-only behavior');
+assert_true(strpos($readmeSource, 'Clears stale opposite-mode route selections when the DID scope changes.') !== false, 'README DID scope release notes should document stale row cleanup on mode switch');
 assert_true(strpos($readmeSource, '## Requirements') !== false, 'README should include Requirements section');
 assert_true(strpos($readmeSource, '## Installing') !== false, 'README should include Installing section');
 assert_true(strpos($readmeSource, '## Updating Repeat Caller') !== false, 'README should include Updating Repeat Caller section');
@@ -261,6 +266,8 @@ assert_true(strpos($userGuideSource, 'Rule-level Suppression override replaces t
 assert_true(strpos($userGuideSource, 'Clear Alert History is an immediate manual action. Prune Alert History is the') !== false, 'USER_GUIDE.md should distinguish clear alert history from automatic pruning');
 assert_true(strpos($userGuideSource, 'Clear Suppression affects current suppression state for that rule/subject.') !== false, 'USER_GUIDE.md should distinguish clear suppression from suppression-history pruning');
 assert_true((bool) preg_match('/Repeat Caller automatically removes old internal detection records during\s+pruning to prevent unnecessary database growth\./', $userGuideSource), 'USER_GUIDE.md should document automatic internal detection-record cleanup during pruning');
+assert_true(strpos($userGuideSource, 'All DIDs with optional Excluded Routes') !== false, 'USER_GUIDE.md should document All DIDs as an exclusions-only route model');
+assert_true(strpos($userGuideSource, 'Selected DIDs only via Included Routes') !== false, 'USER_GUIDE.md should document Selected DIDs as an inclusions-only route model');
 assert_true(strpos($userGuideSource, 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing unaccepted notification wording');
 assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md should link back to README.md');
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');

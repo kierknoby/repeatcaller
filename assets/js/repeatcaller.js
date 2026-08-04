@@ -42,6 +42,7 @@
 		'#rc-schedule-table'
 	];
 	var ruleStatusTimers = {};
+	var didRouteActionMode = '';
 
 	// Country caller number formats for help text examples
 	// Country caller formats - country code maps to country name and preferred local format example
@@ -1052,6 +1053,13 @@
 
 	function didScopeDescription(rule) {
 		var didMode = normalizeCode(rule.did_scope_mode || 'all');
+		var excludedRouteValues = [];
+		$.each((rule.did_lists && rule.did_lists.exclude) || [], function (_, row) {
+			var excludedRouteLabel = $.trim(String(row.route_label || row.did_value || row.route_key || ''));
+			if (excludedRouteLabel !== '') {
+				excludedRouteValues.push(excludedRouteLabel);
+			}
+		});
 		if (didMode === 'selected') {
 			var routeValues = [];
 			$.each((rule.did_lists && rule.did_lists.include) || [], function (_, row) {
@@ -1070,6 +1078,9 @@
 				}
 			});
 			return routeValues.length > 0 ? listWithOr(routeValues) : 'any inbound route';
+		}
+		if (excludedRouteValues.length > 0) {
+			return 'any inbound route except ' + listWithOr(excludedRouteValues);
 		}
 		return 'any inbound route';
 	}
@@ -1697,11 +1708,60 @@
 		}
 	}
 
+	function clearOppositeDidScopeRows(nextMode) {
+		if (nextMode === 'selected') {
+			$('#rc-did-exclude-list').empty();
+			return;
+		}
+		if (nextMode === 'all') {
+			$('#rc-did-include-list').empty();
+		}
+	}
+
+	function clearDidRouteActionState() {
+		didRouteActionMode = '';
+		$('#rc-add-did-include, #rc-add-did-exclude').removeClass('rc-route-action-active');
+		$('#rc-route-pick').prop('disabled', true).addClass('rc-control-disabled').attr('aria-disabled', 'true');
+	}
+
+	function activateDidRouteAction(actionMode) {
+		if (actionMode !== 'include' && actionMode !== 'exclude') {
+			return;
+		}
+		if (actionMode === 'include' && $('#rc-add-did-include').prop('disabled')) {
+			return;
+		}
+		if (actionMode === 'exclude' && $('#rc-add-did-exclude').prop('disabled')) {
+			return;
+		}
+		didRouteActionMode = actionMode;
+		$('#rc-add-did-include, #rc-add-did-exclude').removeClass('rc-route-action-active');
+		if (actionMode === 'include') {
+			$('#rc-add-did-include').addClass('rc-route-action-active');
+		} else {
+			$('#rc-add-did-exclude').addClass('rc-route-action-active');
+		}
+		$('#rc-route-pick').prop('disabled', false).removeClass('rc-control-disabled').attr('aria-disabled', 'false');
+	}
+
 	function updateDidScopeEditorState() {
-		var useSelectedRoutes = $('#rc-rule-did-mode').val() === 'selected';
-		$('#rc-route-pick').prop('disabled', !useSelectedRoutes).toggleClass('rc-control-disabled', !useSelectedRoutes);
-		$('#rc-add-did-include, #rc-add-did-exclude').prop('disabled', !useSelectedRoutes).toggleClass('disabled', !useSelectedRoutes);
-		$('#rc-did-include-list, #rc-did-exclude-list').toggleClass('rc-control-disabled', !useSelectedRoutes).attr('aria-disabled', useSelectedRoutes ? 'false' : 'true');
+		var didMode = $('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all';
+		var selectedMode = didMode === 'selected';
+		clearDidRouteActionState();
+
+		$('#rc-add-did-include')
+			.prop('disabled', !selectedMode)
+			.toggleClass('disabled', !selectedMode)
+			.show();
+		$('#rc-add-did-exclude')
+			.prop('disabled', selectedMode)
+			.toggleClass('disabled', selectedMode)
+			.show();
+
+		$('#rc-did-include-col').toggle(selectedMode);
+		$('#rc-did-exclude-col').toggle(!selectedMode);
+		$('#rc-did-include-list').toggleClass('rc-control-disabled', !selectedMode).attr('aria-disabled', selectedMode ? 'false' : 'true');
+		$('#rc-did-exclude-list').toggleClass('rc-control-disabled', selectedMode).attr('aria-disabled', selectedMode ? 'true' : 'false');
 	}
 
 	function updateCallerScopeEditorState() {
@@ -2006,7 +2066,15 @@
 		var callers = [];
 		$.each(callerIncludes, function (_, value) { callers.push({list_type: 'include', raw_value: value}); });
 		$.each(callerExcludes, function (_, value) { callers.push({list_type: 'exclude', raw_value: value}); });
-		var dids = collectRouteList($('#rc-did-include-list')).concat(collectRouteList($('#rc-did-exclude-list')));
+		var didScopeMode = $('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all';
+		var didIncludes = collectRouteList($('#rc-did-include-list'));
+		var didExcludes = collectRouteList($('#rc-did-exclude-list'));
+		var dids = didScopeMode === 'selected' ? didIncludes : didExcludes;
+		if (didScopeMode === 'selected' && didIncludes.length < 1) {
+			showMessage('Selected DID scope requires at least one included inbound route.', 'error');
+			if (onDone) { onDone(); }
+			return;
+		}
 		updateAlertCallDestinationHiddenField();
 		var callDestinations = normaliseAlertCallDestinationEntries($('#rc-rule-alert-call-destinations').val(), true);
 		if (callEnabled && !callDestinations.length) {
@@ -2027,7 +2095,7 @@
 			email_recipients: emailRecipients.join(', '),
 			caller_mode: $('#rc-rule-caller-mode').val(),
 			exclude_withheld: $('#rc-rule-exclude-withheld').is(':checked') ? 1 : 0,
-			did_scope_mode: $('#rc-rule-did-mode').val(),
+			did_scope_mode: didScopeMode,
 			email_enabled: $('#rc-rule-email-enabled').is(':checked') ? 1 : 0,
 			alert_call_enabled: $('#rc-rule-alert-call-enabled').is(':checked') ? 1 : 0,
 			alert_call_strategy: $('#rc-rule-alert-call-strategy').val(),
@@ -2424,7 +2492,10 @@
 		$('#rc-cancel-edit').off('click.repeatcaller').on('click.repeatcaller', function () { resetRuleEditor(); });
 		$('#rc-add-schedule').off('click.repeatcaller').on('click.repeatcaller', function () { addScheduleRow(); });
 		$('#rc-rule-caller-mode').off('change.repeatcaller').on('change.repeatcaller', function () { updateCallerScopeEditorState(); });
-		$('#rc-rule-did-mode').off('change.repeatcaller').on('change.repeatcaller', function () { updateDidScopeEditorState(); });
+		$('#rc-rule-did-mode').off('change.repeatcaller').on('change.repeatcaller', function () {
+			clearOppositeDidScopeRows($('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all');
+			updateDidScopeEditorState();
+		});
 		$('#rc-rule-alert-call-enabled').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
 		$('#rc-rule-email-enabled').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
 		$('#rc-save-rule').off('click.repeatcaller').on('click.repeatcaller', function () {
@@ -2441,12 +2512,20 @@
 		});
 
 		$('#rc-add-did-include').off('click.repeatcaller').on('click.repeatcaller', function () {
-			var route = findRoute($('#rc-route-pick').val());
-			addRouteToList($('#rc-did-include-list'), route, 'include');
+			activateDidRouteAction('include');
 		});
 		$('#rc-add-did-exclude').off('click.repeatcaller').on('click.repeatcaller', function () {
+			activateDidRouteAction('exclude');
+		});
+		$('#rc-route-pick').off('change.repeatcaller').on('change.repeatcaller', function () {
 			var route = findRoute($('#rc-route-pick').val());
-			addRouteToList($('#rc-did-exclude-list'), route, 'exclude');
+			if (didRouteActionMode === 'include') {
+				addRouteToList($('#rc-did-include-list'), route, 'include');
+				return;
+			}
+			if (didRouteActionMode === 'exclude') {
+				addRouteToList($('#rc-did-exclude-list'), route, 'exclude');
+			}
 		});
 
 		$(document).off('click.repeatcaller', '.rc-edit-rule').on('click.repeatcaller', '.rc-edit-rule', function () {

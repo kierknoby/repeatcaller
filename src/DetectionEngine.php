@@ -193,12 +193,12 @@ final class DetectionEngine {
 		}
 
 		$route = (string)$journey['route_key'];
-		if (($rule['did_scope_mode'] ?? 'all') === 'selected') {
+		$didScopeMode = ($rule['did_scope_mode'] ?? 'all') === 'selected' ? 'selected' : 'all';
+		if ($didScopeMode === 'selected') {
 			if (!in_array($route, $rule['include_routes'] ?? [], true)) {
 				return null;
 			}
-		}
-		if (in_array($route, $rule['exclude_routes'] ?? [], true)) {
+		} elseif (in_array($route, $rule['exclude_routes'] ?? [], true)) {
 			return null;
 		}
 

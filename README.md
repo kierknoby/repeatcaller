@@ -40,6 +40,12 @@ Use with FreePBX/PBXact 16 or 17.
   state classes on rule-table cells so enabled, disabled, temporary Status,
   and editing presentations are consistent across FreePBX and PBXact.
 
+#### DID scope controls
+
+- Allows individual inbound routes to be excluded when All DIDs is selected.
+- Keeps Selected DIDs only mode limited to explicit route inclusions.
+- Clears stale opposite-mode route selections when the DID scope changes.
+
 #### Accepted incident suppression
 
 - Prevents accepted incidents from reserving or sending further alerts while
@@ -228,7 +234,8 @@ Canonical Repeat Caller tables:
   toggles.
 - `repeatcaller_rule_schedules`: per-rule day/time windows.
 - `repeatcaller_rule_callers`: per-rule caller include/exclude lists.
-- `repeatcaller_rule_dids`: per-rule inbound route include/exclude lists.
+- `repeatcaller_rule_dids`: per-rule inbound route scope rows stored by mode
+  (All DIDs uses exclusions, Selected DIDs only uses inclusions).
 - `repeatcaller_seen_calls`: deduplicated inbound call journeys already
   processed.
 - `repeatcaller_rule_subject_state`: per-rule/subject evaluation state,
@@ -254,7 +261,8 @@ them against enabled rules.
 Matching can include:
 
 - caller scope (any, withheld-only, specific caller lists)
-- inbound route scope (all routes or selected include/exclude route lists)
+- inbound route scope (all routes with optional exclusions, or selected-route
+  inclusions only)
 - schedule windows (day/time segments)
 
 Subject identity is tracked per rule and matched caller/route context so the
@@ -422,7 +430,9 @@ Reports > Repeat Caller includes these main sections:
   24hrs (1440 minutes) period; 0 disables automatic suppression for that rule.
   The actions checklist order is GUI, Alert Call, then Email, and the email
   recipient field appears directly above Save Rule. The editor title switches
-  to Editing Rule when modifying an existing rule.
+  to Editing Rule when modifying an existing rule. DID scope uses a simple
+  model: All DIDs supports optional exclusions, and Selected DIDs only uses
+  explicit inclusions.
 - Rule controls: each rule row includes Status, Edit, and X (delete).
 - Rule explanation rows: plain-language explanation beneath each rule row, with
   disabled and edit highlighting. Selecting Status temporarily replaces the

@@ -265,6 +265,67 @@ try {
 	assert_same('18005550001|', $dids[$ruleId]['include'][0]['route_key'], 'selected DIDs should round-trip correctly');
 	assert_same('18005550002|', $dids[$ruleId]['exclude'][0]['route_key'], 'DID exclusions should round-trip correctly');
 
+	$didScopeSwitchRuleId = $repo->saveRule([
+		'name' => 'DID Scope Switch Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'alert_call_callerid' => '',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [
+			['list_type' => 'include', 'route_key' => '18005550001|', 'route_label' => 'Main DID', 'did_value' => '18005550001', 'cid_value' => ''],
+			['list_type' => 'exclude', 'route_key' => '18005550002|', 'route_label' => 'Excluded DID', 'did_value' => '18005550002', 'cid_value' => ''],
+		],
+	], '2026-07-13 09:06:00');
+	$didScopeAllReload = $repo->loadRule($didScopeSwitchRuleId);
+	assert_same('all', (string)$didScopeAllReload['did_scope_mode'], 'all-DID mode should persist during save');
+	assert_same(0, count($didScopeAllReload['did_lists']['include']), 'all-DID mode should clear stored include rows');
+	assert_same(1, count($didScopeAllReload['did_lists']['exclude']), 'all-DID mode should persist exclusions');
+
+	$repo->saveRule([
+		'id' => $didScopeSwitchRuleId,
+		'name' => 'DID Scope Switch Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'alert_call_callerid' => '',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'selected',
+		'repeat_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [
+			['list_type' => 'include', 'route_key' => '18005550001|', 'route_label' => 'Main DID', 'did_value' => '18005550001', 'cid_value' => ''],
+			['list_type' => 'exclude', 'route_key' => '18005550002|', 'route_label' => 'Excluded DID', 'did_value' => '18005550002', 'cid_value' => ''],
+		],
+	], '2026-07-13 09:07:00');
+	$didScopeSelectedReload = $repo->loadRule($didScopeSwitchRuleId);
+	assert_same('selected', (string)$didScopeSelectedReload['did_scope_mode'], 'selected-DID mode should persist during save');
+	assert_same(1, count($didScopeSelectedReload['did_lists']['include']), 'selected-DID mode should persist includes');
+	assert_same(0, count($didScopeSelectedReload['did_lists']['exclude']), 'selected-DID mode should clear stored exclude rows');
+
 	$firstSeen = [
 		'call_identity' => 'linkedid-100',
 		'identity_type' => 'linkedid',

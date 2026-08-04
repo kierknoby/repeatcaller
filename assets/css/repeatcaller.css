@@ -29,6 +29,14 @@
 	white-space: nowrap;
 }
 
+.repeatcaller .rc-route-actions .btn.rc-route-action-active,
+.repeatcaller .rc-route-actions .btn.rc-route-action-active:focus,
+.repeatcaller .rc-route-actions .btn.rc-route-action-active:hover {
+	background-color: #337ab7;
+	border-color: #2e6da4;
+	color: #fff;
+}
+
 .repeatcaller .rc-snooze.rc-snooze-active,
 .repeatcaller .rc-snooze.rc-snooze-active.disabled,
 .repeatcaller .rc-snooze.rc-snooze-active[disabled] {

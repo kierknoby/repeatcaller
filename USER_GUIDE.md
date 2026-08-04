@@ -92,10 +92,10 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Exclude withheld callers: excludes withheld identities from this rule.
 - Caller Includes: callers to include when using specific-caller scope.
 - Caller Excludes: callers to exclude.
-- DID Scope: all inbound routes or selected inbound routes.
-- Inbound Routes: route selector for include/exclude lists.
-- Included Routes: routes monitored when selected-route scope is used.
-- Excluded Routes: routes excluded from this rule.
+- DID Scope: All DIDs or Selected DIDs only.
+- Inbound Routes: route selector used for DID include/exclude actions.
+- Included Routes: routes monitored when Selected DIDs only is used.
+- Excluded Routes: routes excluded when All DIDs is used.
 - Schedules: day/time periods when calls count for this rule.
 - GUI: always enabled history action.
 - Alert Call: optional phone-call notifications.
@@ -165,10 +165,12 @@ Caller controls:
 
 Route controls:
 
-- All inbound routes
-- Selected inbound routes via Included Routes and Excluded Routes
+- All DIDs with optional Excluded Routes
+- Selected DIDs only via Included Routes
 
-Includes are applied before exclusions. Route scope follows your FreePBX Inbound Routes configuration.
+All DIDs matches every inbound route except routes listed in Excluded Routes.
+Selected DIDs only matches routes listed in Included Routes.
+Route scope follows your FreePBX Inbound Routes configuration.
 
 ## Schedules
 

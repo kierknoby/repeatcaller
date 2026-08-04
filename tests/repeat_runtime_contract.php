@@ -413,6 +413,85 @@ try {
 	]);
 	assert_same(0, $lateDuplicateRun['new_journeys'], 'late duplicate CDR legs should not create new seen journeys');
 
+	$dbPathDidAll = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathDidAll === false) {
+		throw new RuntimeException('Unable to create all-DID runtime SQLite file');
+	}
+	[$dbDidAll, $repositoryDidAll, $scannerDidAll, $processorDidAll] = create_runtime_environment($dbPathDidAll, '2026-07-13 10:30:00');
+	insert_route($dbDidAll, '18005550001', '', 'Main');
+	insert_route($dbDidAll, '18005550002', '', 'Secondary');
+	insert_rule($dbDidAll, [
+		'name' => 'All DID Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'include_routes' => [],
+		'exclude_routes' => [],
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbDidAll, ['linkedid' => 'DALL-1', 'calldate' => '2026-07-13 09:00:00', 'src' => '03330000001', 'clid' => '03330000001', 'did' => '18005550001', 'dst' => '18005550001']);
+	insert_cdr($dbDidAll, ['linkedid' => 'DALL-2', 'calldate' => '2026-07-13 09:05:00', 'src' => '03330000001', 'clid' => '03330000001', 'did' => '18005550002', 'dst' => '18005550002']);
+	$didAllSummary = $processorDidAll->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(2, $didAllSummary['incidents_created'], 'all DID scope with no exclusions should match every inbound route');
+
+	$dbPathDidExclude = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathDidExclude === false) {
+		throw new RuntimeException('Unable to create all-DID exclusion runtime SQLite file');
+	}
+	[$dbDidExclude, $repositoryDidExclude, $scannerDidExclude, $processorDidExclude] = create_runtime_environment($dbPathDidExclude, '2026-07-13 10:30:00');
+	insert_route($dbDidExclude, '18005550001', '', 'Main');
+	insert_route($dbDidExclude, '18005550002', '', 'Secondary');
+	insert_rule($dbDidExclude, [
+		'name' => 'All DID Exclusion Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'include_routes' => [],
+		'exclude_routes' => ['18005550002|'],
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbDidExclude, ['linkedid' => 'DEXC-1', 'calldate' => '2026-07-13 09:00:00', 'src' => '03330000002', 'clid' => '03330000002', 'did' => '18005550001', 'dst' => '18005550001']);
+	insert_cdr($dbDidExclude, ['linkedid' => 'DEXC-2', 'calldate' => '2026-07-13 09:05:00', 'src' => '03330000002', 'clid' => '03330000002', 'did' => '18005550002', 'dst' => '18005550002']);
+	$didExcludeSummary = $processorDidExclude->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $didExcludeSummary['incidents_created'], 'all DID scope exclusions should prevent excluded routes from matching');
+
+	$dbPathDidSelected = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathDidSelected === false) {
+		throw new RuntimeException('Unable to create selected-DID runtime SQLite file');
+	}
+	[$dbDidSelected, $repositoryDidSelected, $scannerDidSelected, $processorDidSelected] = create_runtime_environment($dbPathDidSelected, '2026-07-13 10:30:00');
+	insert_route($dbDidSelected, '18005550001', '', 'Main');
+	insert_route($dbDidSelected, '18005550002', '', 'Secondary');
+	insert_rule($dbDidSelected, [
+		'name' => 'Selected DID Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'selected',
+		'include_routes' => ['18005550001|'],
+		'exclude_routes' => ['18005550001|'],
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbDidSelected, ['linkedid' => 'DSEL-1', 'calldate' => '2026-07-13 09:00:00', 'src' => '03330000003', 'clid' => '03330000003', 'did' => '18005550001', 'dst' => '18005550001']);
+	insert_cdr($dbDidSelected, ['linkedid' => 'DSEL-2', 'calldate' => '2026-07-13 09:05:00', 'src' => '03330000003', 'clid' => '03330000003', 'did' => '18005550002', 'dst' => '18005550002']);
+	insert_cdr($dbDidSelected, ['linkedid' => 'DSEL-3', 'calldate' => '2026-07-13 09:10:00', 'src' => '03330000003', 'clid' => '03330000003', 'did' => '18005550001', 'dst' => '18005550001']);
+	$didSelectedSummary = $processorDidSelected->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $didSelectedSummary['incidents_created'], 'selected DID scope should use include routes only and ignore exclusion rows');
+
 	$dbPathRouteNoActive = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPathRouteNoActive === false) {
 		throw new RuntimeException('Unable to create route no-active compatibility runtime SQLite file');
