@@ -98,6 +98,14 @@ fwconsole reload
 30. Tick it again and save.
 31. Reopen the rule and confirm the field is blank and the previous value has been forgotten.
 
+## Final 1.0.1 Regression Checks
+
+32. In the rule editor, add an Alert Call destination using Add, then repeat using Enter; confirm both methods behave the same.
+33. Confirm Alert Call destination changes keep the associated Ignore these callers entry consistent without creating duplicate destinations.
+34. In Caller Includes and Caller Excludes, enter values using a mix of spaces, commas, and new lines; save and reload; confirm include/exclude meaning is preserved.
+35. Reload the Repeat Caller page and confirm Run Now shows the correct initial availability state.
+36. Add an Alert Call destination and confirm the self-trigger warning remains visible for approximately six seconds before disappearing.
+
 ## Useful Checks
 
 Run the job manually:
