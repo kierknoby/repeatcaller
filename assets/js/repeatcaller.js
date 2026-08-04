@@ -1687,19 +1687,26 @@
 		var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;
 		var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;
 		var $callerIdField = $('#rc-rule-alert-call-callerid');
+		var callerIdValue = $.trim(String($callerIdField.val() || ''));
 		var e164Example = getCallerE164Example($('#rc-setting-country').val());
 		var callerIdHelpText = 'Alert Call Caller ID sets the caller ID presented on outbound alert calls.';
+		var callerIdPlaceholder = '';
 
 		if (handleCallerIdUpstream && !alertCallCallerIdManagedElsewhere) {
 			alertCallCallerIdSessionValue = $.trim(String($callerIdField.val() || ''));
 			$callerIdField.val('');
+			callerIdValue = '';
 		} else if (!handleCallerIdUpstream && alertCallCallerIdManagedElsewhere) {
 			$callerIdField.val(alertCallCallerIdSessionValue);
+			callerIdValue = $.trim(String(alertCallCallerIdSessionValue || ''));
 		} else if (!handleCallerIdUpstream && alertCallCallerIdSessionValue === '') {
 			alertCallCallerIdSessionValue = $.trim(String($callerIdField.val() || ''));
 		}
 
 		alertCallCallerIdManagedElsewhere = handleCallerIdUpstream;
+		if (!callerIdDisabled && callerIdValue === '') {
+			callerIdPlaceholder = e164Example;
+		}
 
 		if (!alertCallEnabled) {
 			callerIdHelpText = 'Used only when Alert Call is enabled.';
@@ -1709,7 +1716,7 @@
 			callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';
 		}
 
-		$callerIdField.prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');
+		$callerIdField.prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false').attr('placeholder', callerIdPlaceholder);
 		$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);
 	}
 
@@ -1990,7 +1997,6 @@
 
 		$('#rc-rule-caller-include').prop('disabled', !includeEnabled).toggleClass('rc-control-disabled', !includeEnabled).attr('aria-required', requiresSpecificCallers ? 'true' : 'false').attr('placeholder', formatExample);
 		$('#rc-rule-caller-exclude').prop('disabled', !excludeEnabled).toggleClass('rc-control-disabled', !excludeEnabled).attr('placeholder', formatExample);
-		$('#rc-rule-alert-call-callerid').attr('placeholder', e164Example);
 		$('#rc-rule-alert-call-destination-input').attr('placeholder', '2001, 2002, ' + formatExample);
 		$('#rc-caller-include-help').text(includeHelpText).toggleClass('text-danger', requiresSpecificCallers);
 		$('#rc-caller-exclude-help').text(excludeHelpText);
