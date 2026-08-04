@@ -539,11 +539,19 @@ assert_true(strpos($jsSource, "$('.rc-editor-panel').removeClass('rc-editor-edit
 assert_true(strpos($jsSource, "$('#rc-save-rule').prop('disabled', false).removeClass('disabled');") !== false, 'reset path must clear transient disabled/grey Save Rule state after successful save and Cancel Edit');
 assert_true(strpos($jsSource, "$('#rc-cancel-edit').prop('disabled', false).removeClass('disabled');") !== false, 'reset path must clear transient disabled/grey Cancel Edit state before hiding the control');
 assert_true(strpos($jsSource, "function setEditingRuleRow(ruleId) {") !== false, 'rules UI should track which row is currently being edited');
+assert_true(strpos($jsSource, 'function updateRuleRowActionState() {') !== false, 'rules UI should define a helper to disable Status, Edit and Delete actions while editing');
+assert_true(strpos($jsSource, "$('#rc-rules-table .rc-rule-status, #rc-rules-table .rc-edit-rule, #rc-rules-table .rc-delete-rule')") !== false, 'row action lock should target Status, Edit and Delete controls');
+assert_true(strpos($jsSource, ".prop('disabled', disabled)") !== false && strpos($jsSource, ".toggleClass('disabled rc-rule-row-action-disabled', disabled)") !== false, 'editing should make Status, Edit and Delete unclickable and visibly greyed out');
+assert_true(strpos($jsSource, 'function updateStartAsEditorState(editingExistingRule) {') !== false, 'rule editor should define a helper for the create-only Start as control');
 assert_true(strpos($jsSource, "$('#rc-rules-table tbody tr').removeClass('rc-rule-editing rc-rule-explainer-editing');") !== false, 'exiting edit mode should remove rule-row and explainer-row editing/highlight state classes');
 assert_true(strpos($jsSource, "$('#rc-rules-table tbody tr[data-rule-id=\"' + editingRuleId + '\"]').addClass('rc-rule-editing').next('.rc-rule-explainer-row').addClass('rc-rule-explainer-editing');") !== false, 'loading an existing rule should mark its row and explainer with explicit editing classes');
 assert_true(strpos($jsSource, "$('#rc-cancel-edit').removeClass('hidden');") !== false, 'existing rule edit mode should show Cancel Edit control');
 assert_true(strpos($jsSource, "$('#rc-cancel-edit').addClass('hidden');") !== false, 'new-rule mode should hide Cancel Edit control');
 assert_true(strpos($jsSource, "$('#rc-cancel-edit').off('click.repeatcaller').on('click.repeatcaller', function () { resetRuleEditor(); });") !== false, 'Cancel Edit must return editor to new-rule defaults without mutating saved rule');
+assert_true(strpos($jsSource, "$('#rc-rule-enabled')") !== false && strpos($jsSource, ".prop('disabled', disabled)") !== false && strpos($jsSource, "$('#rc-rule-start-as-col').toggleClass('rc-control-disabled rc-rule-start-as-disabled', disabled);") !== false, 'Start as should be greyed out and unclickable while editing');
+assert_true(strpos($jsSource, "$('#rc-rule-start-as-help').text(helpText).toggleClass('text-muted', disabled);") !== false, 'Start as help text should switch between create-mode and edit-mode guidance');
+assert_true(strpos($jsSource, 'updateStartAsEditorState(false);') !== false, 'new-rule mode should keep Start as interactive');
+assert_true(strpos($jsSource, 'updateStartAsEditorState(true);') !== false, 'editing mode should lock Start as while still showing current state');
 assert_true((bool)preg_match('/ajax\(\'saverule\',[\s\S]*function \(response\) \{[\s\S]*showMessage\(\'Rule saved\.\', \'success\'\);[\s\S]*resetRuleEditor\(\);[\s\S]*\}, onDone\);/', $jsSource), 'successful Save Rule response must clear current editing state and return to default/new-rule mode while preserving success toast');
 assert_true((bool)preg_match('/ajax\(\'saverule\',[\s\S]*function \(response\) \{[\s\S]*renderRules\(response\.rules \|\| \[\]\);[\s\S]*resetRuleEditor\(\);/', $jsSource), 'successful Save Rule response must refresh the rules table with saved values before leaving edit mode');
 assert_true((bool)preg_match('/ajax\(\'saverule\',[\s\S]*function \(response\) \{[\s\S]*\}, onDone\);/', $jsSource), 'failed Save Rule response path should continue to use shared completion callback without forcibly clearing editing state');
@@ -708,6 +716,7 @@ assert_true(strpos($jsSource, 'function isValidAlertCallCallerId(value) {') !== 
 assert_true(strpos($jsSource, "if (callEnabled && !handleCallerIdUpstream && alertCallCallerId === '') {") !== false, 'frontend should reject blank Alert Call Caller ID when Alert Call is enabled and upstream handling is disabled');
 assert_true(strpos($jsSource, "if (callEnabled && !handleCallerIdUpstream && !isValidAlertCallCallerId(alertCallCallerId)) {") !== false, 'frontend should reject invalid Alert Call Caller ID when Repeat Caller is expected to set it');
 assert_true(strpos($jsSource, "alert_call_handle_callerid_upstream: handleCallerIdUpstream ? 1 : 0,") !== false, 'save payload should persist Handle Caller ID Upstream explicitly');
+assert_true(strpos($jsSource, "if ($(this).prop('disabled')) {") !== false, 'disabled row action handlers should short-circuit without performing actions');
 assert_true(strpos($jsSource, 'function suppressionSummary(rule) {') !== false, 'rules UI should define a suppression summary helper');
 assert_true(strpos($jsSource, "return 'Default 24hrs';") !== false, 'rules UI should show the default suppression label when blank');
 assert_true(strpos($jsSource, "return 'Disabled';") !== false, 'rules UI should show Disabled when suppression is set to 0');
@@ -745,6 +754,9 @@ assert_true(strpos($viewSource, 'systemRecordings: <?php echo json_encode($syste
 assert_true(strpos($viewSource, 'placeholder="2001, 2002, 07812345678"') !== false, 'Alert Call destination placeholder must show national dialling format as guidance');
 assert_true(strpos($viewSource, 'placeholder="07812345678"') !== false, 'Only monitor callers placeholder should show UK country context example');
 assert_true(strpos($viewSource, 'placeholder="07812345679"') !== false, 'Ignore these callers placeholder should show UK country context example');
+assert_true(strpos($viewSource, '<label><?php echo _(\'Start as\'); ?></label>') !== false, 'rule editor should rename the Enabled field label to Start as');
+assert_true(strpos($viewSource, '<input type="checkbox" id="rc-rule-enabled" checked> <?php echo _(\'Start Enabled\'); ?>') !== false, 'rule editor should present Start Enabled as the create-mode toggle choice');
+assert_true(strpos($viewSource, 'Choose whether the new rule should start enabled or disabled.') !== false, 'rule editor should explain that Start as chooses the initial state only for new rules');
 assert_true(strpos($viewSource, 'placeholder="+441234567890"') !== false, 'Alert Call Caller ID placeholder should show E.164 format with leading +');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-handle-callerid-upstream" checked') !== false, 'rule editor view should default Caller ID managed elsewhere to enabled for new rules');
 assert_true((bool)preg_match('/id="rc-rule-alert-call-recording-id"[\s\S]*id="rc-rule-alert-call-handle-callerid-upstream"[\s\S]*id="rc-rule-alert-call-callerid"/', $viewSource), 'Caller ID managed elsewhere should appear directly above the Alert Call Caller ID field in the right column');
@@ -776,6 +788,8 @@ assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-add"') !== f
 assert_true((bool)preg_match('/GUI \(always enabled\)[\s\S]*id="rc-rule-alert-call-enabled"[\s\S]*Alert Call[\s\S]*id="rc-rule-email-enabled"[\s\S]*Email/', $viewSource), 'rule action checklist should present Alert Call before Email');
 assert_true((bool)preg_match('/\.repeatcaller \.rc-editor-panel\.rc-editor-edit-mode \{[\s\S]*background: #f5f5f5;[\s\S]*border-color: #ddd;/s', $cssSource), 'rule editor edit mode should use subtle neutral grey background and light border styling');
 assert_true((bool)preg_match('/\.repeatcaller \.form-control\.rc-control-disabled,\s*\.repeatcaller \.form-control\.rc-control-disabled\[disabled\] \{[\s\S]*background-color: #f5f5f5;[\s\S]*border-color: #ddd;/s', $cssSource), 'disabled inbound route selector should use light grey disabled state styling');
+assert_true(strpos($cssSource, '.repeatcaller .rc-rule-row-action-disabled,') !== false && strpos($cssSource, 'opacity: 0.55;') !== false, 'disabled Status, Edit and Delete controls should be visibly greyed out');
+assert_true(strpos($cssSource, '.repeatcaller .rc-rule-start-as-disabled,') !== false && strpos($cssSource, 'color: #777;') !== false, 'Start as edit-mode state should use muted grey styling');
 
 $rootPos = strpos($viewSource, '<div class="repeatcaller"');
 $containerPos = strpos($viewSource, '<div class="container-fluid repeatcaller-container">');

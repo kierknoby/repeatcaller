@@ -176,7 +176,7 @@ $assetVer = max(
 							<input type="hidden" id="rc-rule-id" value="0">
 							<div class="row">
 								<div class="col-sm-4"><label><?php echo _('Rule Name'); ?></label><input type="text" class="form-control" id="rc-rule-name"></div>
-								<div class="col-sm-2"><label><?php echo _('Enabled'); ?></label><div><label><input type="checkbox" id="rc-rule-enabled" checked> <?php echo _('Enabled'); ?></label></div></div>
+								<div class="col-sm-2" id="rc-rule-start-as-col"><label><?php echo _('Start as'); ?></label><div><label><input type="checkbox" id="rc-rule-enabled" checked> <?php echo _('Start Enabled'); ?></label></div><p class="help-block" id="rc-rule-start-as-help"><?php echo _('Choose whether the new rule should start enabled or disabled.'); ?></p></div>
 								<div class="col-sm-2"><label><?php echo _('Mode'); ?></label><select id="rc-rule-mode" class="form-control"><option value="repeat"><?php echo _('Repeat'); ?></option><option value="invert"><?php echo _('Invert'); ?></option></select></div>
 								<div class="col-sm-2"><label><?php echo _('Threshold'); ?></label><input type="number" id="rc-rule-threshold" class="form-control" min="1" value="2"></div>
 								<div class="col-sm-2"><label><?php echo _('Window (min)'); ?></label><input type="number" id="rc-rule-window" class="form-control" min="1" value="60"></div>

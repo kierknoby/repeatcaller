@@ -239,6 +239,8 @@ assert_true(strpos($readmeSource, 'Snooze Monitoring is a global control in Engi
 assert_true(strpos($readmeSource, 'Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours,') !== false && strpos($readmeSource, '12 hours, and 24 hours.') !== false, 'README should list all supported Snooze Monitoring durations including 30m/3h/6h/12h/24h');
 assert_true(strpos($readmeSource, '## User Interface') !== false, 'README should include User Interface section');
 assert_true(strpos($readmeSource, 'Enable Rules/Disable Rules, Snooze, Resume, Run Now.') !== false, 'README user-interface summary should use Enable Rules/Disable Rules terminology');
+assert_true(strpos($readmeSource, 'The Start as control is used only when creating a new rule') !== false, 'README should explain that Start as applies only to new rules');
+assert_true(strpos($readmeSource, 'existing rule is being edited, those row actions are greyed out and cannot be') !== false, 'README should explain that rule row actions are disabled while editing');
 assert_true(strpos($readmeSource, '## Security Model') !== false, 'README should include Security Model section');
 assert_true(strpos($readmeSource, '## Current Limitations') !== false, 'README should include Current Limitations section');
 assert_true(strpos($readmeSource, '## Validation') !== false, 'README should include Validation section');
@@ -261,6 +263,9 @@ assert_true($userGuideSource !== false, 'USER_GUIDE.md should exist and be reada
 assert_true(strpos($userGuideSource, '# Repeat Caller User Guide') !== false, 'USER_GUIDE.md should have the expected title');
 assert_true(strpos($userGuideSource, 'Reports > Repeat Caller') !== false, 'USER_GUIDE.md should include the Reports > Repeat Caller navigation path');
 assert_true(strpos($userGuideSource, 'Recent Incidents') !== false, 'USER_GUIDE.md should use the current UI label Recent Incidents');
+assert_true(strpos($userGuideSource, 'Start as: Enabled') !== false, 'USER_GUIDE.md should use Start as wording in the example rule settings');
+assert_true(strpos($userGuideSource, 'Start as: used only when creating a new rule to choose whether the rule') !== false, 'USER_GUIDE.md should explain that Start as applies only when creating a new rule');
+assert_true(strpos($userGuideSource, 'While editing an existing rule, the row actions for that rule are greyed out') !== false, 'USER_GUIDE.md should explain that row actions are disabled while editing');
 assert_true(strpos($userGuideSource, 'Suppressed Alerts History') !== false, 'USER_GUIDE.md should explain suppressed alerts history');
 assert_true(strpos($userGuideSource, '## History Pruning') !== false, 'USER_GUIDE.md should include a History Pruning section');
 assert_true(strpos($userGuideSource, '## Clearing Alert History') !== false, 'USER_GUIDE.md should include clear alert history instructions');

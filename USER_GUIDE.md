@@ -64,7 +64,7 @@ Create an incident when the same caller rings the same inbound route 3 times wit
 Suggested values:
 
 - Rule Name: Repeated Caller
-- Enabled: Yes
+- Start as: Enabled
 - Mode: Repeat
 - Threshold: 3
 - Window: 10
@@ -80,7 +80,9 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 ## Rule Settings Explained
 
 - Rule Name: identifies the rule in tables and alerts.
-- Enabled: turns the rule on or off.
+- Start as: used only when creating a new rule to choose whether the rule
+	starts enabled or disabled. When editing an existing rule, the current
+	state is shown but can only be changed from the main table.
 - Mode: Repeat or Invert detection logic. Use Repeat for repeated contact attempts; use Invert when you expect activity and need to detect when it does not occur.
 - Threshold: number of matching calls required for rule evaluation.
 - Window: observation period in minutes.
@@ -134,6 +136,9 @@ In the Rules table, each rule row has three controls:
 
 When Status is active, only the explainer bar is highlighted in light grey.
 The rest of the row is unchanged.
+
+While editing an existing rule, the row actions for that rule are greyed out
+and cannot be used until you save or cancel the edit.
 
 ## Table Row Display
 

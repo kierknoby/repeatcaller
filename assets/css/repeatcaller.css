@@ -125,6 +125,20 @@ body:has(.repeatcaller) #page_body.default-page {
 	cursor: not-allowed;
 }
 
+.repeatcaller .rc-rule-row-action-disabled,
+.repeatcaller .rc-rule-row-action-disabled.disabled,
+.repeatcaller .rc-rule-row-action-disabled[disabled] {
+	opacity: 0.55;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+
+.repeatcaller .rc-rule-start-as-disabled,
+.repeatcaller .rc-rule-start-as-disabled label,
+.repeatcaller .rc-rule-start-as-disabled .help-block {
+	color: #777;
+}
+
 .repeatcaller textarea.rc-control-disabled,
 .repeatcaller .rc-list.rc-control-disabled {
 	background-color: #f5f5f5;

@@ -466,12 +466,16 @@ Reports > Repeat Caller includes these main sections:
   and route scope, schedules, repeat mode, suppression setting, rule-level
   email recipients, and alert actions. Blank suppression uses the default
   24hrs (1440 minutes) period; 0 disables automatic suppression for that rule.
+  The Start as control is used only when creating a new rule to choose whether
+  it starts enabled or disabled.
   The actions checklist order is GUI, Alert Call, then Email, and the email
   recipient field appears directly above Save Rule. The editor title switches
   to Editing Rule when modifying an existing rule. DID scope uses a simple
   model: All DIDs supports optional exclusions, and Selected DIDs only uses
   explicit inclusions.
-- Rule controls: each rule row includes Status, Edit, and X (delete).
+- Rule controls: each rule row includes Status, Edit, and X (delete). While an
+  existing rule is being edited, those row actions are greyed out and cannot be
+  used until editing is cancelled or saved.
 - Rule explanation rows: plain-language explanation beneath each rule row, with
   disabled and edit highlighting. Selecting Status temporarily replaces the
   explainer sentence with a plain-English status summary for that rule. Status

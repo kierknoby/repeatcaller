@@ -44,6 +44,7 @@
 	var ruleStatusTimers = {};
 	var didRouteActionMode = '';
 	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of Repeat Caller triggering itself if an alert call routes back through a monitored DID. You may remove the ignore entry if required.';
+	var editingRuleId = 0;
 
 	// Country caller number formats for help text examples
 	// Country caller formats - country code maps to country name and preferred local format example
@@ -1238,6 +1239,7 @@
 			rows.push('<tr class="rc-empty-state"><td colspan="' + columnCount + '" class="text-muted">No rules configured yet.</td></tr>');
 		}
 		$('#rc-rules-table tbody').html(rows.join(''));
+		updateRuleRowActionState();
 		updateTableRowBatching('#rc-rules-table');
 	}
 
@@ -1246,12 +1248,35 @@
 	}
 
 	function setEditingRuleRow(ruleId) {
-		var editingRuleId = parseInt(ruleId || 0, 10);
+		editingRuleId = parseInt(ruleId || 0, 10);
 		$('#rc-rules-table tbody tr').removeClass('rc-rule-editing rc-rule-explainer-editing');
 		if (!editingRuleId || editingRuleId < 1) {
+			updateRuleRowActionState();
 			return;
 		}
 		$('#rc-rules-table tbody tr[data-rule-id="' + editingRuleId + '"]').addClass('rc-rule-editing').next('.rc-rule-explainer-row').addClass('rc-rule-explainer-editing');
+		updateRuleRowActionState();
+	}
+
+	function updateRuleRowActionState() {
+		var disabled = editingRuleId > 0;
+		$('#rc-rules-table .rc-rule-status, #rc-rules-table .rc-edit-rule, #rc-rules-table .rc-delete-rule')
+			.prop('disabled', disabled)
+			.toggleClass('disabled rc-rule-row-action-disabled', disabled)
+			.attr('aria-disabled', disabled ? 'true' : 'false');
+	}
+
+	function updateStartAsEditorState(editingExistingRule) {
+		var disabled = !!editingExistingRule;
+		var helpText = disabled
+			? 'Current rule state is shown here but can only be changed from the main table.'
+			: 'Choose whether the new rule should start enabled or disabled.';
+		$('#rc-rule-enabled')
+			.prop('disabled', disabled)
+			.toggleClass('rc-control-disabled', disabled)
+			.attr('aria-disabled', disabled ? 'true' : 'false');
+		$('#rc-rule-start-as-col').toggleClass('rc-control-disabled rc-rule-start-as-disabled', disabled);
+		$('#rc-rule-start-as-help').text(helpText).toggleClass('text-muted', disabled);
 	}
 
 	function renderIncidents(selector, incidents, active) {
@@ -1706,6 +1731,7 @@
 		$('#rc-cancel-edit').addClass('hidden');
 		$('#rc-rule-name').val('');
 		$('#rc-rule-enabled').prop('checked', true);
+		updateStartAsEditorState(false);
 		$('#rc-rule-mode').val('repeat');
 		$('#rc-rule-threshold').val('2');
 		$('#rc-rule-window').val('60');
@@ -2201,6 +2227,7 @@
 			$('#rc-rule-id').val(rule.id || 0);
 			$('#rc-rule-name').val(rule.name || '');
 			$('#rc-rule-enabled').prop('checked', parseInt(rule.enabled || 0, 10) === 1);
+			updateStartAsEditorState(true);
 			$('#rc-rule-mode').val(rule.mode || 'repeat');
 			$('#rc-rule-threshold').val(rule.threshold_count || 2);
 			$('#rc-rule-window').val(rule.observation_window_minutes || 60);
@@ -2603,12 +2630,21 @@
 		});
 
 		$(document).off('click.repeatcaller', '.rc-edit-rule').on('click.repeatcaller', '.rc-edit-rule', function () {
+			if ($(this).prop('disabled')) {
+				return;
+			}
 			loadRule($(this).closest('tr').data('rule-id'));
 		});
 		$(document).off('click.repeatcaller', '.rc-rule-status').on('click.repeatcaller', '.rc-rule-status', function () {
+			if ($(this).prop('disabled')) {
+				return;
+			}
 			showRuleStatus($(this).closest('tr').data('rule-id'), $(this));
 		});
 		$(document).off('click.repeatcaller', '.rc-delete-rule').on('click.repeatcaller', '.rc-delete-rule', function () {
+			if ($(this).prop('disabled')) {
+				return;
+			}
 			var ruleId = $(this).closest('tr').data('rule-id');
 			if (!window.confirm('Delete this rule? Historical incidents and alerts are preserved.')) {
 				return;
