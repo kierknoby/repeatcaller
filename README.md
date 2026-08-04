@@ -32,57 +32,6 @@ Use with FreePBX/PBXact 16 or 17.
 - PHP 7.4+
 - MariaDB 5.5-compatible schema (utf8/InnoDB key-size compatible)
 
-## Release History
-
-### 1.0.1, patch release, 5 August 2026
-
-- UI fix: Rule explanation-row state colouring now uses explicit Repeat Caller
-  state classes on rule-table cells so enabled, disabled, temporary Status,
-  and editing presentations are consistent across FreePBX and PBXact.
-
-#### DID scope controls
-
-- Allows individual inbound routes to be excluded when All DIDs is selected.
-- Keeps Selected DIDs only mode limited to explicit route inclusions.
-- Clears stale opposite-mode route selections when the DID scope changes.
-
-#### Accepted incident suppression
-
-- Prevents accepted incidents from reserving or sending further alerts while
-  rule-and-subject suppression remains active.
-- Preserves normal Repeat Alerts for active unaccepted incidents.
-- Allows genuinely new qualifying activity after suppression expiry to trigger
-  a fresh alert stage.
-
-#### Snooze controls
-
-- Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.
-
-#### Global controls
-
-- Renames the global Enable Monitoring and Disable Monitoring buttons to
-  Enable All Rules and Disable All Rules for clearer rule-processing terminology.
-
-#### Alert Call self-trigger safeguard
-
-- Adding an Alert Call destination now auto-adds the same value to Ignore
-  these callers as a safe default, with a one-time warning in the editor.
-- Administrators can remove the Ignore entry if needed; it is not silently
-  re-added during save, reload, or normal rendering.
-- Internal Repeat Caller originated Alert Call legs are marked and excluded
-  from detection; this marker does not survive external PSTN hairpin
-  leave-and-return paths.
-
-#### Alert Call Caller ID handling
-
-- Caller ID managed elsewhere is now enabled by default for new rules and sits
-  directly above Alert Call Caller ID in the rule editor.
-- While enabled, Repeat Caller does not set Alert Call Caller ID and upstream
-  PBX, trunk, or other routing configuration remains responsible for caller
-  presentation.
-- Unticking it makes Alert Call Caller ID mandatory when Alert Call is
-  enabled.
-
 ## Requirements
 
 - FreePBX/PBXact 16 or 17
@@ -330,12 +279,6 @@ Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country
 Code.
-
-Caller ID managed elsewhere is enabled by default for new rules. While it is
-enabled, Repeat Caller does not set Alert Call Caller ID and upstream PBX,
-trunk, or other routing configuration remains responsible for caller
-presentation. Unticking it makes Alert Call Caller ID mandatory when Alert
-Call is enabled.
 
 Alert Call destinations and Alert Call caller ID values are administrator-
 controlled PBX configuration. Only use trusted values that are appropriate for
@@ -598,6 +541,78 @@ Recordings, and administrator-controlled routing.
 - Email delivery depends on FreePBX mail configuration and downstream relays.
 - Snooze is global rather than per rule/incident.
 - No webhook or SMS delivery channel is implemented.
+
+## Release History
+
+### 1.0.1, patch release, 5 August 2026
+
+- Rule explanation-row styling is now consistent across enabled, disabled,
+  temporary Status, and editing states.
+
+#### Rule editor reliability
+
+- Caller include/exclude lists now save and reload correctly from the rule
+  editor while preserving list semantics.
+- Legacy plain-text caller list entry remains supported for compatibility.
+- Alert Call destination Add now behaves the same whether triggered by Add or
+  Enter.
+- Alert Call destination changes now keep the associated Ignore these callers
+  entry consistent without creating duplicate destinations.
+- Alert Call self-trigger warnings now remain visible for approximately
+  6 seconds without changing global FreePBX toast behavior.
+- Run Now now initializes from the current bootstrap state so initial
+  availability is shown correctly on load.
+
+#### DID scope controls
+
+- Allows individual inbound routes to be excluded when All DIDs is selected.
+- Keeps Selected DIDs only mode limited to explicit route inclusions.
+- Clears stale opposite-mode route selections when the DID scope changes.
+
+#### Accepted incident suppression
+
+- Prevents accepted incidents from reserving or sending further alerts while
+  rule-and-subject suppression remains active.
+- Preserves normal Repeat Alerts for active unaccepted incidents.
+- Allows genuinely new qualifying activity after suppression expiry to trigger
+  a fresh alert stage.
+
+#### Snooze controls
+
+- Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.
+
+#### Global controls
+
+- Renames the global Enable Monitoring and Disable Monitoring buttons to
+  Enable All Rules and Disable All Rules for clearer rule-processing terminology.
+
+#### Alert Call self-trigger safeguard
+
+- Adding an Alert Call destination now auto-adds the same value to Ignore
+  these callers as a safe default, with a one-time warning in the editor.
+- Administrators can remove the Ignore entry if needed; it is not silently
+  re-added during save, reload, or normal rendering.
+- Internal Repeat Caller originated Alert Call legs are marked and excluded
+  from detection; this marker does not survive external PSTN hairpin
+  leave-and-return paths.
+
+#### Alert Call Caller ID handling
+
+- Caller ID managed elsewhere is enabled by default for new rules and appears
+  directly above Alert Call Caller ID in the rule editor.
+- While enabled, Repeat Caller does not set Alert Call Caller ID, leaves the
+  field blank and disabled, and hides the example placeholder.
+- Unticking restores the previous unsaved editor value and makes Alert Call
+  Caller ID mandatory when Alert Call is enabled.
+- Saving while enabled persists a blank Caller ID and forgets the previous
+  value.
+- Caller presentation remains the responsibility of PBX routing, trunks, or
+  providers.
+
+#### Documentation and coverage
+
+- Documentation and focused admin coverage were updated to reflect final 1.0.1
+  behavior.
 
 ## Validation
 
