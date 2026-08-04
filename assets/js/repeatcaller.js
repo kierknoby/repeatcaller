@@ -1970,7 +1970,6 @@
 		var alertCallEnabled = $('#rc-rule-alert-call-enabled').is(':checked');
 		var emailEnabled = $('#rc-rule-email-enabled').is(':checked');
 
-		// Alert Call fields
 		$('#rc-rule-alert-call-strategy').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-destination-input').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-destination-list').find('input, button').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
@@ -1978,8 +1977,6 @@
 		$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);
 		updateAlertCallCallerIdState();
 		updateAlertCallDestinationAddButtonState();
-
-		// Email fields
 		$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);
 	}
 
