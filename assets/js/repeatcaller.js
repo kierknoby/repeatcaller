@@ -1679,6 +1679,25 @@
 			.attr('aria-disabled', disabled ? 'true' : 'false');
 	}
 
+	function updateAlertCallCallerIdState() {
+		var alertCallEnabled = $('#rc-rule-alert-call-enabled').is(':checked');
+		var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');
+		var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;
+		var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;
+		var callerIdHelpText = 'Alert Call Caller ID sets the caller ID presented on outbound alert calls.';
+
+		if (!alertCallEnabled) {
+			callerIdHelpText = 'Used only when Alert Call is enabled.';
+		} else if (handleCallerIdUpstream) {
+			callerIdHelpText = 'Not used because caller presentation is managed elsewhere.';
+		} else {
+			callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';
+		}
+
+		$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');
+		$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);
+	}
+
 	function buildAlertCallDestinationItem(destination, keepTryingEnabled) {
 		var keepTrying = keepTryingEnabled === undefined ? true : !!keepTryingEnabled;
 		var $li = $('<li class="list-group-item rc-alert-call-destination-item"/>').attr('data-destination', destination).attr('data-keep-trying', keepTrying ? '1' : '0');
@@ -1950,17 +1969,6 @@
 	function updateAlertCallAndEmailState() {
 		var alertCallEnabled = $('#rc-rule-alert-call-enabled').is(':checked');
 		var emailEnabled = $('#rc-rule-email-enabled').is(':checked');
-		var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');
-		var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;
-		var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;
-		var callerIdHelpText = 'Alert Call Caller ID sets the caller ID presented on outbound alert calls.';
-		if (!alertCallEnabled) {
-			callerIdHelpText = 'Used only when Alert Call is enabled.';
-		} else if (handleCallerIdUpstream) {
-			callerIdHelpText = 'Not used while Caller ID will be managed elsewhere is enabled.';
-		} else {
-			callerIdHelpText = 'Enter Caller ID in E.164 format, e.g. ' + e164Example + '.';
-		}
 
 		// Alert Call fields
 		$('#rc-rule-alert-call-strategy').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
@@ -1968,8 +1976,7 @@
 		$('#rc-rule-alert-call-destination-list').find('input, button').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);
-		$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');
-		$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);
+		updateAlertCallCallerIdState();
 		updateAlertCallDestinationAddButtonState();
 
 		// Email fields
@@ -2352,6 +2359,7 @@
 				addScheduleRow();
 			}
 			normalizeScheduleEditorState();
+			updateAlertCallCallerIdState();
 			updateAlertCallAndEmailState();
 			scrollToRuleEditor();
 		});
