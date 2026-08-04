@@ -350,6 +350,15 @@ presentation differences may still require administrator judgement.
 Alert Call supports optional introductory System Recording playback followed by
 a spoken summary of incident details such as caller and DID where available.
 
+Caller ID managed elsewhere is enabled by default for new rules. While it is
+enabled, Repeat Caller does not set Alert Call Caller ID, leaves the field
+blank and disabled, hides the example placeholder, and keeps any typed value
+only for the current editor session. Unticking it restores the previous
+unsaved value and makes Alert Call Caller ID mandatory when Alert Call is
+enabled. Saving with it checked persists a blank Caller ID and forgets the
+prior value. Caller presentation may still be managed elsewhere by routing,
+trunks, or providers.
+
 DTMF behavior during Alert Call:
 
 - Press 1: accepts the incident (Alert Call acceptance source)

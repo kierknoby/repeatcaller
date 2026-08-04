@@ -88,6 +88,16 @@ fwconsole reload
 23. Confirm rules, incidents, and history remain intact.
 24. Review uninstall warning and cleanup expectations before removal.
 
+## Caller ID Managed Elsewhere Check
+
+25. Create or edit a rule with Alert Call enabled.
+26. Enter an Alert Call Caller ID.
+27. Tick `Caller ID managed elsewhere`.
+28. Confirm the Caller ID field becomes blank and disabled and the placeholder disappears.
+29. Untick it and confirm the previous value returns.
+30. Tick it again and save.
+31. Reopen the rule and confirm the field is blank and the previous value has been forgotten.
+
 ## Useful Checks
 
 Run the job manually:
