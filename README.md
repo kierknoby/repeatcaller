@@ -73,6 +73,16 @@ Use with FreePBX/PBXact 16 or 17.
   from detection; this marker does not survive external PSTN hairpin
   leave-and-return paths.
 
+#### Alert Call Caller ID handling
+
+- Caller ID managed elsewhere is now enabled by default for new rules and sits
+  directly above Alert Call Caller ID in the rule editor.
+- While enabled, Repeat Caller does not set Alert Call Caller ID and upstream
+  PBX, trunk, or other routing configuration remains responsible for caller
+  presentation.
+- Unticking it makes Alert Call Caller ID mandatory when Alert Call is
+  enabled.
+
 ## Requirements
 
 - FreePBX/PBXact 16 or 17
@@ -320,6 +330,12 @@ Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country
 Code.
+
+Caller ID managed elsewhere is enabled by default for new rules. While it is
+enabled, Repeat Caller does not set Alert Call Caller ID and upstream PBX,
+trunk, or other routing configuration remains responsible for caller
+presentation. Unticking it makes Alert Call Caller ID mandatory when Alert
+Call is enabled.
 
 Alert Call destinations and Alert Call caller ID values are administrator-
 controlled PBX configuration. Only use trusted values that are appropriate for

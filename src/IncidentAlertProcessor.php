@@ -315,12 +315,13 @@ final class IncidentAlertProcessor {
 			'summary_caller_value' => (string)$summaryContext['caller'],
 			'summary_did_value' => (string)$summaryContext['did'],
 		];
+		$callerId = !empty($callAlert['alert_call_handle_callerid_upstream']) ? '' : (string)($callAlert['alert_call_callerid'] ?? '');
 
 		return call_user_func(
 			$this->callAlertSender,
 			(string)$callAlert['recipient'],
 			$recordingId,
-			(string)($callAlert['alert_call_callerid'] ?? ''),
+			$callerId,
 			$context
 		);
 	}

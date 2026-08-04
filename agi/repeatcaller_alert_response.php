@@ -148,10 +148,11 @@ function repeatcallerTryImmediateOrderedFollowUp(\FreePBX\modules\Repeatcaller\R
 
 	require_once $moduleRoot . '/Repeatcaller.class.php';
 	$module = new \FreePBX\modules\Repeatcaller(new \stdClass());
+	$callerId = !empty($nextCall['alert_call_handle_callerid_upstream']) ? '' : (string)($nextCall['alert_call_callerid'] ?? '');
 	$sendResult = $module->sendAlertCall(
 		(string)$nextCall['recipient'],
 		(string)($nextCall['alert_call_recording_id'] ?? ''),
-		(string)($nextCall['alert_call_callerid'] ?? ''),
+		$callerId,
 		[
 			'history_id' => (int)$nextCall['id'],
 			'incident_id' => (int)$nextCall['incident_id'],

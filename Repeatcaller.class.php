@@ -137,6 +137,7 @@ class Repeatcaller implements \BMO {
 						'alert_call_recording_id' => $rule['alert_call_recording_id'] !== null && $rule['alert_call_recording_id'] !== ''
 							? (int)$rule['alert_call_recording_id']
 							: null,
+						'alert_call_handle_callerid_upstream' => isset($rule['alert_call_handle_callerid_upstream']) ? (!empty($rule['alert_call_handle_callerid_upstream']) ? 1 : 0) : 0,
 						'alert_call_callerid' => (string)($rule['alert_call_callerid'] ?? ''),
 						'mode' => (string)($rule['mode'] ?? 'repeat'),
 						'threshold_count' => (int)($rule['threshold_count'] ?? 2),
@@ -485,6 +486,11 @@ class Repeatcaller implements \BMO {
 				'alert_call_strategy' => $this->normaliseAlertCallStrategy((string)($_REQUEST['alert_call_strategy'] ?? 'ringall')),
 				'alert_call_keep_trying' => isset($_REQUEST['alert_call_keep_trying']) ? (!empty($_REQUEST['alert_call_keep_trying']) ? 1 : 0) : 1,
 				'alert_call_recording_id' => $recordingId,
+				'alert_call_handle_callerid_upstream' => array_key_exists('alert_call_handle_callerid_upstream', $_REQUEST)
+					? (!empty($_REQUEST['alert_call_handle_callerid_upstream']) ? 1 : 0)
+					: (($existingRule !== null && array_key_exists('alert_call_handle_callerid_upstream', $existingRule))
+						? (!empty($existingRule['alert_call_handle_callerid_upstream']) ? 1 : 0)
+						: ($ruleId > 0 ? 0 : 1)),
 				'alert_call_callerid' => trim((string)($_REQUEST['alert_call_callerid'] ?? '')),
 				'mode' => (string)($_REQUEST['mode'] ?? 'repeat'),
 				'threshold_count' => $this->boundedDigits((string)($_REQUEST['threshold_count'] ?? '2'), 1, 1000, 2),
@@ -528,6 +534,14 @@ class Repeatcaller implements \BMO {
 		}
 		if (!empty($payload['alert_call_enabled']) && trim((string)$payload['alert_call_destinations']) === '') {
 			return ['status' => false, 'message' => _('Alert Call is enabled. Enter at least one Alert Call destination.')];
+		}
+		if (!empty($payload['alert_call_enabled']) && empty($payload['alert_call_handle_callerid_upstream'])) {
+			if (trim((string)$payload['alert_call_callerid']) === '') {
+				return ['status' => false, 'message' => _('Alert Call Caller ID is required when Alert Call is enabled and Caller ID managed elsewhere is disabled.')];
+			}
+			if (!$this->isValidAlertCallCallerId((string)$payload['alert_call_callerid'])) {
+				return ['status' => false, 'message' => _('Alert Call Caller ID must contain digits only, optionally prefixed with +.')];
+			}
 		}
 		$override = strtolower(trim((string)$payload['repeat_mode_override']));
 		$payload['repeat_mode_override'] = $this->normaliseRepeatMode($override);
@@ -987,6 +1001,14 @@ class Repeatcaller implements \BMO {
 			return 'ordered';
 		}
 		return 'ringall';
+	}
+
+	private function isValidAlertCallCallerId(string $value): bool {
+		$value = trim($value);
+		if ($value === '') {
+			return false;
+		}
+		return preg_match('/^\+?\d+$/', $value) === 1;
 	}
 
 	private function nullablePositiveRequestInt(string $key): ?int {

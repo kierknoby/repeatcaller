@@ -33,12 +33,14 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->query(
 			'SELECT id, name, enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
+					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying,
 				' . $isDeletedExpr . ' AS is_deleted, mode, threshold_count, ' . $windowMinutesExpr . ' AS observation_window_minutes,
@@ -61,12 +63,14 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->query(
 			'SELECT r.id, r.name, r.enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
+					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying, r.mode,
 				r.threshold_count, r.observation_window_minutes, r.caller_mode,
@@ -228,12 +232,14 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$deletedAtExpr = $this->columnExpr('repeatcaller_rules', 'deleted_at', 'NULL');
 		$stmt = $this->pdo->prepare(
 			'SELECT id, name, enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
+					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying,
 				' . $isDeletedExpr . ' AS is_deleted, mode,
@@ -266,6 +272,7 @@ final class RepeatCallerRepository {
 		$hasAlertCallStrategy = $this->hasColumn('repeatcaller_rules', 'alert_call_strategy');
 		$hasAlertCallKeepTrying = $this->hasColumn('repeatcaller_rules', 'alert_call_keep_trying');
 		$hasAlertCallRecording = $this->hasColumn('repeatcaller_rules', 'alert_call_recording_id');
+		$hasAlertCallHandleCallerIdUpstream = $this->hasColumn('repeatcaller_rules', 'alert_call_handle_callerid_upstream');
 		$hasAlertCallCallerId = $this->hasColumn('repeatcaller_rules', 'alert_call_callerid');
 		$hasIsDeleted = $this->hasColumn('repeatcaller_rules', 'is_deleted');
 		$hasDeletedAt = $this->hasColumn('repeatcaller_rules', 'deleted_at');
@@ -325,6 +332,10 @@ final class RepeatCallerRepository {
 			if ($hasAlertCallRecording) {
 				$set[] = 'alert_call_recording_id = ?';
 				$params[] = $this->nullableInt($payload['alert_call_recording_id'] ?? null);
+			}
+			if ($hasAlertCallHandleCallerIdUpstream) {
+				$set[] = 'alert_call_handle_callerid_upstream = ?';
+				$params[] = !empty($payload['alert_call_handle_callerid_upstream']) ? 1 : 0;
 			}
 			if ($hasAlertCallCallerId) {
 				$set[] = 'alert_call_callerid = ?';
@@ -386,6 +397,10 @@ final class RepeatCallerRepository {
 			if ($hasAlertCallRecording) {
 				$columns[] = 'alert_call_recording_id';
 				$values[] = $this->nullableInt($payload['alert_call_recording_id'] ?? null);
+			}
+			if ($hasAlertCallHandleCallerIdUpstream) {
+				$columns[] = 'alert_call_handle_callerid_upstream';
+				$values[] = !empty($payload['alert_call_handle_callerid_upstream']) ? 1 : 0;
 			}
 			if ($hasAlertCallCallerId) {
 				$columns[] = 'alert_call_callerid';
@@ -1178,6 +1193,7 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$stmt = $this->pdo->prepare(
 			'SELECT i.id, i.rule_id, i.subject_key, i.subject_label, i.caller_normalized, i.caller_display,
@@ -1187,7 +1203,7 @@ final class RepeatCallerRepository {
 				' . $emailRecipientsExpr . ' AS email_recipients,
 				' . $alertCallEnabledExpr . ' AS alert_call_enabled, ' . $alertCallDestinationsExpr . ' AS alert_call_destinations,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying,
-				' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid, r.repeat_mode_override
+				' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid, r.repeat_mode_override
 			 FROM repeatcaller_incidents i
 			 JOIN repeatcaller_rules r ON r.id = i.rule_id
 			 LEFT JOIN repeatcaller_incident_alert_state s ON s.incident_id = i.id
@@ -1695,6 +1711,7 @@ final class RepeatCallerRepository {
 	public function loadDeliverableCallAlerts(string $now, int $limit = 200): array {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$callerModeExpr = $this->columnExpr('repeatcaller_rules', 'caller_mode', "'any'");
 		$didScopeModeExpr = $this->columnExpr('repeatcaller_rules', 'did_scope_mode', "'all'");
@@ -1707,7 +1724,7 @@ final class RepeatCallerRepository {
 				h.recipient, h.delivery_status, h.repeat_mode,
 				i.caller_display, i.caller_normalized, i.withheld_caller, i.mode,
 				i.threshold_count, i.observation_window_minutes, i.first_matched_at, i.last_matched_at, i.matched_call_count, i.state, i.suppression_expires_at,
-				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
+				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $callerModeExpr . ' AS caller_mode, ' . $didScopeModeExpr . ' AS did_scope_mode
 			 FROM repeatcaller_incident_alert_history h
 			 JOIN repeatcaller_incidents i ON i.id = h.incident_id
@@ -1731,6 +1748,7 @@ final class RepeatCallerRepository {
 	public function loadDeliverableCallAlertByHistoryId(int $historyId, string $now): ?array {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$callerModeExpr = $this->columnExpr('repeatcaller_rules', 'caller_mode', "'any'");
 		$didScopeModeExpr = $this->columnExpr('repeatcaller_rules', 'did_scope_mode', "'all'");
@@ -1741,7 +1759,7 @@ final class RepeatCallerRepository {
 				h.recipient, h.delivery_status, h.repeat_mode,
 				i.caller_display, i.caller_normalized, i.withheld_caller, i.mode,
 				i.first_matched_at, i.last_matched_at, i.matched_call_count, i.state, i.suppression_expires_at,
-				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
+				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $callerModeExpr . ' AS caller_mode, ' . $didScopeModeExpr . ' AS did_scope_mode
 			 FROM repeatcaller_incident_alert_history h
 			 JOIN repeatcaller_incidents i ON i.id = h.incident_id

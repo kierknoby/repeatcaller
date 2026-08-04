@@ -36,6 +36,8 @@ function make_db(): PDO {
 		alert_call_strategy TEXT NOT NULL DEFAULT "ringall",
 		alert_call_keep_trying INTEGER NOT NULL DEFAULT 1,
 		alert_call_recording_id INTEGER,
+		alert_call_handle_callerid_upstream INTEGER NOT NULL DEFAULT 0,
+		alert_call_callerid TEXT,
 		is_deleted INTEGER NOT NULL DEFAULT 0,
 		deleted_at TEXT,
 		mode TEXT NOT NULL,
@@ -586,7 +588,10 @@ assert_true(strpos($jsSource, "var formatExample = getCallerFormatExample($('#rc
 assert_true(strpos($jsSource, ".attr('placeholder', formatExample)") !== false, 'Caller textarea placeholders should be set to the national format example');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').attr('placeholder', e164Example);") !== false, 'Alert Call Caller ID placeholder should be set to the E.164 format example with leading +');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').attr('placeholder', '2001, 2002, ' + formatExample);") !== false, 'Alert Call Destinations placeholder should show national dialling format example (not E.164) with example extensions');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call Caller ID should be greyed out when Alert Call checkbox is unchecked');
+assert_true(strpos($jsSource, "var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');") !== false, 'Alert Call UI state should read Handle Caller ID Upstream explicitly');
+assert_true(strpos($jsSource, "var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;") !== false && strpos($jsSource, "var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;") !== false, 'Alert Call Caller ID should be required only when Alert Call is enabled and upstream handling is disabled');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');") !== false, 'Alert Call Caller ID field should update disabled and required state from alert-call and upstream settings');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);") !== false, 'Alert Call Caller ID help text should explain when the field is unused vs required');
 assert_true(strpos($jsSource, "$('#rc-setting-country').off('change.repeatcaller input.repeatcaller keyup.repeatcaller').on('change.repeatcaller input.repeatcaller keyup.repeatcaller', function () { updateCallerScopeEditorState(); });") !== false, 'Country code text field should trigger updates to both inbound caller and outbound E.164 placeholders on change, input, and keyup events for real-time feedback');
 assert_true(strpos($jsSource, "$('#rc-caller-include-unavailable').text(includeUnavailableText).toggleClass('hidden', includeUnavailableText === '');") !== false && strpos($jsSource, "$('#rc-caller-exclude-unavailable').text(excludeUnavailableText).toggleClass('hidden', excludeUnavailableText === '');") !== false, 'caller scope helper should explain why disabled fields are unavailable');
 // Verify country code 44 (UK) example behavior: leading 0 stays, no prepend needed
@@ -681,6 +686,11 @@ assert_true((bool)preg_match('/\'alert_call_strategy\'\s*=>\s*\$this->normaliseA
 assert_true((bool)preg_match('/\'alert_call_keep_trying\'\s*=>\s*isset\(\$_REQUEST\[\'alert_call_keep_trying\'\]\) \? \(!empty\(\$_REQUEST\[\'alert_call_keep_trying\'\]\) \? 1 : 0\) : 1/', $controllerSource), 'controller save path must default alert_call_keep_trying to enabled when omitted');
 assert_true((bool)preg_match('/\$recordingId\s*=\s*array_key_exists\(\'alert_call_recording_id\', \$_REQUEST\)\s*\?\s*\$this->nullablePositiveRequestInt\(\'alert_call_recording_id\'\)\s*:\s*\(\(\$existingRule\s*!==\s*null/', $controllerSource), 'controller save path must preserve existing alert_call_recording_id when request omits that field');
 assert_true((bool)preg_match('/private function normaliseAlertCallStrategy\(string \$strategy\): string/', $controllerSource), 'controller should define a bounded alert call strategy normalizer');
+assert_true(strpos($controllerSource, '\'alert_call_handle_callerid_upstream\' => array_key_exists(\'alert_call_handle_callerid_upstream\', $_REQUEST)') !== false, 'controller save path must persist Handle Caller ID Upstream with explicit new-rule default and existing-rule fallback');
+assert_true(strpos($controllerSource, 'if (!empty($payload[\'alert_call_enabled\']) && empty($payload[\'alert_call_handle_callerid_upstream\'])) {') !== false, 'backend must require Caller ID only when Alert Call is enabled and upstream handling is disabled');
+assert_true(strpos($controllerSource, 'Alert Call Caller ID is required when Alert Call is enabled and Caller ID managed elsewhere is disabled.') !== false, 'backend should return a clear validation message for blank Caller ID when managed-elsewhere handling is disabled');
+assert_true(strpos($controllerSource, 'Alert Call Caller ID must contain digits only, optionally prefixed with +.') !== false, 'backend should return a clear validation message for invalid Caller ID format');
+assert_true(strpos($controllerSource, 'private function isValidAlertCallCallerId(string $value): bool {') !== false, 'controller should define a dedicated Alert Call Caller ID validator');
 assert_true(strpos($controllerSource, '->getAllRecordings()') !== false, 'recordings loader should use getAllRecordings from native FreePBX Recordings API');
 assert_true(strpos($controllerSource, 'getAllRecordingsList') === false, 'recordings loader should not use getAllRecordingsList');
 assert_true(strpos($controllerSource, 'getSystemRecordings') === false, 'recordings loader should not use getSystemRecordings');
@@ -691,6 +701,13 @@ assert_true(strpos($controllerSource, "\$name = trim((string)(\$row['displayname
 assert_true(strpos($controllerSource, 'FROM recordings') === false, 'recordings loader should not query recordings table directly');
 assert_true((bool)preg_match('/\'suppression_minutes_override\'\s*=>\s*\(\$_REQUEST\[\'suppression_minutes_override\'\]\s*\?\?\s*\'\'\)\s*!==\s*\'\'\s*\?\s*\$this->boundedDigits\(\(string\)\$_REQUEST\[\'suppression_minutes_override\'\],\s*0,\s*525600,\s*1440\)\s*:\s*null/', $controllerSource), 'controller save path must accept 0 as a distinct rule suppression override');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-strategy').val(rule.alert_call_strategy || 'ringall');") !== false, 'rule loader must apply persisted alert call strategy with ringall fallback');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);") !== false, 'new-rule reset path should default Handle Caller ID Upstream to enabled');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', parseInt(rule.alert_call_handle_callerid_upstream || 0, 10) === 1);") !== false, 'editing an existing rule should restore the saved Handle Caller ID Upstream setting');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });") !== false, 'toggling Handle Caller ID Upstream should update the Caller ID field state immediately');
+assert_true(strpos($jsSource, 'function isValidAlertCallCallerId(value) {') !== false && strpos($jsSource, 'return /^\\+?\\d+$/.test(candidate);') !== false, 'frontend should validate Alert Call Caller ID as digits with an optional leading + when Repeat Caller sets it');
+assert_true(strpos($jsSource, "if (callEnabled && !handleCallerIdUpstream && alertCallCallerId === '') {") !== false, 'frontend should reject blank Alert Call Caller ID when Alert Call is enabled and upstream handling is disabled');
+assert_true(strpos($jsSource, "if (callEnabled && !handleCallerIdUpstream && !isValidAlertCallCallerId(alertCallCallerId)) {") !== false, 'frontend should reject invalid Alert Call Caller ID when Repeat Caller is expected to set it');
+assert_true(strpos($jsSource, "alert_call_handle_callerid_upstream: handleCallerIdUpstream ? 1 : 0,") !== false, 'save payload should persist Handle Caller ID Upstream explicitly');
 assert_true(strpos($jsSource, 'function suppressionSummary(rule) {') !== false, 'rules UI should define a suppression summary helper');
 assert_true(strpos($jsSource, "return 'Default 24hrs';") !== false, 'rules UI should show the default suppression label when blank');
 assert_true(strpos($jsSource, "return 'Disabled';") !== false, 'rules UI should show Disabled when suppression is set to 0');
@@ -729,6 +746,11 @@ assert_true(strpos($viewSource, 'placeholder="2001, 2002, 07812345678"') !== fal
 assert_true(strpos($viewSource, 'placeholder="07812345678"') !== false, 'Only monitor callers placeholder should show UK country context example');
 assert_true(strpos($viewSource, 'placeholder="07812345679"') !== false, 'Ignore these callers placeholder should show UK country context example');
 assert_true(strpos($viewSource, 'placeholder="+441234567890"') !== false, 'Alert Call Caller ID placeholder should show E.164 format with leading +');
+assert_true(strpos($viewSource, 'id="rc-rule-alert-call-handle-callerid-upstream" checked') !== false, 'rule editor view should default Caller ID managed elsewhere to enabled for new rules');
+assert_true((bool)preg_match('/id="rc-rule-alert-call-recording-id"[\s\S]*id="rc-rule-alert-call-handle-callerid-upstream"[\s\S]*id="rc-rule-alert-call-callerid"/', $viewSource), 'Caller ID managed elsewhere should appear directly above the Alert Call Caller ID field in the right column');
+assert_true(strpos($viewSource, 'Caller ID managed elsewhere') !== false, 'rule editor should label the option as Caller ID managed elsewhere');
+assert_true(strpos($viewSource, 'Repeat Caller will not set the Caller ID for Alert Calls. Caller presentation is managed elsewhere, for example by Outbound Routes, trunks, another module, an SBC, or your network provider.') !== false, 'rule editor should explain managed-elsewhere caller presentation responsibility next to the checkbox');
+assert_true(strpos($viewSource, 'id="rc-rule-alert-call-callerid-help"') !== false, 'rule editor should include a dedicated help container for dynamic Alert Call Caller ID state text');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Only monitor these callers\'); ?></label>') !== false, 'Rule editor should use clear caller-monitor label wording');
 assert_true(strpos($viewSource, '<p class="help-block" id="rc-caller-include-help"><?php echo _(\'Only these callers will trigger this rule.\'); ?></p>') !== false, 'Rule editor should explain specific-caller requirement in helper text');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Ignore these callers\'); ?></label>') !== false, 'Rule editor should use clear caller-ignore label wording');
@@ -748,7 +770,7 @@ assert_true(strpos($viewSource, 'Clear Editor') === false, 'rule editor should n
 assert_true(strpos($viewSource, 'class="btn btn-danger hidden" id="rc-cancel-edit"') !== false, 'rule editor should render a hidden danger-style Cancel Edit button for edit mode');
 assert_true((bool)preg_match('/id="rc-rules-table"[\s\S]*<th><\?php echo _\(\'Recording\'\); \?><\/th>/', $viewSource), 'rules table should include a labeled Recording column');
 assert_true(strpos($viewSource, 'rc-alert-call-destination-col-wide') !== false, 'destinations section should use the wider layout class');
-assert_true((bool)preg_match('/rc-alert-call-right-col[\s\S]*id="rc-rule-alert-call-recording-id"[\s\S]*id="rc-rule-alert-call-callerid"/', $viewSource), 'caller id should be grouped directly beneath system recording in the right column');
+assert_true((bool)preg_match('/rc-alert-call-right-col[\s\S]*id="rc-rule-alert-call-recording-id"[\s\S]*id="rc-rule-alert-call-handle-callerid-upstream"[\s\S]*id="rc-rule-alert-call-callerid"/', $viewSource), 'Caller ID managed elsewhere and Alert Call Caller ID should remain grouped directly beneath system recording in the right column');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-list"') !== false, 'rule editor view should include ordered destination list container');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-add"') !== false, 'rule editor view should include add-destination button');
 assert_true((bool)preg_match('/GUI \(always enabled\)[\s\S]*id="rc-rule-alert-call-enabled"[\s\S]*Alert Call[\s\S]*id="rc-rule-email-enabled"[\s\S]*Email/', $viewSource), 'rule action checklist should present Alert Call before Email');

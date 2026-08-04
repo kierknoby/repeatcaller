@@ -106,7 +106,10 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.
 - System Recording: optional recording played before generated message.
+- Caller ID managed elsewhere: enabled by default for new rules. Repeat Caller will not set the Caller ID for Alert Calls. Caller presentation is managed elsewhere, for example by Outbound Routes, trunks, another module, an SBC, or your network provider.
 - Alert Call Caller ID: sets the caller ID presented on outbound alert calls. The preferred format is international E.164 with a leading +, for example +447812345678. The example/placeholder follows the configured Default Country Code.
+
+If you untick Caller ID managed elsewhere while Alert Call is enabled, Alert Call Caller ID becomes mandatory. Repeat Caller then sends the configured Caller ID itself instead of leaving caller presentation to upstream routing or trunk configuration.
 
 Internal safeguard note:
 

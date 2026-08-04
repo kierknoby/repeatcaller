@@ -208,6 +208,8 @@ assert_true(strpos($readmeSource, '#### DID scope controls') !== false, 'README 
 assert_true(strpos($readmeSource, 'Allows individual inbound routes to be excluded when All DIDs is selected.') !== false, 'README DID scope release notes should document exclusions in All DIDs mode');
 assert_true(strpos($readmeSource, 'Keeps Selected DIDs only mode limited to explicit route inclusions.') !== false, 'README DID scope release notes should document Selected DIDs include-only behavior');
 assert_true(strpos($readmeSource, 'Clears stale opposite-mode route selections when the DID scope changes.') !== false, 'README DID scope release notes should document stale row cleanup on mode switch');
+assert_true(strpos($readmeSource, '#### Alert Call Caller ID handling') !== false, 'README release history should document the Alert Call Caller ID handling subsection');
+assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is now enabled by default for new rules') !== false, 'README release history should document the new default managed-elsewhere Caller ID handling');
 assert_true(strpos($readmeSource, '## Requirements') !== false, 'README should include Requirements section');
 assert_true(strpos($readmeSource, '## Installing') !== false, 'README should include Installing section');
 assert_true(strpos($readmeSource, '## Updating Repeat Caller') !== false, 'README should include Updating Repeat Caller section');
@@ -272,9 +274,13 @@ assert_true(strpos($userGuideSource, 'This alert is currently unaccepted. You wi
 assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md should link back to README.md');
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');
 assert_true(strpos($userGuideSource, 'Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.') !== false, 'USER_GUIDE.md should clarify trusted administrator-controlled Alert Call destination and caller ID settings');
+assert_true(strpos($userGuideSource, 'Caller ID managed elsewhere: enabled by default for new rules.') !== false, 'USER_GUIDE.md should explain the default managed-elsewhere Caller ID handling');
+assert_true(strpos($userGuideSource, 'If you untick Caller ID managed elsewhere while Alert Call is enabled, Alert Call Caller ID becomes mandatory.') !== false, 'USER_GUIDE.md should explain when Alert Call Caller ID becomes mandatory');
 assert_true(strpos($readmeSource, 'Press 1: accepts the incident') !== false && strpos($readmeSource, 'Press 2: declines that Alert Call attempt') !== false, 'README should describe current Alert Call DTMF controls');
 assert_true(strpos($readmeSource, 'Alert Call destinations and Alert Call caller ID values are administrator-') !== false, 'README should clarify administrator-controlled Alert Call destination and caller ID settings');
 assert_true(strpos($readmeSource, 'Only use trusted values that are appropriate for') !== false, 'README should advise trusted Alert Call destination and caller ID values');
+assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is enabled by default for new rules.') !== false, 'README should explain that managed-elsewhere Caller ID handling is the default for new rules');
+assert_true(strpos($readmeSource, 'Unticking it makes Alert Call Caller ID mandatory when Alert') !== false && strpos($readmeSource, 'Call is enabled.') !== false, 'README should explain when Alert Call Caller ID becomes mandatory');
 assert_true((bool) preg_match('/No valid response: records an answered-no-response outcome and leaves the\s+incident unaccepted/', $readmeSource), 'README should describe no-response unaccepted outcome');
 assert_true(strpos($readmeSource, 'GUI incidents, which are always recorded') !== false && strpos($readmeSource, 'Email notifications, which are optional per rule') !== false && strpos($readmeSource, 'Alert Call, which is optional per rule and can be answered from the phone') !== false, 'README should document GUI incidents and optional Email/Alert Call behaviour');
 assert_true(strpos($readmeSource, 'Prune Incident History removes old completed incident records.') !== false, 'README should explain incident-history pruning scope');

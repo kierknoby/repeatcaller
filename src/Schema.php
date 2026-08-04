@@ -110,6 +110,7 @@ final class Schema {
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_strategy', 'VARCHAR(20) NOT NULL DEFAULT "ringall"');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_keep_trying', 'TINYINT(1) NOT NULL DEFAULT 1');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_recording_id', 'INT UNSIGNED NULL');
+		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_handle_callerid_upstream', 'TINYINT(1) NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_callerid', 'VARCHAR(255) NULL');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'is_deleted', 'TINYINT(1) NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'deleted_at', 'DATETIME NULL');
@@ -174,6 +175,7 @@ final class Schema {
 				alert_call_strategy VARCHAR(20) NOT NULL DEFAULT 'ringall',
 				alert_call_keep_trying TINYINT(1) NOT NULL DEFAULT 1,
 				alert_call_recording_id INT UNSIGNED NULL,
+				alert_call_handle_callerid_upstream TINYINT(1) NOT NULL DEFAULT 0,
 				alert_call_callerid VARCHAR(255) NULL,
 				is_deleted TINYINT(1) NOT NULL DEFAULT 0,
 				deleted_at DATETIME NULL,

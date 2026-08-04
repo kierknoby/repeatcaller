@@ -220,6 +220,7 @@ function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?Fa
 			alert_call_strategy TEXT NOT NULL DEFAULT "ringall",
 			alert_call_keep_trying INTEGER NOT NULL DEFAULT 1,
 			alert_call_recording_id INTEGER,
+			alert_call_handle_callerid_upstream INTEGER NOT NULL DEFAULT 0,
 			alert_call_callerid TEXT,
 			mode TEXT NOT NULL,
 			threshold_count INTEGER NOT NULL,
@@ -381,10 +382,10 @@ function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?Fa
 function insert_rule(PDO $db, array $rule): int {
 	$stmt = $db->prepare(
 		'INSERT INTO repeatcaller_rules
-			(name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode,
+			(name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode,
 			 exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at)
 		 VALUES
-			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)' 
 	);
 	$stmt->execute([
 		$rule['name'] ?? 'Rule',
@@ -396,6 +397,7 @@ function insert_rule(PDO $db, array $rule): int {
 		$rule['alert_call_strategy'] ?? 'ringall',
 		$rule['alert_call_keep_trying'] ?? 1,
 		$rule['alert_call_recording_id'] ?? null,
+		$rule['alert_call_handle_callerid_upstream'] ?? 0,
 		$rule['alert_call_callerid'] ?? null,
 		$rule['mode'] ?? 'repeat',
 		$rule['threshold_count'] ?? 2,
@@ -506,6 +508,7 @@ assert_true($classSource !== false, 'Repeatcaller.class.php should be readable f
 assert_true(strpos($classSource, 'en_US') === false && strpos($classSource, 'en_GB') === false, 'language resolution code must not hard-code en_US or en_GB');
 assert_true(strpos($classSource, "'Account' => 'repeatcaller_alert_internal'") !== false, 'alert call originate should apply an internal account marker for module-originated call legs');
 assert_true(strpos($classSource, 'REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1') !== false, 'alert call originate variables should carry explicit internal-origin marker flags for module-owned legs');
+assert_true(strpos($classSource, 'if ($callerId !== \'\') {') !== false && strpos($classSource, '$params[\'CallerID\'] = $callerId;') !== false, 'originate should only include CallerID when Repeat Caller is explicitly setting a nonblank value');
 
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for language fallback contract checks');
@@ -603,6 +606,7 @@ $callRule = insert_rule($callDb, [
 	'alert_call_enabled' => 1,
 	'alert_call_destinations' => '100,101',
 	'alert_call_recording_id' => 55,
+	'alert_call_handle_callerid_upstream' => 0,
 	'alert_call_callerid' => '5551234',
 	'repeat_mode_override' => 'never',
 ]);
@@ -618,6 +622,31 @@ assert_same(2, count_history($callDb, "incident_id = {$callIncident} AND action_
 assert_same(2, count($callSender->calls), 'enabled call alerts should attempt each configured outbound call');
 assert_same(55, (int)$callSender->calls[0]['recordingId'], 'configured recording id should be passed to call transport');
 assert_same('5551234', (string)$callSender->calls[0]['callerId'], 'configured caller ID should be passed to call transport');
+$upstreamClock = new TestClock('2026-07-13 10:10:00');
+$upstreamSender = new FakeCallSender();
+[$upstreamDb, $upstreamProcessor] = create_alert_environment($upstreamClock, new FakeEmailSender(), $upstreamSender);
+$upstreamRule = insert_rule($upstreamDb, [
+	'name' => 'Upstream Caller ID Rule',
+	'email_enabled' => 0,
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '102',
+	'alert_call_recording_id' => 55,
+	'alert_call_handle_callerid_upstream' => 1,
+	'alert_call_callerid' => '5559999',
+	'repeat_mode_override' => 'never',
+]);
+$upstreamIncident = insert_incident($upstreamDb, [
+	'rule_id' => $upstreamRule,
+	'subject_key' => '+441234500004',
+	'subject_label' => '+441234500004',
+	'first_matched_at' => '2026-07-13 10:10:00',
+	'suppression_expires_at' => '2026-07-13 11:10:00',
+]);
+$upstreamSummary = $upstreamProcessor->run(settings());
+assert_same(1, count($upstreamSender->calls), 'upstream caller-id rules should still attempt their alert call');
+assert_same('', (string)$upstreamSender->calls[0]['callerId'], 'upstream caller-id handling should omit Caller ID from the alert-call transport');
+assert_same(1, $upstreamSummary['alert_call_sent'], 'upstream caller-id handling should still count a successful alert call as sent');
+
 assert_true((int)$callSender->calls[0]['context']['history_id'] > 0, 'alert call transport should receive the exact alert-history attempt id');
 assert_same($callIncident, (int)$callSender->calls[0]['context']['incident_id'], 'alert call transport should receive the exact incident id');
 assert_same('100', (string)$callSender->calls[0]['context']['recipient'], 'alert call transport should receive the alert destination recipient');

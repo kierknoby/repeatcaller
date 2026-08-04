@@ -31,6 +31,7 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			alert_call_strategy TEXT NOT NULL DEFAULT "ringall",
 			alert_call_keep_trying INTEGER NOT NULL DEFAULT 1,
 			alert_call_recording_id INTEGER,
+			alert_call_handle_callerid_upstream INTEGER NOT NULL DEFAULT 0,
 			alert_call_callerid TEXT,
 			mode TEXT NOT NULL,
 			threshold_count INTEGER NOT NULL,
@@ -210,11 +211,11 @@ try {
 	$db = new PDO('sqlite:' . $dbPath);
 	$repo = create_repository($db);
 
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Rule A', 1, 1, 1, '100,101', 'ordered', 1, 55, '5551234', 'repeat', 2, 60, 'any', 0, 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Rule A', 1, 1, 1, '100,101', 'ordered', 1, 55, 0, '5551234', 'repeat', 2, 60, 'any', 0, 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$ruleId = (int)$db->lastInsertId();
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Rule Disabled', 0, 0, 0, null, 'ringall', 1, null, null, 'repeat', 2, 60, 'any', 0, 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Rule Disabled', 0, 0, 0, null, 'ringall', 1, null, 0, null, 'repeat', 2, 60, 'any', 0, 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 
 	$db->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ruleId, 1, '09:00:00', '12:00:00', '2026-07-13 09:00:00']);
 	$db->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ruleId, 1, '14:00:00', '18:00:00', '2026-07-13 09:00:00']);
@@ -226,6 +227,7 @@ try {
 	$enabledRules = $repo->loadEnabledRules();
 	assert_same(1, count($enabledRules), 'only enabled rules should be loaded');
 	assert_same('Rule A', $enabledRules[0]['name'], 'enabled rule should round-trip');
+	assert_same(0, (int)($enabledRules[0]['alert_call_handle_callerid_upstream'] ?? 0), 'existing stored rules should preserve legacy upstream-caller-id handling default as disabled');
 
 	$invertRuleId = $repo->saveRule([
 		'name' => 'Invert Recording Rule',
@@ -236,6 +238,7 @@ try {
 		'alert_call_strategy' => 'ringall',
 		'alert_call_keep_trying' => 1,
 		'alert_call_recording_id' => 77,
+		'alert_call_handle_callerid_upstream' => 1,
 		'alert_call_callerid' => '',
 		'mode' => 'invert',
 		'threshold_count' => 2,
@@ -251,6 +254,7 @@ try {
 	], '2026-07-13 09:05:00');
 	$invertRule = $repo->loadRule($invertRuleId);
 	assert_same(77, (int)($invertRule['alert_call_recording_id'] ?? 0), 'invert rules should persist alert_call_recording_id the same as repeat rules');
+	assert_same(1, (int)($invertRule['alert_call_handle_callerid_upstream'] ?? 0), 'repository should persist Handle Caller ID Upstream for new rules');
 
 	$schedules = $repo->loadSchedules([$ruleId]);
 	assert_same(2, count($schedules[$ruleId]), 'multiple schedules should round-trip correctly');
