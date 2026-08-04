@@ -1640,6 +1640,45 @@
 		updateAlertCallDestinationHiddenField();
 	}
 
+	function alertCallDestinationExists(destination) {
+		var value = $.trim(String(destination || ''));
+		if (value === '') {
+			return false;
+		}
+		var exists = false;
+		$('#rc-rule-alert-call-destination-list li').each(function () {
+			if (String($(this).attr('data-destination') || '') === value) {
+				exists = true;
+				return false;
+			}
+		});
+		return exists;
+	}
+
+	function updateAlertCallDestinationAddButtonState() {
+		var $button = $('#rc-rule-alert-call-destination-add');
+		if (!$button.length) {
+			return;
+		}
+		var alertCallEnabled = $('#rc-rule-alert-call-enabled').is(':checked');
+		var rawInput = $('#rc-rule-alert-call-destination-input').val();
+		var hasAddableDestination = false;
+
+		$.each(normaliseAlertCallDestinationEntries(rawInput, true), function (_, destinationRow) {
+			if (destinationRow.destination !== '' && !alertCallDestinationExists(destinationRow.destination)) {
+				hasAddableDestination = true;
+				return false;
+			}
+		});
+
+		var disabled = !alertCallEnabled || !hasAddableDestination;
+		$button
+			.prop('disabled', disabled)
+			.toggleClass('btn-default', !disabled)
+			.toggleClass('btn-disabled', disabled)
+			.attr('aria-disabled', disabled ? 'true' : 'false');
+	}
+
 	function buildAlertCallDestinationItem(destination, keepTryingEnabled) {
 		var keepTrying = keepTryingEnabled === undefined ? true : !!keepTryingEnabled;
 		var $li = $('<li class="list-group-item rc-alert-call-destination-item"/>').attr('data-destination', destination).attr('data-keep-trying', keepTrying ? '1' : '0');
@@ -1656,6 +1695,7 @@
 		var $remove = $('<button type="button" class="btn btn-xs btn-link rc-alert-call-destination-remove"/>').text('Remove').on('click', function () {
 			$li.remove();
 			updateAlertCallDestinationOrderLabels();
+			updateAlertCallDestinationAddButtonState();
 		});
 		$li.append($order).append($dragHandle).append($value).append($keepTryingToggle).append($remove);
 
@@ -1705,6 +1745,7 @@
 		}
 		$('#rc-rule-alert-call-destination-list').append(buildAlertCallDestinationItem(value, keepTryingEnabled));
 		updateAlertCallDestinationOrderLabels();
+		updateAlertCallDestinationAddButtonState();
 		return true;
 	}
 
@@ -1716,6 +1757,7 @@
 			$list.append(buildAlertCallDestinationItem(destinationRow.destination, destinationRow.keepTrying));
 		});
 		updateAlertCallDestinationOrderLabels();
+		updateAlertCallDestinationAddButtonState();
 	}
 
 	function addAlertCallDestinationsFromInput() {
@@ -1732,6 +1774,7 @@
 		if (autoAddedIgnoreEntries > 0) {
 			showMessage(alertCallSelfTriggerWarning, 'warning');
 		}
+		updateAlertCallDestinationAddButtonState();
 	}
 
 	function callerExcludeValues() {
@@ -1922,12 +1965,12 @@
 		// Alert Call fields
 		$('#rc-rule-alert-call-strategy').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-destination-input').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
-		$('#rc-rule-alert-call-destination-add').prop('disabled', !alertCallEnabled).toggleClass('btn-default', alertCallEnabled).toggleClass('btn-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-destination-list').find('input, button').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');
 		$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);
+		updateAlertCallDestinationAddButtonState();
 
 		// Email fields
 		$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);
@@ -2443,6 +2486,9 @@
 				event.preventDefault();
 				addAlertCallDestinationsFromInput();
 			}
+		});
+		$('#rc-rule-alert-call-destination-input').off('input.repeatcaller keyup.repeatcaller change.repeatcaller paste.repeatcaller').on('input.repeatcaller keyup.repeatcaller change.repeatcaller paste.repeatcaller', function () {
+			updateAlertCallDestinationAddButtonState();
 		});
 
 		$('#rc-run-now').off('click.repeatcaller').on('click.repeatcaller', function () {
