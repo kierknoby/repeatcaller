@@ -1908,9 +1908,9 @@
 		if (!alertCallEnabled) {
 			callerIdHelpText = 'Used only when Alert Call is enabled.';
 		} else if (handleCallerIdUpstream) {
-			callerIdHelpText = 'Not used while Caller ID managed elsewhere is enabled. Caller presentation remains managed elsewhere.';
+			callerIdHelpText = 'Not used while Caller ID will be managed elsewhere is enabled.';
 		} else {
-			callerIdHelpText = 'Required while Caller ID managed elsewhere is disabled. Enter digits with an optional leading +.';
+			callerIdHelpText = 'Enter Caller ID in E.164 format, e.g. ' + e164Example + '.';
 		}
 
 		// Alert Call fields
