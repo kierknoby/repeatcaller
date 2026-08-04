@@ -190,7 +190,7 @@ assert_true(strpos($viewSource, 'Selected DIDs only') !== false, 'rule editor DI
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
 assert_true(strpos($readmeSource, '# Repeat Caller 1.0.1 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.1');
-assert_true(strpos($readmeSource, '**Release date:** 4 August 2026') !== false, 'README should declare the 1.0.1 release date');
+assert_true(strpos($readmeSource, '**Release date:** 5 August 2026') !== false, 'README should declare the 1.0.1 release date');
 assert_true(strpos($readmeSource, 'Repeat Caller supports two distinct operating modes') !== false, 'README should describe the module in user-facing language');
 assert_true(strpos($readmeSource, 'fwconsole ma installlocal repeatcaller') !== false, 'README must keep installlocal warning text');
 assert_true(strpos($readmeSource, 'git reset --hard FETCH_HEAD') !== false, 'README must keep deterministic update sequence');
@@ -200,7 +200,7 @@ assert_true(strpos($readmeSource, 'TESTING.md') !== false, 'README should link t
 assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should include Introduction section');
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
-assert_true(strpos($readmeSource, '### 1.0.1, patch release, 4 August 2026') !== false, 'README should include the 1.0.1 release history heading');
+assert_true(strpos($readmeSource, '### 1.0.1, patch release, 5 August 2026') !== false, 'README should include the 1.0.1 release history heading');
 assert_true(strpos($readmeSource, 'Rule explanation-row state colouring now uses explicit Repeat Caller') !== false, 'README should record the 1.0.1 explanation-row colouring consistency fix');
 assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
 assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable All Rules and Disable All Rules') !== false, 'README release history should document global control wording updates');
@@ -280,12 +280,12 @@ assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md shou
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');
 assert_true(strpos($userGuideSource, 'Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.') !== false, 'USER_GUIDE.md should clarify trusted administrator-controlled Alert Call destination and caller ID settings');
 assert_true(strpos($userGuideSource, 'Caller ID managed elsewhere: enabled by default for new rules.') !== false, 'USER_GUIDE.md should explain the default managed-elsewhere Caller ID handling');
-assert_true(strpos($userGuideSource, 'If you untick Caller ID managed elsewhere while Alert Call is enabled, Alert Call Caller ID becomes mandatory.') !== false, 'USER_GUIDE.md should explain when Alert Call Caller ID becomes mandatory');
+assert_true(strpos($userGuideSource, 'If you untick Caller ID managed elsewhere while Alert Call is enabled, Alert Call Caller ID becomes mandatory and the previous unsaved value is restored automatically if one was entered earlier in the session.') !== false, 'USER_GUIDE.md should explain when Alert Call Caller ID becomes mandatory and restored');
 assert_true(strpos($readmeSource, 'Press 1: accepts the incident') !== false && strpos($readmeSource, 'Press 2: declines that Alert Call attempt') !== false, 'README should describe current Alert Call DTMF controls');
 assert_true(strpos($readmeSource, 'Alert Call destinations and Alert Call caller ID values are administrator-') !== false, 'README should clarify administrator-controlled Alert Call destination and caller ID settings');
 assert_true(strpos($readmeSource, 'Only use trusted values that are appropriate for') !== false, 'README should advise trusted Alert Call destination and caller ID values');
 assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is enabled by default for new rules.') !== false, 'README should explain that managed-elsewhere Caller ID handling is the default for new rules');
-assert_true(strpos($readmeSource, 'Unticking it makes Alert Call Caller ID mandatory when Alert') !== false && strpos($readmeSource, 'Call is enabled.') !== false, 'README should explain when Alert Call Caller ID becomes mandatory');
+assert_true((bool)preg_match('/Unticking it restores the previous\s+unsaved value and makes Alert Call Caller ID mandatory when Alert Call is\s+enabled\./', $readmeSource), 'README should explain when Alert Call Caller ID becomes mandatory and restored');
 assert_true((bool) preg_match('/No valid response: records an answered-no-response outcome and leaves the\s+incident unaccepted/', $readmeSource), 'README should describe no-response unaccepted outcome');
 assert_true(strpos($readmeSource, 'GUI incidents, which are always recorded') !== false && strpos($readmeSource, 'Email notifications, which are optional per rule') !== false && strpos($readmeSource, 'Alert Call, which is optional per rule and can be answered from the phone') !== false, 'README should document GUI incidents and optional Email/Alert Call behaviour');
 assert_true(strpos($readmeSource, 'Prune Incident History removes old completed incident records.') !== false, 'README should explain incident-history pruning scope');

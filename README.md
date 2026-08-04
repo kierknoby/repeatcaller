@@ -1,6 +1,6 @@
 # Repeat Caller 1.0.1 for FreePBX 16 and 17
 
-**Release date:** 4 August 2026
+**Release date:** 5 August 2026
 
 ## Introduction
 
@@ -34,7 +34,7 @@ Use with FreePBX/PBXact 16 or 17.
 
 ## Release History
 
-### 1.0.1, patch release, 4 August 2026
+### 1.0.1, patch release, 5 August 2026
 
 - UI fix: Rule explanation-row state colouring now uses explicit Repeat Caller
   state classes on rule-table cells so enabled, disabled, temporary Status,
