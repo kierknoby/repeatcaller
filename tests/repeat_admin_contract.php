@@ -473,6 +473,8 @@ assert_true(strpos($viewSource, '<strong><?php echo _(\'PBX Time\'); ?>:</strong
 assert_true(strpos($viewSource, 'id="rc-bulk-rule-action"') !== false, 'Engine Status should expose a single bulk rule state action button');
 assert_true(strpos($viewSource, '$initialBulkActionLabel = $initialMonitoringSnoozed') !== false, 'Engine Status view should derive bulk action button label from global monitoring enabled/snoozed state');
 assert_true(strpos($viewSource, '? _(\'Resume\')') !== false && strpos($viewSource, ': ($initialMonitoringEnabled ? _(\'Disable Rules\') : _(\'Enable Rules\'));') !== false, 'bulk action label should resolve to Resume, Disable Rules, or Enable Rules from global state only');
+assert_true(strpos($viewSource, '$initialRunNowEnabled = $initialMonitoringEnabled && !$initialMonitoringSnoozed;') !== false, 'Run Now initial availability should be derived from global enabled and snoozed state in view markup');
+assert_true(strpos($viewSource, 'id="rc-run-now"<?php echo $initialRunNowEnabled ? \'\' : \' disabled\'; ?>') !== false, 'Run Now should include disabled attribute in markup when global state makes it unavailable');
 assert_true(strpos($viewSource, 'id="rc-enable"') === false && strpos($viewSource, 'id="rc-disable"') === false && strpos($viewSource, 'id="rc-resume"') === false, 'legacy separate Enable Rules, Disable Rules and Resume controls should be removed from Engine Status');
 assert_true(strpos($viewSource, 'id="rc-add-did-include"') !== false && strpos($viewSource, 'id="rc-add-did-exclude"') !== false, 'rule editor DID scope controls should keep Include Route and Exclude Route buttons visible');
 assert_true(strpos($viewSource, 'Enable Monitoring') === false, 'legacy Enable Monitoring button label should be removed from the view');
@@ -768,7 +770,7 @@ assert_true(strpos($viewSource, 'placeholder="2001, 2002, 07812345678"') !== fal
 assert_true(strpos($viewSource, 'placeholder="07812345678"') !== false, 'Only monitor callers placeholder should show UK country context example');
 assert_true(strpos($viewSource, 'placeholder="07812345679"') !== false, 'Ignore these callers placeholder should show UK country context example');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Start as\'); ?></label>') !== false, 'rule editor should rename the Enabled field label to Start as');
-assert_true(strpos($viewSource, '<input type="checkbox" id="rc-rule-enabled" checked> <?php echo _(\'Start Enabled\'); ?>') !== false, 'rule editor should present Start Enabled as the create-mode toggle choice');
+assert_true(strpos($viewSource, '<input type="checkbox" id="rc-rule-enabled" checked> <?php echo _(\'Enabled\'); ?>') !== false, 'rule editor should present Enabled as the create-mode toggle choice');
 assert_true(strpos($viewSource, 'Choose whether the new rule should start enabled or disabled.') !== false, 'rule editor should explain that Start as chooses the initial state only for new rules');
 assert_true(strpos($viewSource, 'placeholder="+441234567890"') !== false, 'Alert Call Caller ID placeholder should show E.164 format with leading +');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-handle-callerid-upstream" checked') !== false, 'rule editor view should default Caller ID managed elsewhere to enabled for new rules');
@@ -802,7 +804,15 @@ assert_true((bool)preg_match('/GUI \(always enabled\)[\s\S]*id="rc-rule-alert-ca
 assert_true((bool)preg_match('/\.repeatcaller \.rc-editor-panel\.rc-editor-edit-mode \{[\s\S]*background: #f5f5f5;[\s\S]*border-color: #ddd;/s', $cssSource), 'rule editor edit mode should use subtle neutral grey background and light border styling');
 assert_true((bool)preg_match('/\.repeatcaller \.form-control\.rc-control-disabled,\s*\.repeatcaller \.form-control\.rc-control-disabled\[disabled\] \{[\s\S]*background-color: #f5f5f5;[\s\S]*border-color: #ddd;/s', $cssSource), 'disabled inbound route selector should use light grey disabled state styling');
 assert_true(strpos($cssSource, '.repeatcaller .rc-rule-row-action-disabled,') !== false && strpos($cssSource, 'opacity: 0.55;') !== false, 'disabled Status, Edit and Delete controls should be visibly greyed out');
+assert_true(strpos($cssSource, 'pointer-events: none;') !== false, 'disabled row-action buttons should not accept hover/focus/active pointer affordances');
 assert_true(strpos($cssSource, '.repeatcaller .rc-rule-start-as-disabled,') !== false && strpos($cssSource, 'color: #777;') !== false, 'Start as edit-mode state should use muted grey styling');
+assert_true(strpos($cssSource, '.repeatcaller .rc-rule-start-as-disabled input[disabled],') !== false && strpos($cssSource, 'cursor: not-allowed;') !== false, 'disabled Start as controls should use not-allowed cursor to avoid clickability affordance');
+assert_true(strpos($cssSource, '.repeatcaller .btn[disabled],') !== false && strpos($cssSource, '.repeatcaller .btn.disabled,') !== false, 'disabled buttons should use dedicated disabled selectors rather than click guards only');
+assert_true(strpos($cssSource, '.repeatcaller .btn[disabled]:hover,') !== false && strpos($cssSource, '.repeatcaller .btn[disabled]:focus,') !== false && strpos($cssSource, '.repeatcaller .btn[disabled]:active,') !== false, 'disabled buttons should explicitly neutralize hover, focus, and active affordances');
+assert_true(strpos($cssSource, 'outline: none;') !== false && strpos($cssSource, 'box-shadow: none;') !== false, 'disabled control styling should remove focus outlines/rings and active shadows');
+assert_true(strpos($cssSource, '.repeatcaller .rc-rule-status:not([disabled]),') !== false && strpos($cssSource, '.repeatcaller .rc-rule-status:not([disabled]):hover,') !== false, 'Status button hover/focus/active styling should apply only when the control is enabled');
+assert_true(strpos($cssSource, '.repeatcaller .rc-route-actions .btn.rc-route-action-active:not([disabled]),') !== false, 'active DID action styling should not apply when the route-action button is disabled');
+assert_true(strpos($cssSource, '.repeatcaller .form-control[disabled]:focus,') !== false && strpos($cssSource, '.repeatcaller .form-control.rc-control-disabled:focus,') !== false, 'disabled form controls should suppress focus ring and preserve muted disabled visuals');
 
 $rootPos = strpos($viewSource, '<div class="repeatcaller"');
 $containerPos = strpos($viewSource, '<div class="container-fluid repeatcaller-container">');
