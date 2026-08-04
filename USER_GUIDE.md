@@ -101,11 +101,18 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Alert Call: optional phone-call notifications.
 - Email: optional email notifications.
 - Alert Call Destinations: accepts one or more internal extensions and/or external telephone numbers separated by commas. External numbers should normally be entered in the same national dialling format an administrator would use from a FreePBX extension. The example/placeholder follows the configured Default Country Code.
+- Alert Call destination safeguard: when you add an Alert Call destination, Repeat Caller automatically adds the same value to Ignore these callers and shows a one-time warning. This is a safe default to reduce self-trigger risk if an alert call returns through a monitored DID. You can remove the Ignore entry if required.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.
 - System Recording: optional recording played before generated message.
 - Alert Call Caller ID: sets the caller ID presented on outbound alert calls. The preferred format is international E.164 with a leading +, for example +447812345678. The example/placeholder follows the configured Default Country Code.
+
+Internal safeguard note:
+
+- Repeat Caller marks module-originated internal Alert Call legs and excludes those marked internal legs from detection.
+- This marker does not survive an external PSTN leave-and-return path where the call re-enters as a new inbound journey.
+- Carrier rewriting and changed caller presentation may still require administrator judgement.
 
 In the current editor layout, Email Recipients is positioned directly above the
 Save Rule action row.

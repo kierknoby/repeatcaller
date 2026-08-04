@@ -51,6 +51,8 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			disposition TEXT,
 			channel TEXT,
 			dstchannel TEXT,
+			accountcode TEXT,
+			userfield TEXT,
 			duration INTEGER,
 			billsec INTEGER
 		)'
@@ -317,14 +319,16 @@ function insert_cdr(PDO $db, array $row): void {
 		'disposition' => 'ANSWERED',
 		'channel' => 'PJSIP/provider-00000001',
 		'dstchannel' => 'Local/100@from-queue-00000002',
+		'accountcode' => '',
+		'userfield' => '',
 		'duration' => 20,
 		'billsec' => 10,
 	];
 	$row = array_merge($defaults, $row);
-	$db->prepare('INSERT INTO cdr (linkedid, uniqueid, calldate, src, clid, dst, did, dcontext, disposition, channel, dstchannel, duration, billsec) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO cdr (linkedid, uniqueid, calldate, src, clid, dst, did, dcontext, disposition, channel, dstchannel, accountcode, userfield, duration, billsec) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			$row['linkedid'], $row['uniqueid'], $row['calldate'], $row['src'], $row['clid'], $row['dst'], $row['did'],
-			$row['dcontext'], $row['disposition'], $row['channel'], $row['dstchannel'], $row['duration'], $row['billsec'],
+			$row['dcontext'], $row['disposition'], $row['channel'], $row['dstchannel'], $row['accountcode'], $row['userfield'], $row['duration'], $row['billsec'],
 		]);
 }
 
@@ -412,6 +416,55 @@ try {
 		'default_country_code' => '44',
 	]);
 	assert_same(0, $lateDuplicateRun['new_journeys'], 'late duplicate CDR legs should not create new seen journeys');
+
+	$dbPathInternalMarker = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathInternalMarker === false) {
+		throw new RuntimeException('Unable to create internal-marker runtime SQLite file');
+	}
+	[$dbInternalMarker, $repositoryInternalMarker, $scannerInternalMarker, $processorInternalMarker] = create_runtime_environment($dbPathInternalMarker, '2026-07-13 10:30:00');
+	insert_route($dbInternalMarker, '18005550001', '', 'Main');
+	insert_rule($dbInternalMarker, [
+		'name' => 'Internal Marker Filter Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbInternalMarker, [
+		'linkedid' => 'IMARK-1',
+		'uniqueid' => 'IMARK-1',
+		'calldate' => '2026-07-13 09:00:00',
+		'src' => '03330000011',
+		'clid' => '03330000011',
+		'did' => '18005550001',
+		'dst' => '18005550001',
+		'accountcode' => 'repeatcaller_alert_internal',
+	]);
+	$internalMarkerSummary = $processorInternalMarker->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $internalMarkerSummary['new_journeys'], 'internally marked alert-call CDR rows should be excluded before detection');
+	assert_same(0, $internalMarkerSummary['incidents_created'], 'internally marked alert-call CDR rows should not create incidents');
+
+	insert_cdr($dbInternalMarker, [
+		'linkedid' => 'IMARK-2',
+		'uniqueid' => 'IMARK-2',
+		'calldate' => '2026-07-13 09:05:00',
+		'src' => '03330000011',
+		'clid' => '03330000011',
+		'did' => '18005550001',
+		'dst' => '18005550001',
+		'accountcode' => '',
+	]);
+	$unmarkedInboundSummary = $processorInternalMarker->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $unmarkedInboundSummary['new_journeys'], 'equivalent unmarked inbound CDR rows should still be processed normally');
+	assert_same(1, $unmarkedInboundSummary['incidents_created'], 'equivalent unmarked inbound CDR rows should still create incidents when rule conditions are met');
 
 	$dbPathDidAll = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPathDidAll === false) {

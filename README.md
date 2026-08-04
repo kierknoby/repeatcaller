@@ -63,6 +63,16 @@ Use with FreePBX/PBXact 16 or 17.
 - Renames the global Enable Monitoring and Disable Monitoring buttons to
   Enable Rules and Disable Rules for clearer rule-processing terminology.
 
+#### Alert Call self-trigger safeguard
+
+- Adding an Alert Call destination now auto-adds the same value to Ignore
+  these callers as a safe default, with a one-time warning in the editor.
+- Administrators can remove the Ignore entry if needed; it is not silently
+  re-added during save, reload, or normal rendering.
+- Internal Repeat Caller originated Alert Call legs are marked and excluded
+  from detection; this marker does not survive external PSTN hairpin
+  leave-and-return paths.
+
 ## Requirements
 
 - FreePBX/PBXact 16 or 17
@@ -300,6 +310,12 @@ normally be entered in the same national dialling format an administrator
 would use from a FreePBX extension. The example/placeholder follows the
 configured Default Country Code.
 
+When an Alert Call destination is added in the rule editor, Repeat Caller
+automatically adds the same value to Ignore these callers and shows a one-time
+warning. This reduces the risk of Repeat Caller triggering itself if an alert
+call routes back through a monitored DID. Administrators can remove the Ignore
+entry if required.
+
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country
@@ -308,6 +324,12 @@ Code.
 Alert Call destinations and Alert Call caller ID values are administrator-
 controlled PBX configuration. Only use trusted values that are appropriate for
 your dialplan, routing, and outbound calling policy.
+
+Repeat Caller also marks internally originated Alert Call legs and excludes
+those marked internal legs from detection. This internal marker is useful for
+on-box call legs only and does not survive a call that leaves through a
+carrier and re-enters as a new inbound journey. Carrier rewriting and caller
+presentation differences may still require administrator judgement.
 
 Alert Call supports optional introductory System Recording playback followed by
 a spoken summary of incident details such as caller and DID where available.

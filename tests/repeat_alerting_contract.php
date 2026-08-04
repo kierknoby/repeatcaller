@@ -504,6 +504,8 @@ $languageResolver->setAccessible(true);
 $classSource = file_get_contents(__DIR__ . '/../Repeatcaller.class.php');
 assert_true($classSource !== false, 'Repeatcaller.class.php should be readable for language fallback contract checks');
 assert_true(strpos($classSource, 'en_US') === false && strpos($classSource, 'en_GB') === false, 'language resolution code must not hard-code en_US or en_GB');
+assert_true(strpos($classSource, "'Account' => 'repeatcaller_alert_internal'") !== false, 'alert call originate should apply an internal account marker for module-originated call legs');
+assert_true(strpos($classSource, 'REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1') !== false, 'alert call originate variables should carry explicit internal-origin marker flags for module-owned legs');
 
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for language fallback contract checks');

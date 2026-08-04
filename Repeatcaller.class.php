@@ -1115,7 +1115,10 @@ class Repeatcaller implements \BMO {
 			'Data' => '60',
 			'Async' => 'true',
 			'Timeout' => '30000',
-			'Variable' => 'REPEATCALLER_PLAYBACK_TARGET=' . $playbackTarget . ',REPEATCALLER_PLAYBACK_LANGUAGE=' . $playbackLanguage . ',REPEATCALLER_ALERT_HISTORY_ID=' . $historyId . ',REPEATCALLER_INCIDENT_ID=' . $incidentId . ',REPEATCALLER_ALERT_RECIPIENT=' . $recipient . ',REPEATCALLER_SUMMARY_MODE=' . $summaryMode . ',REPEATCALLER_SUMMARY_CALL_COUNT=' . $summaryCallCount . ',REPEATCALLER_SUMMARY_THRESHOLD=' . $summaryThreshold . ',REPEATCALLER_SUMMARY_WINDOW_MINUTES=' . $summaryWindowMinutes . ',REPEATCALLER_SUMMARY_CALLER_KIND=' . $summaryCallerKind . ',REPEATCALLER_SUMMARY_CALLER_VALUE=' . $summaryCallerValue . ',REPEATCALLER_SUMMARY_DID_VALUE=' . $summaryDidValue,
+			// Internal-only marker for Repeat Caller originated alert legs.
+			// This marker is intended for internal CDR filtering and does not survive PSTN hairpin/re-entry paths.
+			'Account' => 'repeatcaller_alert_internal',
+			'Variable' => 'REPEATCALLER_PLAYBACK_TARGET=' . $playbackTarget . ',REPEATCALLER_PLAYBACK_LANGUAGE=' . $playbackLanguage . ',REPEATCALLER_ALERT_HISTORY_ID=' . $historyId . ',REPEATCALLER_INCIDENT_ID=' . $incidentId . ',REPEATCALLER_ALERT_RECIPIENT=' . $recipient . ',REPEATCALLER_SUMMARY_MODE=' . $summaryMode . ',REPEATCALLER_SUMMARY_CALL_COUNT=' . $summaryCallCount . ',REPEATCALLER_SUMMARY_THRESHOLD=' . $summaryThreshold . ',REPEATCALLER_SUMMARY_WINDOW_MINUTES=' . $summaryWindowMinutes . ',REPEATCALLER_SUMMARY_CALLER_KIND=' . $summaryCallerKind . ',REPEATCALLER_SUMMARY_CALLER_VALUE=' . $summaryCallerValue . ',REPEATCALLER_SUMMARY_DID_VALUE=' . $summaryDidValue . ',REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1',
 		];
 		$callerId = trim($callerId);
 		if ($callerId !== '') {

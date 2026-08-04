@@ -43,6 +43,7 @@
 	];
 	var ruleStatusTimers = {};
 	var didRouteActionMode = '';
+	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of Repeat Caller triggering itself if an alert call routes back through a monitored DID. You may remove the ignore entry if required.';
 
 	// Country caller number formats for help text examples
 	// Country caller formats - country code maps to country name and preferred local format example
@@ -333,7 +334,14 @@
 			}
 		}
 		var $msg = $('#rc-message');
-		$msg.removeClass('alert-success alert-danger alert-info').addClass(level === 'error' ? 'alert-danger' : 'alert-success');
+		$msg.removeClass('alert-success alert-danger alert-info alert-warning');
+		if (level === 'error') {
+			$msg.addClass('alert-danger');
+		} else if (level === 'warning') {
+			$msg.addClass('alert-warning');
+		} else {
+			$msg.addClass('alert-success');
+		}
 		$msg.text(text).show();
 	}
 
@@ -1624,7 +1632,7 @@
 	function addAlertCallDestination(destination, keepTryingEnabled) {
 		var value = $.trim(String(destination || ''));
 		if (value === '') {
-			return;
+			return false;
 		}
 		var exists = false;
 		$('#rc-rule-alert-call-destination-list li').each(function () {
@@ -1634,10 +1642,11 @@
 			}
 		});
 		if (exists) {
-			return;
+			return false;
 		}
 		$('#rc-rule-alert-call-destination-list').append(buildAlertCallDestinationItem(value, keepTryingEnabled));
 		updateAlertCallDestinationOrderLabels();
+		return true;
 	}
 
 	function renderAlertCallDestinations(rawValue, defaultKeepTryingEnabled) {
@@ -1653,10 +1662,38 @@
 	function addAlertCallDestinationsFromInput() {
 		var raw = $('#rc-rule-alert-call-destination-input').val();
 		var defaultKeepTrying = true;
+		var autoAddedIgnoreEntries = 0;
 		$.each(normaliseAlertCallDestinationEntries(raw, defaultKeepTrying), function (_, destinationRow) {
 			addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);
+			if (ensureCallerExcludeDestination(destinationRow.destination)) {
+				autoAddedIgnoreEntries += 1;
+			}
 		});
 		$('#rc-rule-alert-call-destination-input').val('');
+		if (autoAddedIgnoreEntries > 0) {
+			showMessage(alertCallSelfTriggerWarning, 'warning');
+		}
+	}
+
+	function callerExcludeValues() {
+		return String($('#rc-rule-caller-exclude').val() || '')
+			.split(/\n+/)
+			.map(function (value) { return $.trim(String(value || '')); })
+			.filter(function (value) { return value !== ''; });
+	}
+
+	function ensureCallerExcludeDestination(rawValue) {
+		var candidate = $.trim(String(rawValue || ''));
+		if (candidate === '') {
+			return false;
+		}
+		var values = callerExcludeValues();
+		if ($.inArray(candidate, values) !== -1) {
+			return false;
+		}
+		values.push(candidate);
+		$('#rc-rule-caller-exclude').val(values.join('\n'));
+		return true;
 	}
 
 	function resetRuleEditor() {

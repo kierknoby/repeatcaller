@@ -9,6 +9,7 @@ use Throwable;
 
 final class CdrScanner {
 	private const MAX_SCAN_ROWS = 5000;
+	private const INTERNAL_ALERT_ACCOUNTCODE = 'repeatcaller_alert_internal';
 
 	private PDO $pdo;
 	/** @var callable */
@@ -57,6 +58,9 @@ final class CdrScanner {
 		);
 		$stmt->execute([$cutoff]);
 		$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+		$rows = array_values(array_filter($rows, function (array $row): bool {
+			return !$this->isMarkedInternalAlertJourneyRow($row);
+		}));
 		$rowCapReached = count($rows) >= self::MAX_SCAN_ROWS;
 
 		usort($rows, function (array $left, array $right): int {
@@ -216,6 +220,8 @@ final class CdrScanner {
 			'disposition' => "'' AS disposition",
 			'channel' => "'' AS channel",
 			'dstchannel' => "'' AS dstchannel",
+			'accountcode' => "'' AS accountcode",
+			'userfield' => "'' AS userfield",
 			'duration' => '0 AS duration',
 			'billsec' => '0 AS billsec',
 		];
@@ -226,6 +232,23 @@ final class CdrScanner {
 		}
 
 		return $select;
+	}
+
+	private function isMarkedInternalAlertJourneyRow(array $row): bool {
+		// Internal marker filtering is intentionally scoped to module-originated
+		// on-box legs. It does not identify calls that leave via carrier/PSTN and
+		// later re-enter as a fresh inbound journey.
+		$accountCode = strtolower(trim((string)($row['accountcode'] ?? '')));
+		if ($accountCode !== '' && $accountCode === self::INTERNAL_ALERT_ACCOUNTCODE) {
+			return true;
+		}
+
+		$userField = strtolower(trim((string)($row['userfield'] ?? '')));
+		if ($userField !== '' && strpos($userField, self::INTERNAL_ALERT_ACCOUNTCODE) !== false) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**
