@@ -22,6 +22,12 @@ function assert_same($expected, $actual, string $message): void {
 	}
 }
 
+if (!function_exists('_')) {
+	function _(string $value): string {
+		return $value;
+	}
+}
+
 if (!class_exists('FreePBX')) {
 	class FreePBX {
 		private static ?PDO $database = null;
@@ -491,6 +497,49 @@ assert_same(-1, (int)$controllerPathStoredRow['day_of_week'], 'UI/controller/rep
 assert_same('00:00:00', (string)$controllerPathStoredRow['start_time'], 'UI/controller/repository path must persist 24-hour start as 00:00:00');
 assert_same('24:00:00', (string)$controllerPathStoredRow['end_time'], 'UI/controller/repository path must persist 24-hour end as 24:00:00');
 
+$callerIdSaveDb = make_db();
+FreePBX::setDatabase($callerIdSaveDb);
+$callerIdSaveRepo = new RepeatCallerRepository($callerIdSaveDb);
+$callerIdController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$callerIdSaveMethod = new ReflectionMethod($callerIdController, 'rcHandleSaveRule');
+$callerIdSaveMethod->setAccessible(true);
+$savedRequest = $_REQUEST;
+$_REQUEST = [
+	'rule_id' => '0',
+	'name' => 'Caller ID Managed Elsewhere',
+	'enabled' => '1',
+	'email_enabled' => '0',
+	'alert_call_enabled' => '1',
+	'alert_call_destinations' => '100',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => '1',
+	'alert_call_recording_id' => '',
+	'alert_call_handle_callerid_upstream' => '1',
+	'alert_call_callerid' => '5551234',
+	'mode' => 'repeat',
+	'threshold_count' => '2',
+	'observation_window_minutes' => '60',
+	'caller_mode' => 'any',
+	'exclude_withheld' => '0',
+	'did_scope_mode' => 'all',
+	'repeat_mode_override' => 'never',
+	'email_recipients' => '',
+	'suppression_minutes_override' => '',
+	'schedules' => '[]',
+	'callers' => '[]',
+	'dids' => '[]',
+];
+$callerIdSaveResponse = $callerIdSaveMethod->invoke($callerIdController);
+$_REQUEST = $savedRequest;
+assert_true(($callerIdSaveResponse['status'] ?? false) === true, 'controller save should succeed when Caller ID managed elsewhere is checked');
+$callerIdSavedRule = $callerIdSaveResponse['rule'] ?? [];
+assert_same('', trim((string)($callerIdSavedRule['alert_call_callerid'] ?? '')), 'controller save should blank Caller ID before persistence when managed elsewhere is checked');
+assert_same(1, (int)($callerIdSavedRule['alert_call_handle_callerid_upstream'] ?? 0), 'controller save should preserve the managed-elsewhere checkbox state');
+$callerIdReloadedRule = $callerIdSaveRepo->loadRule((int)($callerIdSavedRule['id'] ?? 0));
+assert_same('', trim((string)($callerIdReloadedRule['alert_call_callerid'] ?? '')), 'reloaded saved rule should keep Caller ID blank after managed-elsewhere save');
+assert_same(1, (int)($callerIdReloadedRule['alert_call_handle_callerid_upstream'] ?? 0), 'reloaded saved rule should keep the managed-elsewhere checkbox state');
+FreePBX::setDatabase($db);
+
 $db->exec("INSERT INTO incoming (extension, cidnum, description) VALUES ('18005550001', '', 'Main Inbound')");
 $db->exec("INSERT INTO incoming (extension, cidnum, description) VALUES ('', '', 'Catch-all')");
 $routes = $repo->loadInboundRoutes();
@@ -725,9 +774,12 @@ assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').attr('
 assert_true(strpos($jsSource, "var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');") !== false, 'Alert Call UI state should read Handle Caller ID Upstream explicitly');
 assert_true(strpos($jsSource, 'function updateAlertCallCallerIdState() {') !== false, 'Alert Call Caller ID state should be handled by a dedicated helper');
 assert_true(strpos($jsSource, "var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');") !== false, 'Alert Call Caller ID state should read the checkbox checked state directly');
+assert_true(strpos($jsSource, "var alertCallCallerIdSessionValue = '';") !== false && strpos($jsSource, 'var alertCallCallerIdManagedElsewhere = false;') !== false, 'caller ID temporary memory should start empty and remain editor-session scoped');
+assert_true(strpos($jsSource, 'function rememberAlertCallCallerIdSessionValue() {') !== false, 'caller ID input changes should update the temporary editor memory through a dedicated helper');
 assert_true(strpos($jsSource, "var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;") !== false && strpos($jsSource, "var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;") !== false, 'Alert Call Caller ID should be required only when Alert Call is enabled and upstream handling is disabled');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');") !== false, 'Alert Call Caller ID field should update disabled and required state from alert-call and upstream settings');
+assert_true(strpos($jsSource, "\$callerIdField.prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');") !== false, 'Alert Call Caller ID field should update disabled and required state from alert-call and upstream settings');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);") !== false, 'Alert Call Caller ID help text should explain when the field is unused vs required');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').off('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller').on('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller', function () {") !== false, 'Alert Call Caller ID field should remember typed values while it remains editable');
 assert_true(strpos($jsSource, "var e164Example = getCallerE164Example($('#rc-setting-country').val());") !== false, 'Alert Call Caller ID helper should compute the E.164 example locally inside the helper');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Not used because caller presentation is managed elsewhere.';") !== false, 'Alert Call Caller ID helper should explain the managed-elsewhere case using the new wording');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';") !== false, 'Alert Call Caller ID helper should request E.164 input using the dynamic default-country example');
@@ -861,6 +913,7 @@ assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-list').find('i
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the System Recording selector');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the Caller ID managed elsewhere checkbox');
 assert_true(strpos($jsSource, "$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);") !== false, 'Email enabled state should gate email recipients independently of edit mode');
+assert_true(strpos($jsSource, "alert_call_callerid: handleCallerIdUpstream ? '' : $('#rc-rule-alert-call-callerid').val(),") !== false, 'save payload should blank Caller ID before persistence when managed elsewhere is checked');
 assert_true(strpos($jsSource, "var baseCallerListHelpText = 'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.';") !== false, 'caller list helper text should describe the new canonical mixed-delimiter format');
 
 $behaviorScript = <<<'NODE'
@@ -881,6 +934,13 @@ class Element {
 		this.hidden = false;
 	}
 	append(child) {
+		if (child === null || child === undefined) {
+			return;
+		}
+		if (typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') {
+			this.textContent += String(child);
+			return;
+		}
 		child.parent = this;
 		this.children.push(child);
 	}
@@ -1043,6 +1103,15 @@ class Wrap {
 		});
 		return this;
 	}
+	html(value) {
+		if (value === undefined) {
+			return this.els[0] ? this.els[0].htmlContent : '';
+		}
+		this.els.forEach(function (element) {
+			element.htmlContent = value;
+		});
+		return this;
+	}
 	addClass(value) {
 		const classes = String(value || '').split(/\s+/).filter(Boolean);
 		this.els.forEach(function (element) {
@@ -1116,6 +1185,12 @@ class Wrap {
 	}
 	show() { return this; }
 	hide() { return this; }
+	toggle(state) {
+		this.els.forEach(function (element) {
+			element.hidden = state === undefined ? !element.hidden : !state;
+		});
+		return this;
+	}
 	removeAttr(name) {
 		this.els.forEach(function (element) {
 			delete element.attrs[name];
@@ -1295,7 +1370,7 @@ const context = {
 
 vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState };\n})(jQuery);');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 const hooks = context.window.__hooks;
 
@@ -1364,6 +1439,57 @@ assert(editOff.rowStatusDisabled === true && editOff.rowEditDisabled === true &&
 assert(editOff.destinationInputDisabled === true && editOff.addDisabled === true, 'edit mode with Alert Call disabled should disable destination controls');
 assert(editOff.recordingDisabled === true && editOff.strategyDisabled === true && editOff.upstreamDisabled === true, 'edit mode with Alert Call disabled should disable alert-call subsection controls');
 assert(editOff.callerIdDisabled === true && editOff.callerIdRequired === false, 'edit mode with Alert Call disabled should disable Caller ID');
+
+hooks.clearAlertCallCallerIdSessionState();
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-alert-call-handle-callerid-upstream').prop('checked') === true && $('#rc-rule-alert-call-callerid').val() === '' && $('#rc-rule-alert-call-callerid').prop('disabled') === true, 'new-rule default should keep Caller ID managed elsewhere checked with a blank disabled field');
+
+hooks.setEditingRuleRow(0);
+hooks.updateStartAsEditorState(false);
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+$('#rc-rule-alert-call-callerid').val('');
+hooks.updateAlertCallAndEmailState();
+$('#rc-rule-alert-call-callerid').val('5551111');
+hooks.updateAlertCallCallerIdState();
+assert($('#rc-rule-alert-call-callerid').val() === '5551111', 'typing a Caller ID in create mode should keep the current value while upstream handling is off');
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-alert-call-callerid').val() === '', 'checking Caller ID managed elsewhere should immediately clear the field');
+assert($('#rc-rule-alert-call-callerid').prop('disabled') === true, 'checking Caller ID managed elsewhere should disable the field');
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-alert-call-callerid').val() === '5551111', 'unchecking Caller ID managed elsewhere should restore the remembered value');
+$('#rc-rule-alert-call-callerid').val('5552222');
+hooks.updateAlertCallCallerIdState();
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+hooks.updateAlertCallAndEmailState();
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-alert-call-callerid').val() === '5552222', 'repeated tick and untick cycles should restore the latest remembered Caller ID value');
+
+$('#rc-rule-alert-call-callerid').val('5553333');
+hooks.updateAlertCallCallerIdState();
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-alert-call-callerid').val() === '', 'checking Caller ID managed elsewhere should blank the value before save');
+hooks.clearAlertCallCallerIdSessionState();
+assert($('#rc-rule-alert-call-callerid').val() === '', 'cancel/reset should discard temporary Caller ID memory');
+
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+$('#rc-rule-alert-call-callerid').val('5554444');
+hooks.updateAlertCallAndEmailState();
+hooks.updateAlertCallCallerIdState();
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+hooks.updateAlertCallAndEmailState();
+hooks.clearAlertCallCallerIdSessionState();
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-alert-call-callerid').val() === '', 'reopening after cancel should not resurrect an unsaved Caller ID value');
 
 process.stdout.write('OK');
 NODE;

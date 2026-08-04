@@ -46,6 +46,8 @@
 	var ruleStatusTimers = {};
 	var didRouteActionMode = '';
 	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
+	var alertCallCallerIdSessionValue = '';
+	var alertCallCallerIdManagedElsewhere = false;
 	var editingRuleId = 0;
 
 	// Country caller number formats for help text examples
@@ -1684,8 +1686,20 @@
 		var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');
 		var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;
 		var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;
+		var $callerIdField = $('#rc-rule-alert-call-callerid');
 		var e164Example = getCallerE164Example($('#rc-setting-country').val());
 		var callerIdHelpText = 'Alert Call Caller ID sets the caller ID presented on outbound alert calls.';
+
+		if (handleCallerIdUpstream && !alertCallCallerIdManagedElsewhere) {
+			alertCallCallerIdSessionValue = $.trim(String($callerIdField.val() || ''));
+			$callerIdField.val('');
+		} else if (!handleCallerIdUpstream && alertCallCallerIdManagedElsewhere) {
+			$callerIdField.val(alertCallCallerIdSessionValue);
+		} else if (!handleCallerIdUpstream && alertCallCallerIdSessionValue === '') {
+			alertCallCallerIdSessionValue = $.trim(String($callerIdField.val() || ''));
+		}
+
+		alertCallCallerIdManagedElsewhere = handleCallerIdUpstream;
 
 		if (!alertCallEnabled) {
 			callerIdHelpText = 'Used only when Alert Call is enabled.';
@@ -1695,8 +1709,17 @@
 			callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';
 		}
 
-		$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');
+		$callerIdField.prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');
 		$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);
+	}
+
+	function rememberAlertCallCallerIdSessionValue() {
+		alertCallCallerIdSessionValue = $.trim(String($('#rc-rule-alert-call-callerid').val() || ''));
+	}
+
+	function clearAlertCallCallerIdSessionState() {
+		alertCallCallerIdSessionValue = '';
+		alertCallCallerIdManagedElsewhere = false;
 	}
 
 	function buildAlertCallDestinationItem(destination, keepTryingEnabled) {
@@ -1828,6 +1851,7 @@
 	}
 
 	function resetRuleEditor() {
+		clearAlertCallCallerIdSessionState();
 		$('#rc-rule-id').val('0');
 		$('.rc-editor-panel').removeClass('rc-editor-edit-mode');
 		updateRuleEditorTitle(false);
@@ -2290,7 +2314,7 @@
 			alert_call_destinations: $('#rc-rule-alert-call-destinations').val(),
 			alert_call_recording_id: $('#rc-rule-alert-call-recording-id').val(),
 			alert_call_handle_callerid_upstream: handleCallerIdUpstream ? 1 : 0,
-			alert_call_callerid: $('#rc-rule-alert-call-callerid').val(),
+			alert_call_callerid: handleCallerIdUpstream ? '' : $('#rc-rule-alert-call-callerid').val(),
 			schedules: JSON.stringify(schedules),
 			callers: JSON.stringify(callers),
 			dids: JSON.stringify(dids)
@@ -2301,6 +2325,7 @@
 			} else {
 				loadRules();
 			}
+			clearAlertCallCallerIdSessionState();
 			resetRuleEditor();
 			loadEngineStatus();
 			scrollToPageTop();
@@ -2308,6 +2333,7 @@
 	}
 
 	function loadRule(id) {
+		clearAlertCallCallerIdSessionState();
 		ajax('getrule', {rule_id: id}, function (response) {
 			var rule = response.rule || {};
 			$('.rc-editor-panel').addClass('rc-editor-edit-mode');
@@ -2695,6 +2721,11 @@
 		});
 		$('#rc-rule-alert-call-enabled').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
 		$('#rc-rule-alert-call-handle-callerid-upstream').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
+		$('#rc-rule-alert-call-callerid').off('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller').on('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller', function () {
+			if (!$('#rc-rule-alert-call-callerid').prop('disabled')) {
+				rememberAlertCallCallerIdSessionValue();
+			}
+		});
 		$('#rc-rule-email-enabled').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
 		$('#rc-save-rule').off('click.repeatcaller').on('click.repeatcaller', function () {
 			var $button = $(this);

@@ -518,6 +518,9 @@ class Repeatcaller implements \BMO {
 		if (!in_array($payload['did_scope_mode'], ['all', 'selected'], true)) {
 			$payload['did_scope_mode'] = 'all';
 		}
+		if (!empty($payload['alert_call_handle_callerid_upstream'])) {
+			$payload['alert_call_callerid'] = '';
+		}
 		$payload['dids'] = $this->rcFilterDidsForScopeMode($payload['dids'], $payload['did_scope_mode']);
 		if (!empty($payload['email_enabled'])) {
 			$rawRecipients = trim((string)($_REQUEST['email_recipients'] ?? ''));
