@@ -1684,6 +1684,7 @@
 		var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');
 		var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;
 		var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;
+		var e164Example = getCallerE164Example($('#rc-setting-country').val());
 		var callerIdHelpText = 'Alert Call Caller ID sets the caller ID presented on outbound alert calls.';
 
 		if (!alertCallEnabled) {

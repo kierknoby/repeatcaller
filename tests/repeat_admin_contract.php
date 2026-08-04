@@ -621,6 +621,7 @@ assert_true(strpos($jsSource, "var handleCallerIdUpstream = $('#rc-rule-alert-ca
 assert_true(strpos($jsSource, "var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;") !== false && strpos($jsSource, "var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;") !== false, 'Alert Call Caller ID should be required only when Alert Call is enabled and upstream handling is disabled');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false');") !== false, 'Alert Call Caller ID field should update disabled and required state from alert-call and upstream settings');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);") !== false, 'Alert Call Caller ID help text should explain when the field is unused vs required');
+assert_true(strpos($jsSource, "var e164Example = getCallerE164Example($('#rc-setting-country').val());") !== false, 'Alert Call Caller ID helper should compute the E.164 example locally inside the helper');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Not used because caller presentation is managed elsewhere.';") !== false, 'Alert Call Caller ID helper should explain the managed-elsewhere case using the new wording');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';") !== false, 'Alert Call Caller ID helper should request E.164 input using the dynamic default-country example');
 assert_true((bool)preg_match('/prop\(\'checked\', parseInt\(rule\.alert_call_handle_callerid_upstream \|\| 0, 10\) === 1\);[\s\S]*updateAlertCallCallerIdState\(\);/', $jsSource), 'edit-rule loading should restore the checkbox before syncing caller-ID state');
@@ -752,6 +753,513 @@ assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-input').prop('
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'create and edit modes should both leave System Recording tied to the Alert Call checkbox');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);") !== false, 'create and edit modes should both leave the Caller ID managed elsewhere checkbox tied to the Alert Call checkbox');
 assert_true(strpos($jsSource, "$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);") !== false, 'create and edit modes should both leave email recipients tied to the Email checkbox');
+
+$behaviorScript = <<<'NODE'
+const fs = require('fs');
+const vm = require('vm');
+
+class Element {
+	constructor(tag, id = '', classes = []) {
+		this.tag = tag;
+		this.id = id;
+		this.classes = new Set(classes.filter(Boolean));
+		this.attrs = {};
+		this.props = {};
+		this.children = [];
+		this.parent = null;
+		this.value = '';
+		this.textContent = '';
+		this.hidden = false;
+	}
+	append(child) {
+		child.parent = this;
+		this.children.push(child);
+	}
+	removeChild(child) {
+		this.children = this.children.filter(function (entry) { return entry !== child; });
+	}
+}
+
+const byId = Object.create(null);
+const allElements = [];
+
+function register(element) {
+	if (element.id) {
+		byId[element.id] = element;
+	}
+	allElements.push(element);
+	return element;
+}
+
+function makeElement(tag, id = '', classes = []) {
+	return register(new Element(tag, id, classes));
+}
+
+function makeId(id, tag = 'div', classes = []) {
+	return makeElement(tag, id, classes);
+}
+
+function parseHtml(html) {
+	const tagMatch = String(html).match(/^<\s*([a-z0-9-]+)/i);
+	const classMatch = String(html).match(/class="([^"]*)"/i);
+	const idMatch = String(html).match(/id="([^"]*)"/i);
+	const tag = tagMatch ? tagMatch[1].toLowerCase() : 'div';
+	const classes = classMatch ? classMatch[1].split(/\s+/).filter(Boolean) : [];
+	return new Element(tag, idMatch ? idMatch[1] : '', classes);
+}
+
+function descendantMatch(element, selector) {
+	if (!selector) {
+		return false;
+	}
+	if (selector === 'input, button') {
+		return element.tag === 'input' || element.tag === 'button';
+	}
+	if (selector.startsWith('.')) {
+		return element.classes.has(selector.slice(1));
+	}
+	const attrMatch = selector.match(/^([a-z0-9-]+)(?:\.([a-z0-9_-]+))?(?:\[data-rule-id="([^"]+)"\])?$/i);
+	if (attrMatch) {
+		const tag = attrMatch[1].toLowerCase();
+		const cls = attrMatch[2];
+		const ruleId = attrMatch[3];
+		if (element.tag !== tag) {
+			return false;
+		}
+		if (cls && !element.classes.has(cls)) {
+			return false;
+		}
+		if (ruleId && String(element.attrs['data-rule-id'] || '') !== ruleId) {
+			return false;
+		}
+		return true;
+	}
+	return element.tag === selector.toLowerCase();
+}
+
+function collectDescendants(element, selector) {
+	const found = [];
+	function visit(node) {
+		node.children.forEach(function (child) {
+			if (descendantMatch(child, selector)) {
+				found.push(child);
+			}
+			visit(child);
+		});
+	}
+	visit(element);
+	return found;
+}
+
+function splitSelector(selector) {
+	return String(selector).split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+}
+
+function querySelector(selector) {
+	const groups = splitSelector(selector);
+	const results = [];
+	groups.forEach(function (group) {
+		if (group === 'document') {
+			return;
+		}
+		const parts = group.split(/\s+/);
+		let current = [];
+		let first = parts.shift();
+		if (first && first.startsWith('#')) {
+			const base = byId[first.slice(1)];
+			if (base) {
+				current = [base];
+			}
+		} else if (first && first.startsWith('.')) {
+			current = allElements.filter(function (element) { return element.classes.has(first.slice(1)); });
+		} else if (first) {
+			current = allElements.filter(function (element) { return descendantMatch(element, first); });
+		}
+		parts.forEach(function (part) {
+			const next = [];
+			current.forEach(function (element) {
+				next.push.apply(next, collectDescendants(element, part));
+			});
+			current = next;
+		});
+		results.push.apply(results, current);
+	});
+	return results;
+}
+
+class Wrap {
+	constructor(elements) {
+		this.els = (elements || []).filter(Boolean);
+		this.length = this.els.length;
+	}
+	each(callback) {
+		this.els.forEach(function (element, index) {
+			callback.call(element, index, element);
+		});
+		return this;
+	}
+	prop(name, value) {
+		if (value === undefined) {
+			return this.els[0] ? this.els[0].props[name] : undefined;
+		}
+		this.els.forEach(function (element) {
+			element.props[name] = value;
+		});
+		return this;
+	}
+	attr(name, value) {
+		if (value === undefined) {
+			return this.els[0] ? this.els[0].attrs[name] : undefined;
+		}
+		this.els.forEach(function (element) {
+			element.attrs[name] = value;
+		});
+		return this;
+	}
+	val(value) {
+		if (value === undefined) {
+			return this.els[0] ? this.els[0].value : '';
+		}
+		this.els.forEach(function (element) {
+			element.value = value;
+		});
+		return this;
+	}
+	text(value) {
+		if (value === undefined) {
+			return this.els[0] ? this.els[0].textContent : '';
+		}
+		this.els.forEach(function (element) {
+			element.textContent = value;
+		});
+		return this;
+	}
+	addClass(value) {
+		const classes = String(value || '').split(/\s+/).filter(Boolean);
+		this.els.forEach(function (element) {
+			classes.forEach(function (cls) { element.classes.add(cls); });
+		});
+		return this;
+	}
+	removeClass(value) {
+		const classes = String(value || '').split(/\s+/).filter(Boolean);
+		this.els.forEach(function (element) {
+			classes.forEach(function (cls) { element.classes.delete(cls); });
+		});
+		return this;
+	}
+	toggleClass(value, state) {
+		const classes = String(value || '').split(/\s+/).filter(Boolean);
+		this.els.forEach(function (element) {
+			classes.forEach(function (cls) {
+				const shouldHave = state === undefined ? !element.classes.has(cls) : !!state;
+				if (shouldHave) {
+					element.classes.add(cls);
+				} else {
+					element.classes.delete(cls);
+				}
+			});
+		});
+		return this;
+	}
+	empty() {
+		this.els.forEach(function (element) {
+			element.children = [];
+		});
+		return this;
+	}
+	append(content) {
+		const nodes = content instanceof Wrap ? content.els : [content];
+		this.els.forEach(function (element) {
+			nodes.forEach(function (node) {
+				if (node) {
+					element.append(node);
+				}
+			});
+		});
+		return this;
+	}
+	find(selector) {
+		const matches = [];
+		this.els.forEach(function (element) {
+			matches.push.apply(matches, collectDescendants(element, selector));
+		});
+		return new Wrap(matches);
+	}
+	is(selector) {
+		if (!this.els.length) {
+			return false;
+		}
+		if (selector === ':checked') {
+			return !!this.els[0].props.checked;
+		}
+		return descendantMatch(this.els[0], selector);
+	}
+	off() { return this; }
+	on() { return this; }
+	remove() {
+		this.els.forEach(function (element) {
+			if (element.parent) {
+				element.parent.removeChild(element);
+			}
+		});
+		return this;
+	}
+	show() { return this; }
+	hide() { return this; }
+	removeAttr(name) {
+		this.els.forEach(function (element) {
+			delete element.attrs[name];
+		});
+		return this;
+	}
+	first() { return new Wrap(this.els.slice(0, 1)); }
+	next(selector) {
+		if (!this.els[0] || !this.els[0].parent) {
+			return new Wrap([]);
+		}
+		const siblings = this.els[0].parent.children;
+		const index = siblings.indexOf(this.els[0]);
+		const next = siblings[index + 1];
+		if (!next) {
+			return new Wrap([]);
+		}
+		if (selector && !descendantMatch(next, selector)) {
+			return new Wrap([]);
+		}
+		return new Wrap([next]);
+	}
+}
+
+function $(selector) {
+	if (typeof selector === 'function') {
+		return undefined;
+	}
+	if (selector instanceof Element) {
+		return new Wrap([selector]);
+	}
+	if (selector instanceof Wrap) {
+		return selector;
+	}
+	if (typeof selector === 'string' && selector.startsWith('<')) {
+		return new Wrap([parseHtml(selector)]);
+	}
+	if (selector && selector.id && byId[selector.id]) {
+		return new Wrap([byId[selector.id]]);
+	}
+	if (typeof selector === 'string') {
+		return new Wrap(querySelector(selector));
+	}
+	return new Wrap([]);
+}
+
+$.trim = function (value) {
+	return String(value || '').trim();
+};
+
+$.each = function (collection, callback) {
+	if (!collection) {
+		return collection;
+	}
+	if (Array.isArray(collection)) {
+		for (let index = 0; index < collection.length; index += 1) {
+			if (callback.call(collection[index], index, collection[index]) === false) {
+				break;
+			}
+		}
+		return collection;
+	}
+	Object.keys(collection).forEach(function (key) {
+		callback.call(collection[key], key, collection[key]);
+	});
+	return collection;
+};
+
+$.isArray = Array.isArray;
+
+function createCheckbox(id) {
+	const element = makeId(id, 'input');
+	element.attrs.type = 'checkbox';
+	return element;
+}
+
+function createButton(id, classes) {
+	return makeId(id, 'button', classes);
+}
+
+function createGeneric(id, tag = 'div', classes = []) {
+	return makeId(id, tag, classes);
+}
+
+createGeneric('rc-editor-title');
+createGeneric('rc-cancel-edit', 'button');
+createGeneric('rc-rule-id', 'input');
+createGeneric('rc-rule-name', 'input');
+createCheckbox('rc-rule-enabled');
+createGeneric('rc-rule-start-as-col');
+createGeneric('rc-rule-start-as-help');
+createGeneric('rc-rule-mode', 'select');
+createGeneric('rc-rule-threshold', 'input');
+createGeneric('rc-rule-window', 'input');
+createGeneric('rc-rule-suppression', 'input');
+createGeneric('rc-rule-repeat', 'select');
+createGeneric('rc-rule-email-recipients', 'input');
+createGeneric('rc-rule-caller-mode', 'select');
+createCheckbox('rc-rule-exclude-withheld');
+createGeneric('rc-rule-caller-include', 'textarea');
+createGeneric('rc-rule-caller-exclude', 'textarea');
+createGeneric('rc-caller-include-help');
+createGeneric('rc-caller-exclude-help');
+createGeneric('rc-caller-include-unavailable');
+createGeneric('rc-caller-exclude-unavailable');
+createGeneric('rc-rule-did-mode', 'select');
+createGeneric('rc-did-include-list', 'ul', ['rc-list']);
+createGeneric('rc-did-exclude-list', 'ul', ['rc-list']);
+createGeneric('rc-route-pick', 'select');
+createButton('rc-add-did-include');
+createButton('rc-add-did-exclude');
+createGeneric('rc-schedule-table', 'table');
+createGeneric('rc-schedule-table-body', 'tbody');
+createGeneric('rc-rule-alert-call-enabled', 'input');
+createCheckbox('rc-rule-alert-call-enabled');
+createCheckbox('rc-rule-email-enabled');
+createGeneric('rc-rule-alert-call-strategy', 'select');
+createGeneric('rc-rule-alert-call-destination-input', 'input');
+createButton('rc-rule-alert-call-destination-add', ['btn', 'btn-default']);
+createGeneric('rc-rule-alert-call-destination-list', 'ol', ['rc-alert-call-destination-list', 'rc-list']);
+createGeneric('rc-rule-alert-call-recording-id', 'select');
+createCheckbox('rc-rule-alert-call-handle-callerid-upstream');
+createGeneric('rc-rule-alert-call-callerid', 'input');
+createGeneric('rc-rule-alert-call-callerid-help');
+createGeneric('rc-setting-country', 'input');
+byId['rc-setting-country'].value = '44';
+createGeneric('rc-rules-table', 'table');
+const rulesTbody = createGeneric('rc-rules-table-body', 'tbody');
+byId['rc-rules-table'].append(rulesTbody);
+const editRow = new Element('tr');
+editRow.attrs['data-rule-id'] = '1';
+editRow.children = [
+	new Element('td'),
+	new Element('td'),
+	new Element('td')
+];
+editRow.children[0].append(createButton('', ['rc-rule-status']));
+editRow.children[1].append(createButton('', ['rc-edit-rule']));
+editRow.children[2].append(createButton('', ['rc-delete-rule']));
+editRow.children.forEach(function (cell) { cell.parent = editRow; });
+const explainerRow = new Element('tr', '', ['rc-rule-explainer-row']);
+editRow.parent = rulesTbody;
+explainerRow.parent = rulesTbody;
+rulesTbody.children.push(editRow, explainerRow);
+
+const context = {
+	console,
+	jQuery: $, 
+	$: $, 
+	window: {},
+	document: {},
+	setTimeout,
+	clearTimeout,
+	setInterval,
+	clearInterval,
+	ajax: function (command, payload, onSuccess) {
+		if (command === 'getrule') {
+			onSuccess({rule: payload.__rule});
+		}
+	},
+	showMessage: function () {},
+	loadSystemRecordingsLookupFromBootstrap: function () {},
+	syncLiveClockFromValue: function () {},
+	loadInboundRoutes: function () {},
+	loadEngineStatus: function () {},
+	loadIncidents: function () {},
+	loadAlertHistory: function () {},
+	loadRules: function () {},
+	setupAutoRefreshPolling: function () {},
+	withBusy: function ($button, handler) { handler(function () {}); },
+	beginAction: function () {},
+	endAction: function () {},
+	syncChangeToken: function () {},
+	showMessage: function () {},
+	$window: {}
+};
+
+vm.createContext(context);
+let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState };\n})(jQuery);');
+vm.runInContext(source, context, {timeout: 5000});
+const hooks = context.window.__hooks;
+
+function assert(condition, message) {
+	if (!condition) {
+		throw new Error(message);
+	}
+}
+
+function resetAlertCallState(alertCallEnabled, upstreamEnabled) {
+	$('#rc-rule-alert-call-enabled').prop('checked', alertCallEnabled);
+	$('#rc-rule-email-enabled').prop('checked', true);
+	$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', upstreamEnabled);
+	$('#rc-rule-alert-call-destination-input').val('2001');
+	$('#rc-rule-alert-call-destination-list').empty();
+	$('#rc-rule-alert-call-callerid').val('+441234567890');
+	hooks.updateAlertCallAndEmailState();
+	hooks.updateAlertCallCallerIdState();
+}
+
+function runScenario(editing, alertCallEnabled, upstreamEnabled) {
+	hooks.setEditingRuleRow(editing ? 1 : 0);
+	hooks.updateStartAsEditorState(editing);
+	resetAlertCallState(alertCallEnabled, upstreamEnabled);
+	return {
+		startAsDisabled: !!$('#rc-rule-enabled').prop('disabled'),
+		rowStatusDisabled: !!$('#rc-rules-table .rc-rule-status').prop('disabled'),
+		rowEditDisabled: !!$('#rc-rules-table .rc-edit-rule').prop('disabled'),
+		rowDeleteDisabled: !!$('#rc-rules-table .rc-delete-rule').prop('disabled'),
+		destinationInputDisabled: !!$('#rc-rule-alert-call-destination-input').prop('disabled'),
+		addDisabled: !!$('#rc-rule-alert-call-destination-add').prop('disabled'),
+		recordingDisabled: !!$('#rc-rule-alert-call-recording-id').prop('disabled'),
+		strategyDisabled: !!$('#rc-rule-alert-call-strategy').prop('disabled'),
+		upstreamDisabled: !!$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled'),
+		callerIdDisabled: !!$('#rc-rule-alert-call-callerid').prop('disabled'),
+		callerIdRequired: !!$('#rc-rule-alert-call-callerid').prop('required'),
+		callerIdHelp: $('#rc-rule-alert-call-callerid-help').text(),
+		addButtonText: $('#rc-rule-alert-call-destination-add').text()
+	};
+}
+
+const createOn = runScenario(false, true, false);
+assert(createOn.startAsDisabled === false, 'create mode should keep Start as enabled');
+assert(createOn.rowStatusDisabled === false && createOn.rowEditDisabled === false && createOn.rowDeleteDisabled === false, 'create mode should keep row controls enabled');
+assert(createOn.destinationInputDisabled === false, 'create mode with Alert Call enabled should keep destination input enabled');
+assert(createOn.addDisabled === false, 'create mode with valid input and no duplicates should keep Add enabled');
+assert(createOn.recordingDisabled === false && createOn.strategyDisabled === false && createOn.upstreamDisabled === false, 'create mode with Alert Call enabled should keep alert-call subsection enabled');
+assert(createOn.callerIdDisabled === false && createOn.callerIdRequired === true, 'create mode with upstream disabled should require Caller ID');
+
+const createOff = runScenario(false, false, false);
+assert(createOff.destinationInputDisabled === true, 'create mode with Alert Call disabled should disable destination input');
+assert(createOff.addDisabled === true, 'create mode with Alert Call disabled should disable Add');
+assert(createOff.recordingDisabled === true && createOff.strategyDisabled === true && createOff.upstreamDisabled === true, 'create mode with Alert Call disabled should disable subsection controls');
+assert(createOff.callerIdDisabled === true && createOff.callerIdRequired === false, 'create mode with Alert Call disabled should disable Caller ID');
+
+const editOn = runScenario(true, true, false);
+assert(editOn.startAsDisabled === true, 'edit mode should disable Start as');
+assert(editOn.rowStatusDisabled === true && editOn.rowEditDisabled === true && editOn.rowDeleteDisabled === true, 'edit mode should disable row Status/Edit/Delete');
+assert(editOn.destinationInputDisabled === false && editOn.addDisabled === false, 'edit mode with Alert Call enabled should keep destination controls enabled');
+assert(editOn.recordingDisabled === false && editOn.strategyDisabled === false && editOn.upstreamDisabled === false, 'edit mode with Alert Call enabled should keep alert-call subsection enabled');
+assert(editOn.callerIdDisabled === false && editOn.callerIdRequired === true, 'edit mode with upstream disabled should require Caller ID');
+
+const editOff = runScenario(true, false, false);
+assert(editOff.startAsDisabled === true, 'edit mode with Alert Call disabled should still disable Start as');
+assert(editOff.rowStatusDisabled === true && editOff.rowEditDisabled === true && editOff.rowDeleteDisabled === true, 'edit mode with Alert Call disabled should keep row controls locked');
+assert(editOff.destinationInputDisabled === true && editOff.addDisabled === true, 'edit mode with Alert Call disabled should disable destination controls');
+assert(editOff.recordingDisabled === true && editOff.strategyDisabled === true && editOff.upstreamDisabled === true, 'edit mode with Alert Call disabled should disable alert-call subsection controls');
+assert(editOff.callerIdDisabled === true && editOff.callerIdRequired === false, 'edit mode with Alert Call disabled should disable Caller ID');
+
+process.stdout.write('OK');
+NODE;
+$behaviorOutput = shell_exec('node -e ' . escapeshellarg($behaviorScript));
+assert_true(trim((string)$behaviorOutput) === 'OK', 'behavioral state test should pass for create/edit mode and Alert Call on/off combinations');
 assert_true(strpos($jsSource, 'function isValidAlertCallCallerId(value) {') !== false && strpos($jsSource, 'return /^\\+?\\d+$/.test(candidate);') !== false, 'frontend should validate Alert Call Caller ID as digits with an optional leading + when Repeat Caller sets it');
 assert_true(strpos($jsSource, "if (callEnabled && !handleCallerIdUpstream && alertCallCallerId === '') {") !== false, 'frontend should reject blank Alert Call Caller ID when Alert Call is enabled and upstream handling is disabled');
 assert_true(strpos($jsSource, "if (callEnabled && !handleCallerIdUpstream && !isValidAlertCallCallerId(alertCallCallerId)) {") !== false, 'frontend should reject invalid Alert Call Caller ID when Repeat Caller is expected to set it');
