@@ -269,6 +269,12 @@ Incident lifecycle behavior includes:
 - closing incidents when condition-clear logic is observed
 - expiring eligible incidents after suppression expiry handling
 
+For repeat incidents, timestamp semantics are:
+
+- First Matched: earliest matching call in the tracked window that
+  contributes to that incident.
+- Last Matched: most recent matching call contributing to that incident.
+
 Processed call journeys are recorded in `repeatcaller_seen_calls` to prevent
 duplicate incident creation from the same journey.
 
@@ -308,7 +314,7 @@ Repeat alert emails now show one reminder line:
 
 - Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 
-Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from PBXSRV20-ONP. If the identifier is unavailable, the email uses a sensible fallback.
+Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example

@@ -1078,11 +1078,13 @@ try {
 		'default_country_code' => '44',
 	]);
 	assert_same(1, $acceptedLifecycleFirstRun['incidents_created'], 'first threshold crossing should create one incident for accepted lifecycle scenario');
-	$acceptedLifecycleIncident = $db7AcceptedLifecycle->query('SELECT id, subject_key, state, matched_call_count, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $acceptedLifecycleRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	$acceptedLifecycleIncident = $db7AcceptedLifecycle->query('SELECT id, subject_key, state, first_matched_at, last_matched_at, matched_call_count, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $acceptedLifecycleRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
 	assert_true(is_array($acceptedLifecycleIncident), 'accepted lifecycle scenario should create an incident row');
 	$acceptedLifecycleIncidentId = (int)$acceptedLifecycleIncident['id'];
 	$acceptedLifecycleSubjectKey = (string)$acceptedLifecycleIncident['subject_key'];
 	assert_same('active', (string)$acceptedLifecycleIncident['state'], 'initial accepted lifecycle incident should begin as active');
+	assert_same('2026-07-13 09:00:00', (string)$acceptedLifecycleIncident['first_matched_at'], 'repeat incident first_matched_at should capture the earliest contributing call in the threshold window');
+	assert_same('2026-07-13 09:10:00', (string)$acceptedLifecycleIncident['last_matched_at'], 'repeat incident last_matched_at should capture the latest contributing call at incident creation');
 	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleIncident['suppression_expires_at'], 'accepted lifecycle scenario should use the 24-hour default suppression window');
 	assert_true($repository7AcceptedLifecycle->acceptActiveIncident($acceptedLifecycleIncidentId, 'tester', '2026-07-13 09:12:00', 'gui'), 'accepted lifecycle scenario should allow accepting the active incident');
 
@@ -1102,6 +1104,7 @@ try {
 	$acceptedLifecycleAfterUpdate = $db7AcceptedLifecycle->query('SELECT state, matched_call_count, last_matched_at FROM repeatcaller_incidents WHERE id = ' . $acceptedLifecycleIncidentId . ' LIMIT 1')->fetch(PDO::FETCH_ASSOC);
 	assert_same('accepted', (string)$acceptedLifecycleAfterUpdate['state'], 'accepted lifecycle incident should remain accepted while threshold stays true');
 	assert_true((int)$acceptedLifecycleAfterUpdate['matched_call_count'] >= 6, 'accepted lifecycle incident should continue accumulating matching call count while accepted');
+	assert_same('2026-07-13 09:25:00', (string)$acceptedLifecycleAfterUpdate['last_matched_at'], 'later qualifying calls should continue advancing last_matched_at on the tracked incident');
 
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL7', 'calldate' => '2026-07-13 09:56:00', 'src' => '01234440000', 'clid' => '01234440000']);
 	$acceptedLifecycleClearProcessor = new BackgroundProcessor($db7AcceptedLifecycle, $repository7AcceptedLifecycle, $scanner7AcceptedLifecycle, static function (): string {
@@ -1142,6 +1145,16 @@ try {
 	$acceptedLifecycleOperationalSuppressed = $repository7AcceptedLifecycle->loadActiveSuppressedIncidents('2026-07-13 10:41:00');
 	assert_same(1, count($acceptedLifecycleOperationalSuppressed), 'suppression-history row should be immediately visible in active suppressed incidents');
 	assert_same($acceptedLifecycleIncidentId, (int)$acceptedLifecycleOperationalSuppressed[0]['related_incident_id'], 'operational suppressed-incidents row should reference the prior accepted incident');
+
+	$matchBoundsInvariantMethod = new ReflectionMethod(BackgroundProcessor::class, 'incidentMatchBounds');
+	$matchBoundsInvariantMethod->setAccessible(true);
+	$invariantTriggered = false;
+	try {
+		$matchBoundsInvariantMethod->invoke($processor7AcceptedLifecycle, []);
+	} catch (RuntimeException $e) {
+		$invariantTriggered = strpos($e->getMessage(), 'empty contributing match set') !== false;
+	}
+	assert_true($invariantTriggered, 'repeat incident creation should treat an empty contributing match set as an invariant violation');
 
 	$acceptedLifecycleStateAfterSuppressed = $repository7AcceptedLifecycle->loadSubjectState($acceptedLifecycleRuleId, $acceptedLifecycleSubjectKey);
 	assert_true(is_array($acceptedLifecycleStateAfterSuppressed), 'accepted lifecycle scenario should retain subject state after blocked re-trigger');

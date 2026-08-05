@@ -110,7 +110,7 @@ Repeat alert emails now show one reminder line:
 
 - Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 
-Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from PBXSRV20-ONP. If the identifier is unavailable, the email uses a sensible fallback.
+Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.
@@ -272,6 +272,14 @@ Common status meanings:
 - Closed: incident is no longer active.
 
 Further matching calls can continue to update an active incident.
+
+Active Incidents timestamp semantics:
+
+- First Matched: earliest matching call in the tracked window that
+	contributes to that incident.
+- Last Matched: most recent matching call contributing to that incident.
+- Created (in Recent Incidents): incident creation time, which can be later
+	than First Matched when threshold is reached after earlier matching calls.
 
 ## Suppressed Alerts History
 

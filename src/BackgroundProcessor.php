@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FreePBX\modules\Repeatcaller;
 
 use PDO;
+use RuntimeException;
 
 final class BackgroundProcessor {
 	private PDO $pdo;
@@ -117,7 +118,8 @@ final class BackgroundProcessor {
 
 			$windowStart = date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) - (((int)$rule['observation_window_minutes']) * 60));
 			$recent = $this->repository->loadRecentSeenCalls($callerSubjectKey, $windowStart, (string)$matched['completed_at']);
-			$currentCount = count($this->filterStoredCallsForRule($recent, $rule, (string)$matched['completed_at'], $routeKey));
+			$matchingRows = $this->filterStoredCallsForRule($recent, $rule, (string)$matched['completed_at'], $routeKey);
+			$currentCount = count($matchingRows);
 			$conditionMet = $currentCount >= (int)$rule['threshold_count'];
 
 			$state['current_window_started_at'] = $windowStart;
@@ -191,6 +193,7 @@ final class BackgroundProcessor {
 			}
 
 			$suppressionExpiresAt = date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) + ($suppressionMinutes * 60));
+			[$firstMatchedAt, $lastMatchedAt] = $this->incidentMatchBounds($matchingRows);
 			$incidentId = $this->repository->createIncident([
 				'rule_id' => $ruleId,
 				'subject_key' => $subjectKey,
@@ -201,8 +204,8 @@ final class BackgroundProcessor {
 				'caller_display' => $matched['caller_raw'] !== '' ? $matched['caller_raw'] : ($matched['caller_clid'] ?? null),
 				'withheld_caller' => !empty($matched['withheld']) ? 1 : 0,
 				'mode' => 'repeat',
-				'first_matched_at' => (string)$matched['completed_at'],
-				'last_matched_at' => (string)$matched['completed_at'],
+				'first_matched_at' => $firstMatchedAt,
+				'last_matched_at' => $lastMatchedAt,
 				'matched_call_count' => $currentCount,
 				'state' => 'active',
 				'suppression_expires_at' => $suppressionExpiresAt,
@@ -342,6 +345,50 @@ final class BackgroundProcessor {
 		}
 
 		return $newJourneys;
+	}
+
+	private function incidentMatchBounds(array $matchingRows): array {
+		if (!$matchingRows) {
+			$message = 'Invariant violation: repeat incident creation attempted with an empty contributing match set';
+			$this->logError($message);
+			throw new RuntimeException($message);
+		}
+
+		$firstMatchedAt = '';
+		$lastMatchedAt = '';
+
+		foreach ($matchingRows as $row) {
+			$completedAt = trim((string)($row['call_completed_at'] ?? ''));
+			if ($completedAt === '') {
+				continue;
+			}
+
+			if ($firstMatchedAt === '' || strtotime($completedAt) < strtotime($firstMatchedAt)) {
+				$firstMatchedAt = $completedAt;
+			}
+			if ($lastMatchedAt === '' || strtotime($completedAt) > strtotime($lastMatchedAt)) {
+				$lastMatchedAt = $completedAt;
+			}
+		}
+
+		if ($firstMatchedAt === '' || $lastMatchedAt === '') {
+			$message = 'Invariant violation: contributing matches are missing completion timestamps';
+			$this->logError($message);
+			throw new RuntimeException($message);
+		}
+
+		return [$firstMatchedAt, $lastMatchedAt];
+	}
+
+	private function logError(string $message): void {
+		try {
+			if (is_callable(['\\FreePBX', 'Log'])) {
+				\FreePBX::Log()->error('repeatcaller: ' . $message);
+				return;
+			}
+		} catch (\Throwable $e) {
+		}
+		error_log('repeatcaller: ' . $message);
 	}
 
 	private function filterStoredCallsForRule(array $rows, array $rule, string $asOf, ?string $routeScopeKey = null): array {
