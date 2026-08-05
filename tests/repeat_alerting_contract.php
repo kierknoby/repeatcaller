@@ -5,7 +5,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/RepeatCallerRepository.php';
 require_once __DIR__ . '/../src/IncidentAlertProcessor.php';
 require_once __DIR__ . '/../src/DetectionEngine.php';
+require_once __DIR__ . '/../src/AlertCallAgiSession.php';
 
+use FreePBX\modules\Repeatcaller\AlertCallAgiSession;
+use FreePBX\modules\Repeatcaller\AlertCallAgiTransport;
 use FreePBX\modules\Repeatcaller\IncidentAlertProcessor;
 use FreePBX\modules\Repeatcaller\RepeatCallerRepository;
 
@@ -18,6 +21,7 @@ if (!class_exists('FreePBX')) {
 		public static array $config = [];
 		public static array $recordings = [];
 		public static string $soundlangLanguage = 'en';
+		public static $database = null;
 
 		public static function Config() {
 			$config = self::$config;
@@ -73,7 +77,7 @@ if (!class_exists('FreePBX')) {
 		}
 
 		public static function Database() {
-			return null;
+			return self::$database;
 		}
 	}
 }
@@ -95,52 +99,27 @@ function assert_same($expected, $actual, string $message): void {
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for alert-call dialplan contract checks');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}^${IF($["${REPEATCALLER_PLAYBACK_LANGUAGE}"=""]?${CHANNEL(language)}:${REPEATCALLER_PLAYBACK_LANGUAGE})}^${REPEATCALLER_ALERT_HISTORY_ID}^${REPEATCALLER_INCIDENT_ID}^${REPEATCALLER_ALERT_RECIPIENT}^${REPEATCALLER_SUMMARY_MODE}^${REPEATCALLER_SUMMARY_CALL_COUNT}^${REPEATCALLER_SUMMARY_THRESHOLD}^${REPEATCALLER_SUMMARY_WINDOW_MINUTES}^${REPEATCALLER_SUMMARY_CALLER_KIND}^${REPEATCALLER_SUMMARY_CALLER_VALUE}^${REPEATCALLER_SUMMARY_DID_VALUE})') !== false, 'called-channel U() invocation must carry mode, count, threshold, window, caller-kind, caller digits, and DID digits into alert playback instead of relying on empty summary arguments');
-assert_true(strpos($installSource, 'Background(${ARG1})') !== false, 'generated alert-playback dialplan must use interruptible Background() for recording playback');
-assert_true(strpos($installSource, 'Playback(${ARG1})') === false, 'generated alert-playback dialplan must not rely on non-interruptible Playback() before DTMF collection');
-assert_true(strpos($installSource, 'same => n(read_wait),Set(REPEATCALLER_RESPONSE_PHASE=menu)') !== false && strpos($installSource, 'same => n,Read(REPEATCALLER_DTMF,,1,,1,10)') !== false, 'generated alert-playback dialplan must retain the 10-second post-playback response window');
-assert_true(strpos($installSource, 'exten => 1,1,Goto(s,accepted)') !== false, 'generated alert-playback dialplan must route DTMF 1 to the existing accepted path');
-assert_true(strpos($installSource, 'exten => 2,1,Goto(s,declined)') !== false, 'generated alert-playback dialplan must route DTMF 2 to the existing declined path');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_PLAYBACK_TARGET},${REPEATCALLER_SUMMARY_MODE},${REPEATCALLER_SUMMARY_CALL_COUNT},${REPEATCALLER_SUMMARY_THRESHOLD},${REPEATCALLER_SUMMARY_WINDOW_MINUTES},${REPEATCALLER_SUMMARY_CALLER_KIND},${REPEATCALLER_SUMMARY_CALLER_VALUE},${REPEATCALLER_SUMMARY_DID_VALUE})') !== false, 'generated alert-playback dialplan must delegate answered-call interaction to the dedicated AGI session');
+assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF') === false, 'answered-call interaction must no longer depend on dialplan Read() collection');
 assert_true(strpos($installSource, 'While($[') === false, 'response loop must be finite and must not rely on an unbounded While retry structure');
-assert_true(strpos($installSource, 'Gosub(repeatcaller-alert-summary,s,1(${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12}))') !== false, 'generated dialplan must run the generated alert message with mode, count, threshold, window, caller-kind, caller digits, and DID digits after the optional System Recording');
-assert_same(1, substr_count($installSource, 'Gosub(repeatcaller-alert-summary,s,1(${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12}))'), 'full generated incident summary must be invoked at most once per answered call');
-assert_same(1, substr_count($installSource, 'Background(${ARG1})'), 'optional System Recording playback must occur at most once per answered call');
-assert_true(strpos($installSource, '[repeatcaller-alert-summary]') !== false, 'generated dialplan must include a dedicated summary subroutine context');
-assert_true(strpos($installSource, 'GotoIf($["${ARG1}"=""]?generated_summary)') !== false, 'playback context must skip the System Recording step cleanly when no recording is configured');
-assert_true(strpos($installSource, 'Background(beep&beep&beep&warning&beep&beep&beep)') !== false, 'generated sequence must begin with three beeps, warning, then three beeps');
-assert_true(strpos($installSource, 'Background(this&alert&has-been&initiated&for)') !== false, 'generated message body must begin with this alert has been initiated for');
-assert_true(strpos($installSource, 'Background(less-than)') !== false, 'invert wording must include less-than before the configured threshold');
-assert_true(strpos($installSource, 'Background(call)') !== false && strpos($installSource, 'Background(calls)') !== false, 'generated message must support singular and plural call wording');
-assert_true(strpos($installSource, 'Background(within)') !== false, 'generated message must include within before the configured observation window');
-assert_true(strpos($installSource, 'Background(minute)') !== false && strpos($installSource, 'Background(minutes)') !== false, 'generated message must support singular and plural minute wording');
-assert_true(strpos($installSource, 'GotoIf($[${ARG2} = 1]?single_call:plural_calls)') !== false, 'normal alerts must branch between singular and plural call wording using the actual incident call count');
-assert_true(strpos($installSource, 'GotoIf($[${ARG3} = 1]?single_call:plural_calls)') !== false, 'invert alerts must branch between singular and plural call wording using the configured threshold');
-assert_true(strpos($installSource, 'GotoIf($[${ARG4} = 1]?single_minute:plural_minutes)') !== false, 'window wording must branch between singular and plural minute prompts');
-assert_true(strpos($installSource, 'Background(from-unknown-caller)') !== false, 'unknown or non-numeric caller identities must use the dedicated from-unknown-caller prompt');
-assert_true(strpos($installSource, 'Background(calling&number)') !== false, 'DID playback must be introduced with calling and number prompts');
-assert_true(strpos($installSource, 'Background(vqplus-accept)') !== false, 'response menu must use the single vqplus-accept recording');
-assert_true(strpos($installSource, 'Background(sorry&please-try-again)') !== false, 'invalid DTMF input must play sorry and please-try-again before returning to the response wait');
-assert_true(strpos($installSource, 'SayDigits(${ARG6})') !== false && strpos($installSource, 'SayDigits(${ARG7})') !== false, 'summary must announce caller and DID as digit-by-digit values without fixed-width padding');
-assert_true(strpos($installSource, 'SayNumber(${ARG2})') !== false && strpos($installSource, 'SayNumber(${ARG3})') !== false && strpos($installSource, 'SayNumber(${ARG4})') !== false, 'summary must announce normal count, invert threshold, and configured window as numbers');
-assert_true(strpos($installSource, 'Background(vqplus-accept)') !== false && strpos($installSource, 'press-1') === false && strpos($installSource, 'press-2') === false, 'response menu must not add separate press-1 or press-2 prompts alongside vqplus-accept');
-assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'answered terminal outcomes must play thank-you then goodbye prompts');
-assert_true(strpos($installSource, 'exten => 1,1,Goto(repeatcaller-alert-playback,s,accepted)') !== false, 'summary-context DTMF 1 must immediately route to existing accepted handling in the parent playback context');
-assert_true(strpos($installSource, 'exten => 2,1,Goto(repeatcaller-alert-playback,s,declined)') !== false, 'summary-context DTMF 2 must immediately route to existing declined handling in the parent playback context');
-assert_true(strpos($installSource, 'exten => i,1,Goto(repeatcaller-alert-playback,s,invalid_response)') !== false, 'summary-context unsupported digits must route through the parent invalid-response prompt before returning to the response-listening window');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"="1"]?accepted)') !== false, 'post-playback DTMF evaluation must keep accepted routing for 1');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"="2"]?declined)') !== false, 'post-playback DTMF evaluation must keep declined routing for 2');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"!=""]?invalid_response)') !== false, 'invalid digits entered during the response window must route through the invalid-response prompt');
-assert_true(strpos($installSource, 'same => n(begin_attempt),Set(REPEATCALLER_DTMF=)') !== false, 'each playback attempt must restart from the top of the full alert');
-assert_same(1, substr_count($installSource, 'Background(${ARG1})'), 'the optional System Recording step should appear once in the dialplan attempt flow and be re-entered by restarting the attempt');
-assert_same(1, substr_count($installSource, 'Gosub(repeatcaller-alert-summary,s,1(${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12}))'), 'the full generated incident message step should appear once in the dialplan attempt flow and be re-entered by restarting the attempt');
-assert_true(strpos($installSource, 'GotoIf($[${REPEATCALLER_ATTEMPT} >= 3]?no_response)') !== false && strpos($installSource, 'same => n,Set(REPEATCALLER_ATTEMPT=$[${REPEATCALLER_ATTEMPT} + 1])') !== false && strpos($installSource, 'same => n,Goto(begin_attempt)') !== false, 'no input must consume the current attempt and restart the full alert only while fewer than three attempts have been used');
-assert_true(strpos($installSource, 'same => n(invalid_response),Background(sorry&please-try-again)') !== false && strpos($installSource, 'same => n,GotoIf($[${REPEATCALLER_ATTEMPT} >= 3]?no_response)') !== false && strpos($installSource, 'same => n,Set(REPEATCALLER_ATTEMPT=$[${REPEATCALLER_ATTEMPT} + 1])') !== false && strpos($installSource, 'same => n,Goto(begin_attempt)') !== false, 'invalid input must play sorry and please-try-again, consume the current attempt, then restart the full alert only while fewer than three attempts have been used');
-assert_true(strpos($installSource, 'same => n(no_response),AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'the third unsuccessful attempt must return through the existing answered_no_response terminal path');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'no-input path must continue to record answered_no_response through the existing AGI callback');
-assert_true(strpos($installSource, 'same => n,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'answered terminal outcomes must mark the playback session complete before hangup');
+assert_true(strpos($installSource, '[repeatcaller-alert-summary]') !== false, 'generated dialplan may retain the summary helper context for compatibility even though answered-call interaction is now AGI-owned');
+assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'generated dialplan must expose a dedicated remote_accepted extension so other answered callers can be redirected out immediately on remote acceptance');
+assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'already answered concurrent callers must be routed to thank-you and goodbye once the incident is accepted elsewhere');
 assert_true(strpos($installSource, 'exten => h,1,GotoIf($["${REPEATCALLER_ALERT_COMPLETED}"="1"]?done)') !== false, 'hangup handling must preserve accepted, declined, and third-attempt no-response terminal outcomes');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}') !== false, 'alert playback must remain module-owned generated dialplan invoked through U() for FreePBX 16 and 17 compatibility');
 assert_true(strpos($installSource, 'Set(CHANNEL(language)=${ARG2})') !== false, 'generated playback must remain language-aware via the carried channel language argument');
 assert_true(strpos($installSource, '/var/lib/asterisk/sounds') === false && strpos($installSource, '/usr/share/asterisk/sounds') === false, 'generated playback must not hardcode absolute sound paths so carried languages like en and en_GB continue to resolve installed prompts');
+
+$agiSource = file_get_contents(__DIR__ . '/../agi/repeatcaller_alert_response.php');
+assert_true($agiSource !== false, 'AGI interactive handler should be readable');
+assert_true(strpos($agiSource, 'STREAM FILE') !== false, 'interactive AGI must stream recordings and prompts through STREAM FILE with escape digits');
+assert_true(strpos($agiSource, 'SAY NUMBER') !== false, 'interactive AGI must speak numeric counts and windows through SAY NUMBER with escape digits');
+assert_true(strpos($agiSource, 'SAY DIGITS') !== false, 'interactive AGI must speak caller and DID details through SAY DIGITS with escape digits');
+$agiSessionSource = file_get_contents(__DIR__ . '/../src/AlertCallAgiSession.php');
+assert_true($agiSessionSource !== false, 'AlertCallAgiSession.php should be readable');
+assert_true(strpos($agiSource, 'WAIT FOR DIGIT ') !== false, 'interactive AGI transport must issue WAIT FOR DIGIT commands');
+assert_true(strpos($agiSessionSource, 'waitForDigit(1)') !== false, 'interactive AGI session must poll immediately after answer so a buffered early digit is retained and acted on');
+assert_true(strpos($agiSessionSource, 'waitForDigit(10000)') !== false, 'interactive AGI session must preserve the 10-second response wait after spoken prompts');
 
 $viewSource = file_get_contents(__DIR__ . '/../views/main.php');
 assert_true($viewSource !== false, 'views/main.php should be readable for alert-call UI contract checks');
@@ -148,6 +127,151 @@ assert_true(strpos($viewSource, '<option value=""><?php echo _(\'None\'); ?></op
 assert_true(strpos($viewSource, 'Optionally play a System Recording before the generated alert message. Default: None.') !== false, 'System Recording help text must explain the optional intro recording and default None behavior');
 assert_true(strpos($viewSource, 'Warning. This alert has been initiated for [X] calls within [X] minutes from [Caller ID], calling number [DID]. Press 1 to accept or 2 to decline.') === false, 'System Recording help text should not include the removed warning example sentence');
 assert_true(strpos($viewSource, 'The placeholders are replaced with the incident\'s actual call count, configured threshold/window, Caller ID and DID as applicable.') === false, 'System Recording help text must not include the removed placeholder replacement sentence');
+
+final class FakeInteractiveTransport implements AlertCallAgiTransport {
+	public array $variables = [];
+	public array $calls = [];
+	public array $waitResponses;
+	public array $streamResponses;
+	public array $sayNumberResponses;
+	public array $sayDigitsResponses;
+
+	public function __construct(array $waitResponses = [], array $streamResponses = [], array $sayNumberResponses = [], array $sayDigitsResponses = []) {
+		$this->waitResponses = $waitResponses;
+		$this->streamResponses = $streamResponses;
+		$this->sayNumberResponses = $sayNumberResponses;
+		$this->sayDigitsResponses = $sayDigitsResponses;
+	}
+
+	public function setVariable(string $name, string $value): void {
+		$this->variables[$name] = $value;
+		$this->calls[] = ['method' => 'setVariable', 'name' => $name, 'value' => $value];
+	}
+
+	public function streamFile(string $file, string $escapeDigits): string {
+		$this->calls[] = ['method' => 'streamFile', 'file' => $file, 'escapeDigits' => $escapeDigits];
+		return array_shift($this->streamResponses) ?? '';
+	}
+
+	public function sayNumber(int $number, string $escapeDigits): string {
+		$this->calls[] = ['method' => 'sayNumber', 'number' => $number, 'escapeDigits' => $escapeDigits];
+		return array_shift($this->sayNumberResponses) ?? '';
+	}
+
+	public function sayDigits(string $digits, string $escapeDigits): string {
+		$this->calls[] = ['method' => 'sayDigits', 'digits' => $digits, 'escapeDigits' => $escapeDigits];
+		return array_shift($this->sayDigitsResponses) ?? '';
+	}
+
+	public function waitForDigit(int $milliseconds): string {
+		$this->calls[] = ['method' => 'waitForDigit', 'milliseconds' => $milliseconds];
+		return array_shift($this->waitResponses) ?? '';
+	}
+}
+
+$agiSession = new AlertCallAgiSession();
+
+$earlyDigitTransport = new FakeInteractiveTransport(['1']);
+$earlyDigitResult = $agiSession->run([
+	'playback_target' => 'intro',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '60',
+	'summary_caller_kind' => 'numeric',
+	'summary_caller_value' => '4412345',
+	'summary_did_value' => '0207000',
+], $earlyDigitTransport, function (): bool {
+	return false;
+});
+assert_same('accepted', (string)$earlyDigitResult['response'], 'a digit entered immediately after answer must be retained and acted on before any audio starts');
+assert_same('1', (string)$earlyDigitResult['digit'], 'early buffered accept digit should be preserved');
+assert_same('waitForDigit', (string)$earlyDigitTransport->calls[0]['method'], 'the interactive AGI session must check for an immediate buffered digit before playback');
+assert_same(1, (int)$earlyDigitTransport->calls[0]['milliseconds'], 'the immediate buffered-digit check must use a 1ms AGI wait rather than a dialplan delay');
+
+$introAcceptTransport = new FakeInteractiveTransport([''], ['1']);
+$introAcceptResult = $agiSession->run([
+	'playback_target' => 'intro',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '60',
+	'summary_caller_kind' => 'numeric',
+	'summary_caller_value' => '4412345',
+	'summary_did_value' => '0207000',
+], $introAcceptTransport, function (): bool {
+	return false;
+});
+assert_same('accepted', (string)$introAcceptResult['response'], 'Press 1 during the introductory recording must accept immediately');
+
+$callerDigitAcceptTransport = new FakeInteractiveTransport([''], [''], [], ['1']);
+$callerDigitAcceptResult = $agiSession->run([
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '60',
+	'summary_caller_kind' => 'numeric',
+	'summary_caller_value' => '4412345',
+	'summary_did_value' => '',
+], $callerDigitAcceptTransport, function (): bool {
+	return false;
+});
+assert_same('accepted', (string)$callerDigitAcceptResult['response'], 'Press 1 during spoken caller digits must accept immediately');
+
+$spokenDeclineTransport = new FakeInteractiveTransport([''], [''], ['2']);
+$spokenDeclineResult = $agiSession->run([
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '60',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $spokenDeclineTransport, function (): bool {
+	return false;
+});
+assert_same('declined', (string)$spokenDeclineResult['response'], 'Press 2 during a spoken summary segment must decline immediately');
+
+$invalidRetryTransport = new FakeInteractiveTransport(
+	['', '', ''],
+	['9', '', '8', '', '7'],
+	[],
+	[]
+);
+$invalidRetryResult = $agiSession->run([
+	'playback_target' => 'intro',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '60',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $invalidRetryTransport, function (): bool {
+	return false;
+});
+assert_same('answered_no_response', (string)$invalidRetryResult['response'], 'invalid digits across interactive playback must retain the existing retry limit');
+assert_same('7', (string)$invalidRetryResult['digit'], 'the final invalid digit must be preserved when retries are exhausted');
+
+$remoteAcceptedTransport = new FakeInteractiveTransport([''], ['']);
+$remoteAcceptChecks = 0;
+$remoteAcceptedResult = $agiSession->run([
+	'playback_target' => 'intro',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '60',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $remoteAcceptedTransport, function () use (&$remoteAcceptChecks): bool {
+	$remoteAcceptChecks++;
+	return $remoteAcceptChecks >= 2;
+});
+assert_same('remote_accepted', (string)$remoteAcceptedResult['response'], 'remote acceptance must terminate the interactive AGI session cleanly');
+assert_same('1', (string)($remoteAcceptedTransport->variables['REPEATCALLER_ALERT_COMPLETED'] ?? ''), 'remote acceptance must mark the answered call complete before exit audio');
 
 final class TestClock {
 	public string $now;
@@ -187,6 +311,8 @@ final class FakeCallSender {
 	public array $calls = [];
 	/** @var array<string, string> */
 	public array $failuresByDestination = [];
+	/** @var callable|null */
+	public $afterCall;
 
 	public function __invoke(string $destination, string $recordingId, string $callerId = '', array $context = []): array {
 		$this->calls[] = [
@@ -196,6 +322,10 @@ final class FakeCallSender {
 			'context' => $context,
 		];
 
+		if (is_callable($this->afterCall)) {
+			call_user_func($this->afterCall, $destination, $recordingId, $callerId, $context, $this);
+		}
+
 		if (isset($this->failuresByDestination[$destination])) {
 			return ['status' => false, 'message' => $this->failuresByDestination[$destination]];
 		}
@@ -204,9 +334,28 @@ final class FakeCallSender {
 	}
 }
 
+final class FakeAstman {
+	public array $requests = [];
+	public array $dbValues = [];
+
+	public function send_request(string $action, array $params) {
+		$this->requests[] = ['action' => $action, 'params' => $params];
+		if ($action === 'DBGet') {
+			$key = (string)($params['Family'] ?? '') . '/' . (string)($params['Key'] ?? '');
+			if (array_key_exists($key, $this->dbValues)) {
+				return ['Response' => 'Success', 'Val' => (string)$this->dbValues[$key]];
+			}
+			return ['Response' => 'Error', 'Message' => 'Database entry not found'];
+		}
+
+		return ['Response' => 'Success', 'Message' => 'Success'];
+	}
+}
+
 function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?FakeCallSender $callSender = null): array {
 	$db = new PDO('sqlite::memory:');
 	$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+	FreePBX::$database = $db;
 
 	$db->exec(
 		'CREATE TABLE repeatcaller_rules (
@@ -1159,10 +1308,9 @@ $acceptedRepeatClock->now = '2026-07-13 11:05:00';
 $acceptedRepeatProcessor->run(settings());
 assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'gui'"), 'DTMF-accepted incidents should reserve one fresh GUI reminder after suppression expiry and new activity');
 assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'email'"), 'DTMF-accepted incidents should reserve one fresh email reminder after suppression expiry and new activity');
-assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'alert_call'"), 'DTMF-accepted incidents should reserve one fresh alert_call reminder after suppression expiry and new activity');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'alert_call'"), 'DTMF-accepted incidents should not restart Alert Call activity after acceptance, even after suppression expiry and new activity');
 assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 2"), 'DTMF-accepted incidents should restart reminder stages at the first fresh post-suppression stage');
 assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND action_type = 'email' AND event_type = 'reminder' AND delivery_status = 'sent'"), 'DTMF-accepted incidents should deliver email once the fresh post-suppression reminder is reserved');
-assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND action_type = 'alert_call' AND event_type = 'reminder' AND delivery_status = 'sent'"), 'DTMF-accepted incidents should deliver alert calls once the fresh post-suppression reminder is reserved');
 $acceptedRepeatStateExpired = $acceptedRepeatDb->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedRepeatIncident}")->fetch(PDO::FETCH_ASSOC);
 assert_same('2026-07-13 11:05:00', (string)$acceptedRepeatStateExpired['last_alert_at'], 'DTMF-accepted incidents should advance the reminder checkpoint once suppression has expired and a fresh reminder is reserved');
 assert_same(1, (int)$acceptedRepeatStateExpired['reminders_sent'], 'DTMF-accepted incidents should advance the reminder count once suppression has expired and a fresh reminder is reserved');
@@ -1264,6 +1412,175 @@ assert_true(strpos((string)$orderedFirstHistory['failure_detail'], 'DIALSTATUS=B
 $orderedProcessor->run(settings());
 assert_same(2, count($orderedSender->calls), 'ordered progression should advance to next eligible recipient through normal backend processing');
 assert_same('701', (string)$orderedSender->calls[1]['destination'], 'ordered progression should advance in saved order');
+
+$orderedOriginateFailClock = new TestClock('2026-07-13 13:45:00');
+$orderedOriginateFailSender = new FakeCallSender();
+$orderedOriginateFailSender->failuresByDestination['740'] = 'originate failed 740';
+[$orderedOriginateFailDb, $orderedOriginateFailProcessor] = create_alert_environment($orderedOriginateFailClock, new FakeEmailSender(), $orderedOriginateFailSender);
+$orderedOriginateFailRule = insert_rule($orderedOriginateFailDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '740,741',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedOriginateFailIncident = insert_incident($orderedOriginateFailDb, ['rule_id' => $orderedOriginateFailRule, 'subject_key' => 'ordered-originate-fail', 'first_matched_at' => '2026-07-13 13:45:00', 'suppression_expires_at' => '2026-07-13 14:45:00']);
+$orderedOriginateFailProcessor->run(settings());
+assert_same(2, count($orderedOriginateFailSender->calls), 'initial ordered originate failure should immediately advance to the next destination even when Alert Reminder is Never');
+assert_same('740', (string)$orderedOriginateFailSender->calls[0]['destination'], 'ordered originate-failure path should still start with the first saved destination');
+assert_same('741', (string)$orderedOriginateFailSender->calls[1]['destination'], 'ordered originate-failure path should immediately continue to the second destination');
+$orderedOriginateFailRows = $orderedOriginateFailDb->query("SELECT recipient, delivery_status, attempted_at, failure_detail FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedOriginateFailIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedOriginateFailRows), 'ordered originate-failure progression should reserve exactly one history row per destination in the stage');
+assert_same('failed', (string)$orderedOriginateFailRows[0]['delivery_status'], 'failed originate should be recorded as failed for the first destination');
+assert_same('2026-07-13 13:45:00', (string)$orderedOriginateFailRows[0]['attempted_at'], 'first failed originate should be timestamped at the current processor time');
+assert_same('2026-07-13 13:45:00', (string)$orderedOriginateFailRows[1]['attempted_at'], 'immediate ordered follow-up send should use the same processor timestamp with no deliberate delay');
+assert_same('sent', (string)$orderedOriginateFailRows[1]['delivery_status'], 'successful immediate ordered follow-up should remain in the current stage and be marked sent');
+
+$orderedMultiFailClock = new TestClock('2026-07-13 13:46:00');
+$orderedMultiFailSender = new FakeCallSender();
+$orderedMultiFailSender->failuresByDestination['750'] = 'originate failed 750';
+$orderedMultiFailSender->failuresByDestination['751'] = 'originate failed 751';
+[$orderedMultiFailDb, $orderedMultiFailProcessor] = create_alert_environment($orderedMultiFailClock, new FakeEmailSender(), $orderedMultiFailSender);
+$orderedMultiFailRule = insert_rule($orderedMultiFailDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '750,751,752',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedMultiFailIncident = insert_incident($orderedMultiFailDb, ['rule_id' => $orderedMultiFailRule, 'subject_key' => 'ordered-multi-fail', 'first_matched_at' => '2026-07-13 13:46:00', 'suppression_expires_at' => '2026-07-13 14:46:00']);
+$orderedMultiFailSummary = $orderedMultiFailProcessor->run(settings());
+assert_same(3, count($orderedMultiFailSender->calls), 'multiple consecutive ordered originate failures should advance through the full destination list in one stage');
+assert_same('750', (string)$orderedMultiFailSender->calls[0]['destination'], 'multi-failure path should keep the first saved destination first');
+assert_same('751', (string)$orderedMultiFailSender->calls[1]['destination'], 'multi-failure path should continue to the second destination');
+assert_same('752', (string)$orderedMultiFailSender->calls[2]['destination'], 'multi-failure path should continue to the third destination without creating a new stage');
+$orderedMultiFailRows = $orderedMultiFailDb->query("SELECT recipient, delivery_status FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedMultiFailIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(3, count($orderedMultiFailRows), 'multi-failure path should not create duplicate history reservations');
+assert_same('failed', (string)$orderedMultiFailRows[0]['delivery_status'], 'first failed originate should remain failed');
+assert_same('failed', (string)$orderedMultiFailRows[1]['delivery_status'], 'second failed originate should remain failed');
+assert_same('sent', (string)$orderedMultiFailRows[2]['delivery_status'], 'first nonfailed originate should stop same-stage progression at the queued destination');
+assert_same(2, (int)$orderedMultiFailSummary['alert_call_failed'], 'processor summary should count each immediate direct originate failure in the ordered stage');
+assert_same(1, (int)$orderedMultiFailSummary['alert_call_sent'], 'processor summary should count the eventual successful ordered follow-up send once');
+
+$orderedFinalFailClock = new TestClock('2026-07-13 13:47:00');
+$orderedFinalFailSender = new FakeCallSender();
+$orderedFinalFailSender->failuresByDestination['760'] = 'originate failed 760';
+$orderedFinalFailSender->failuresByDestination['761'] = 'originate failed 761';
+[$orderedFinalFailDb, $orderedFinalFailProcessor] = create_alert_environment($orderedFinalFailClock, new FakeEmailSender(), $orderedFinalFailSender);
+$orderedFinalFailRule = insert_rule($orderedFinalFailDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '760,761',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedFinalFailIncident = insert_incident($orderedFinalFailDb, ['rule_id' => $orderedFinalFailRule, 'subject_key' => 'ordered-final-fail', 'first_matched_at' => '2026-07-13 13:47:00', 'suppression_expires_at' => '2026-07-13 14:47:00']);
+$orderedFinalFailProcessor->run(settings());
+assert_same(2, count($orderedFinalFailSender->calls), 'final ordered originate failure should still attempt each destination once in the current stage');
+assert_same(2, count_history($orderedFinalFailDb, "incident_id = {$orderedFinalFailIncident} AND action_type = 'alert_call'"), 'final originate failure should complete the ordered stage without duplicate reservations');
+assert_same(0, count_history($orderedFinalFailDb, "incident_id = {$orderedFinalFailIncident} AND action_type = 'alert_call' AND delivery_status IN ('pending', 'snoozed', 'sending', 'sent')"), 'final originate failure should leave no deliverable same-stage alert rows behind');
+$orderedFinalFailClock->now = '2026-07-13 13:47:30';
+$orderedFinalFailProcessor->run(settings());
+assert_same(2, count($orderedFinalFailSender->calls), 'completed ordered stage after final originate failure should not resend destinations without a new reminder stage');
+
+$orderedAcceptAfterFailClock = new TestClock('2026-07-13 13:48:00');
+$orderedAcceptAfterFailSender = new FakeCallSender();
+$orderedAcceptAfterFailSender->failuresByDestination['770'] = 'originate failed 770';
+[$orderedAcceptAfterFailDb, $orderedAcceptAfterFailProcessor] = create_alert_environment($orderedAcceptAfterFailClock, new FakeEmailSender(), $orderedAcceptAfterFailSender);
+$orderedAcceptAfterFailRule = insert_rule($orderedAcceptAfterFailDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '770,771,772',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedAcceptAfterFailIncident = insert_incident($orderedAcceptAfterFailDb, ['rule_id' => $orderedAcceptAfterFailRule, 'subject_key' => 'ordered-accept-after-fail', 'first_matched_at' => '2026-07-13 13:48:00', 'suppression_expires_at' => '2026-07-13 14:48:00']);
+$orderedAcceptAfterFailProcessor->run(settings());
+assert_same(2, count($orderedAcceptAfterFailSender->calls), 'ordered progression should stop once a destination is successfully queued into the normal callback path');
+$orderedAcceptHistoryId = (int)$orderedAcceptAfterFailDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedAcceptAfterFailIncident} AND recipient = '771' LIMIT 1")->fetchColumn();
+(new RepeatCallerRepository($orderedAcceptAfterFailDb))->recordAlertCallDtmfResponse($orderedAcceptHistoryId, $orderedAcceptAfterFailIncident, 'accepted', '771', '1', '2026-07-13 13:48:10');
+assert_same(0, count_history($orderedAcceptAfterFailDb, "incident_id = {$orderedAcceptAfterFailIncident} AND action_type = 'alert_call' AND recipient = '772'"), 'eventual answered-and-accepted ordered destination should stop progression before later destinations are reserved');
+
+$parallelAcceptClock = new TestClock('2026-07-13 13:49:00');
+$parallelAcceptSender = new FakeCallSender();
+[$parallelAcceptDb, $parallelAcceptProcessor] = create_alert_environment($parallelAcceptClock, new FakeEmailSender(), $parallelAcceptSender);
+$parallelAcceptRule = insert_rule($parallelAcceptDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '780,781',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$parallelAcceptIncident = insert_incident($parallelAcceptDb, ['rule_id' => $parallelAcceptRule, 'subject_key' => 'parallel-accept', 'first_matched_at' => '2026-07-13 13:49:00', 'suppression_expires_at' => '2026-07-13 14:49:00']);
+$parallelAcceptSender->afterCall = function (string $destination) use ($parallelAcceptDb, $parallelAcceptIncident): void {
+	if ($destination !== '780') {
+		return;
+	}
+	(new RepeatCallerRepository($parallelAcceptDb))->acceptActiveIncident($parallelAcceptIncident, 'gui-user', '2026-07-13 13:49:01', 'gui');
+};
+$parallelAcceptProcessor->run(settings());
+assert_same(1, count($parallelAcceptSender->calls), 'acceptance on one concurrent call should stop any further originates for that incident in the same processor pass');
+assert_same(0, count_history($parallelAcceptDb, "incident_id = {$parallelAcceptIncident} AND action_type = 'alert_call' AND recipient = '781' AND delivery_status IN ('pending', 'snoozed', 'sending')"), 'acceptance should cancel or make ineligible any reserved but unsent concurrent alert-call attempts');
+
+$astman = new FakeAstman();
+$astman->dbValues['repeatcaller/alertcall/1/launch_channel'] = 'Local/780@repeatcaller-alert-launch-0001;1';
+$astman->dbValues['repeatcaller/alertcall/1/playback_channel'] = 'Local/780@from-internal-0001;2';
+$astman->dbValues['repeatcaller/alertcall/2/launch_channel'] = 'Local/781@repeatcaller-alert-launch-0002;1';
+$astman->dbValues['repeatcaller/alertcall/2/playback_channel'] = 'Local/781@from-internal-0002;2';
+$signalModule = new \FreePBX\modules\Repeatcaller(new stdClass());
+$signalModule->signalIncidentAcceptedForLiveAlertCalls($parallelAcceptIncident, 1);
+$requestActions = array_map(static function (array $request): string {
+	return (string)$request['action'];
+}, $astman->requests);
+assert_true(in_array('DBPut', $requestActions, true), 'acceptance signalling should mark the incident accepted in Asterisk DB for live legs');
+assert_true(in_array('DBGet', $requestActions, true), 'acceptance signalling should query tracked live alert-call channels by history id');
+assert_true(in_array('Redirect', $requestActions, true), 'acceptance signalling should redirect already answered playback legs to the remote-accepted path');
+assert_true(in_array('Hangup', $requestActions, true), 'acceptance signalling should hang up remaining launch or ringing legs immediately');
+
+$lateCallbackClock = new TestClock('2026-07-13 13:49:30');
+[$lateCallbackDb, $lateCallbackProcessor] = create_alert_environment($lateCallbackClock, new FakeEmailSender(), new FakeCallSender());
+$lateCallbackRule = insert_rule($lateCallbackDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '790,791',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => '5m',
+]);
+$lateCallbackIncident = insert_incident($lateCallbackDb, ['rule_id' => $lateCallbackRule, 'subject_key' => 'late-callback', 'first_matched_at' => '2026-07-13 13:49:30', 'suppression_expires_at' => '2026-07-13 14:49:30']);
+$lateCallbackProcessor->run(settings());
+$lateCallbackRows = $lateCallbackDb->query("SELECT id, recipient FROM repeatcaller_incident_alert_history WHERE incident_id = {$lateCallbackIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+$lateCallbackRepo = new RepeatCallerRepository($lateCallbackDb);
+$lateCallbackRepo->recordAlertCallDtmfResponse((int)$lateCallbackRows[0]['id'], $lateCallbackIncident, 'accepted', (string)$lateCallbackRows[0]['recipient'], '1', '2026-07-13 13:49:35');
+$lateCallbackResult = $lateCallbackRepo->recordAlertCallDialDisposition((int)$lateCallbackRows[1]['id'], $lateCallbackIncident, (string)$lateCallbackRows[1]['recipient'], 'BUSY', '17', '2026-07-13 13:49:40');
+assert_true(empty($lateCallbackResult['next_history_id']), 'late AGI or dialstatus callbacks after acceptance must not restart progression or reserve another destination');
+
+$idempotentAcceptClock = new TestClock('2026-07-13 13:49:45');
+[$idempotentAcceptDb, $idempotentAcceptProcessor] = create_alert_environment($idempotentAcceptClock, new FakeEmailSender(), new FakeCallSender());
+$idempotentAcceptRule = insert_rule($idempotentAcceptDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '795,796',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => '5m',
+]);
+$idempotentAcceptIncident = insert_incident($idempotentAcceptDb, ['rule_id' => $idempotentAcceptRule, 'subject_key' => 'idempotent-accept', 'first_matched_at' => '2026-07-13 13:49:45', 'suppression_expires_at' => '2026-07-13 14:49:45']);
+$idempotentAcceptProcessor->run(settings());
+$idempotentRows = $idempotentAcceptDb->query("SELECT id, recipient FROM repeatcaller_incident_alert_history WHERE incident_id = {$idempotentAcceptIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+$idempotentRepo = new RepeatCallerRepository($idempotentAcceptDb);
+$firstAccept = $idempotentRepo->recordAlertCallDtmfResponse((int)$idempotentRows[0]['id'], $idempotentAcceptIncident, 'accepted', (string)$idempotentRows[0]['recipient'], '1', '2026-07-13 13:49:50');
+$secondAccept = $idempotentRepo->recordAlertCallDtmfResponse((int)$idempotentRows[1]['id'], $idempotentAcceptIncident, 'accepted', (string)$idempotentRows[1]['recipient'], '1', '2026-07-13 13:49:51');
+$idempotentIncident = $idempotentAcceptDb->query("SELECT state, accepted_by, accepted_at, accept_source FROM repeatcaller_incidents WHERE id = {$idempotentAcceptIncident}")->fetch(PDO::FETCH_ASSOC);
+assert_true(!empty($firstAccept['accepted']), 'first concurrent acceptance callback should accept the incident');
+assert_true(empty($secondAccept['accepted']), 'concurrent acceptance callbacks must remain idempotent after the incident is already accepted');
+assert_same('accepted', (string)$idempotentIncident['state'], 'concurrent acceptance callbacks must leave the incident accepted');
+assert_same('alert_call', (string)$idempotentIncident['accept_source'], 'concurrent acceptance callbacks must preserve the first acceptance source');
 
 $orderedNoRetryClock = new TestClock('2026-07-13 13:50:00');
 $orderedNoRetrySender = new FakeCallSender();
@@ -1671,7 +1988,7 @@ assert_same('2026-07-13 11:05:00', (string)$acceptedAfterExpiryState['last_alert
 assert_same(1, (int)$acceptedAfterExpiryState['reminders_sent'], 'accepted incidents should advance the reminder counter once suppression has expired and fresh activity becomes alert-eligible');
 assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'accepted incidents should reserve one fresh GUI reminder after suppression expires');
 assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'email' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'accepted incidents should deliver one fresh email reminder after suppression expires');
-assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'accepted incidents should deliver one fresh alert_call reminder after suppression expires');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1"), 'accepted incidents should not restart Alert Call activity after suppression expires');
 assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND event_type = 'reminder' AND stage_n = 2"), 'accepted incidents should not resume older reminder stages once suppression expires');
 
 // 16 and 17: global snooze handling

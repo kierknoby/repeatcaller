@@ -9,6 +9,63 @@ const REPEATCALLER_AGI_EXIT_RESOLVE_FAILED = 11;
 const REPEATCALLER_AGI_EXIT_REPOSITORY_MISSING = 12;
 const REPEATCALLER_AGI_EXIT_PERSISTENCE_FAILED = 20;
 
+function repeatcallerAgiReadEnvironment(): array {
+	$env = [];
+	while (($line = fgets(STDIN)) !== false) {
+		$line = rtrim($line, "\r\n");
+		if ($line === '') {
+			break;
+		}
+		$pos = strpos($line, ':');
+		if ($pos === false) {
+			continue;
+		}
+		$key = strtolower(trim(substr($line, 0, $pos)));
+		$value = trim(substr($line, $pos + 1));
+		$env[$key] = $value;
+	}
+
+	return $env;
+}
+
+function repeatcallerAgiSendCommand(string $command): array {
+	fwrite(STDOUT, $command . "\n");
+	fflush(STDOUT);
+	$line = fgets(STDIN);
+	if ($line === false) {
+		return ['code' => 0, 'result' => -1, 'data' => ''];
+	}
+	$line = trim($line);
+	if (!preg_match('/^(\d{3})\s+result=(-?\d+)(?:\s+\((.*)\))?/', $line, $matches)) {
+		return ['code' => 0, 'result' => -1, 'data' => $line];
+	}
+
+	return [
+		'code' => (int)$matches[1],
+		'result' => (int)$matches[2],
+		'data' => isset($matches[3]) ? (string)$matches[3] : '',
+	];
+}
+
+function repeatcallerAgiResultDigit(array $response): string {
+	$result = (int)($response['result'] ?? -1);
+	if ($result <= 0 || $result > 255) {
+		return '';
+	}
+
+	$digit = chr($result);
+	if (!preg_match('/^[0-9A-D*#]$/', $digit)) {
+		return '';
+	}
+
+	return $digit;
+}
+
+function repeatcallerAgiDatabaseExists(string $family, string $key): bool {
+	$response = repeatcallerAgiSendCommand('DATABASE GET ' . $family . ' ' . $key);
+	return (int)($response['result'] ?? 0) === 1;
+}
+
 function repeatcallerAgiLog(string $message, array $context = []): void {
 	if ($context !== []) {
 		$pairs = [];
@@ -136,40 +193,27 @@ function repeatcallerTryImmediateOrderedFollowUp(\FreePBX\modules\Repeatcaller\R
 	if ($nextHistoryId <= 0) {
 		return;
 	}
-
-	$nextCall = $repository->loadDeliverableCallAlertByHistoryId($nextHistoryId, $now);
-	if (!is_array($nextCall)) {
-		return;
-	}
-
-	if (!$repository->markCallAlertSending($nextHistoryId, $now)) {
-		return;
-	}
-
+	require_once $moduleRoot . '/src/IncidentAlertProcessor.php';
 	require_once $moduleRoot . '/Repeatcaller.class.php';
 	$module = new \FreePBX\modules\Repeatcaller(new \stdClass());
-	$callerId = !empty($nextCall['alert_call_handle_callerid_upstream']) ? '' : (string)($nextCall['alert_call_callerid'] ?? '');
-	$sendResult = $module->sendAlertCall(
-		(string)$nextCall['recipient'],
-		(string)($nextCall['alert_call_recording_id'] ?? ''),
-		$callerId,
-		[
-			'history_id' => (int)$nextCall['id'],
-			'incident_id' => (int)$nextCall['incident_id'],
-			'recipient' => (string)$nextCall['recipient'],
-		] + repeatcallerSummaryContextFromCallRow($nextCall)
+	\FreePBX\modules\Repeatcaller\IncidentAlertProcessor::continueImmediateOrderedStage(
+		$repository,
+		function (array $nextCall) use ($module): array {
+			$callerId = !empty($nextCall['alert_call_handle_callerid_upstream']) ? '' : (string)($nextCall['alert_call_callerid'] ?? '');
+			return $module->sendAlertCall(
+				(string)$nextCall['recipient'],
+				(string)($nextCall['alert_call_recording_id'] ?? ''),
+				$callerId,
+				[
+					'history_id' => (int)$nextCall['id'],
+					'incident_id' => (int)$nextCall['incident_id'],
+					'recipient' => (string)$nextCall['recipient'],
+				] + repeatcallerSummaryContextFromCallRow($nextCall)
+			);
+		},
+		$nextHistoryId,
+		$now
 	);
-
-	if (!empty($sendResult['status'])) {
-		$repository->markCallAlertSent($nextHistoryId, $now);
-		return;
-	}
-
-	$repository->markCallAlertSnoozed($nextHistoryId, $now);
-	repeatcallerAgiLog('repeatcaller AGI: immediate ordered follow-up send failed; left deliverable for monitor retry', $context + [
-		'next_history_id' => (string)$nextHistoryId,
-		'send_error' => (string)($sendResult['message'] ?? 'unknown'),
-	]);
 }
 
 $historyId = isset($argv[1]) && ctype_digit((string)$argv[1]) ? (int)$argv[1] : 0;
@@ -228,10 +272,45 @@ if (!is_file($repositoryPath)) {
 }
 
 require_once $repositoryPath;
+require_once $moduleRoot . '/src/AlertCallAgiSession.php';
+
+function repeatcallerAgiCreateTransport(): \FreePBX\modules\Repeatcaller\AlertCallAgiTransport {
+	return new class implements \FreePBX\modules\Repeatcaller\AlertCallAgiTransport {
+		public function setVariable(string $name, string $value): void {
+			repeatcallerAgiSendCommand('SET VARIABLE ' . $name . ' "' . str_replace('"', '\\"', $value) . '"');
+		}
+
+		public function streamFile(string $file, string $escapeDigits): string {
+			if (trim($file) === '') {
+				return '';
+			}
+			$response = repeatcallerAgiSendCommand('STREAM FILE ' . $file . ' "' . $escapeDigits . '"');
+			return repeatcallerAgiResultDigit($response);
+		}
+
+		public function sayNumber(int $number, string $escapeDigits): string {
+			$response = repeatcallerAgiSendCommand('SAY NUMBER ' . $number . ' "' . $escapeDigits . '"');
+			return repeatcallerAgiResultDigit($response);
+		}
+
+		public function sayDigits(string $digits, string $escapeDigits): string {
+			if ($digits === '') {
+				return '';
+			}
+			$response = repeatcallerAgiSendCommand('SAY DIGITS ' . $digits . ' "' . $escapeDigits . '"');
+			return repeatcallerAgiResultDigit($response);
+		}
+
+		public function waitForDigit(int $milliseconds): string {
+			$response = repeatcallerAgiSendCommand('WAIT FOR DIGIT ' . max(1, $milliseconds));
+			return repeatcallerAgiResultDigit($response);
+		}
+	};
+}
 
 use FreePBX\modules\Repeatcaller\RepeatCallerRepository;
 
-if ($historyId <= 0 || $incidentId <= 0 || !in_array($response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus'], true)) {
+if ($historyId <= 0 || $incidentId <= 0 || !in_array($response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus', 'interactive'], true)) {
 	repeatcallerAgiLog('repeatcaller AGI: invalid alert response args received', $context);
 	exit(REPEATCALLER_AGI_EXIT_PERSISTENCE_FAILED);
 }
@@ -239,11 +318,51 @@ if ($historyId <= 0 || $incidentId <= 0 || !in_array($response, ['accepted', 'de
 try {
 	$repository = new RepeatCallerRepository(\FreePBX::Database());
 	$now = date('Y-m-d H:i:s');
-	if ($response === 'dialstatus') {
+	if ($response === 'interactive') {
+		$agiEnv = repeatcallerAgiReadEnvironment();
+		$interactiveSession = new \FreePBX\modules\Repeatcaller\AlertCallAgiSession();
+		$transport = repeatcallerAgiCreateTransport();
+		$sessionResult = $interactiveSession->run([
+			'playback_target' => (string)($argv[5] ?? ''),
+			'summary_mode' => (string)($argv[6] ?? 'repeat'),
+			'summary_call_count' => (string)($argv[7] ?? '0'),
+			'summary_threshold' => (string)($argv[8] ?? '0'),
+			'summary_window_minutes' => (string)($argv[9] ?? '0'),
+			'summary_caller_kind' => (string)($argv[10] ?? 'none'),
+			'summary_caller_value' => (string)($argv[11] ?? ''),
+			'summary_did_value' => (string)($argv[12] ?? ''),
+		], $transport, function () use ($incidentId): bool {
+			return repeatcallerAgiDatabaseExists('repeatcaller', 'incident/' . $incidentId . '/accepted');
+		});
+
+		if ((string)$sessionResult['response'] === 'remote_accepted') {
+			exit(REPEATCALLER_AGI_EXIT_OK);
+		}
+
+		$result = $repository->recordAlertCallDtmfResponse(
+			$historyId,
+			$incidentId,
+			(string)$sessionResult['response'],
+			$recipient,
+			(string)$sessionResult['digit'],
+			$now
+		);
+		if ((string)$sessionResult['response'] === 'accepted' && !empty($result['status'])) {
+			require_once $moduleRoot . '/Repeatcaller.class.php';
+			$module = new \FreePBX\modules\Repeatcaller(new \stdClass());
+			$module->signalIncidentAcceptedForLiveAlertCalls($incidentId, $historyId);
+		}
+		repeatcallerTryImmediateOrderedFollowUp($repository, $moduleRoot, $context, $result, $now);
+	} elseif ($response === 'dialstatus') {
 		$result = $repository->recordAlertCallDialDisposition($historyId, $incidentId, $recipient, $dialStatus, $hangupCause, $now);
 		repeatcallerTryImmediateOrderedFollowUp($repository, $moduleRoot, $context, $result, $now);
 	} else {
 		$result = $repository->recordAlertCallDtmfResponse($historyId, $incidentId, $response, $recipient, $digit, $now);
+		if ($response === 'accepted' && !empty($result['status'])) {
+			require_once $moduleRoot . '/Repeatcaller.class.php';
+			$module = new \FreePBX\modules\Repeatcaller(new \stdClass());
+			$module->signalIncidentAcceptedForLiveAlertCalls($incidentId, $historyId);
+		}
 		repeatcallerTryImmediateOrderedFollowUp($repository, $moduleRoot, $context, $result, $now);
 		if (!empty($result['status']) && $response === 'declined') {
 			$notice = $repository->buildDeclineNotificationContext($historyId, $incidentId);

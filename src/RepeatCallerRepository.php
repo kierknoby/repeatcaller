@@ -643,8 +643,53 @@ final class RepeatCallerRepository {
 		$state['active_incident_id'] = $incidentId;
 		$state['last_evaluated_at'] = $acceptedAt;
 		$this->saveSubjectState((int)$row['rule_id'], (string)$row['subject_key'], $state);
+		$this->cancelPendingAlertCallAttemptsForIncident($incidentId, $acceptedAt);
 
 		return true;
+	}
+
+	public function isIncidentActive(int $incidentId): bool {
+		$stmt = $this->pdo->prepare('SELECT state FROM repeatcaller_incidents WHERE id = ? LIMIT 1');
+		$stmt->execute([$incidentId]);
+
+		return (string)$stmt->fetchColumn() === 'active';
+	}
+
+	public function cancelPendingAlertCallAttemptsForIncident(int $incidentId, string $now, ?int $excludeHistoryId = null, string $failureDetail = 'cancelled after incident accepted'): int {
+		$sql =
+			'UPDATE repeatcaller_incident_alert_history
+			 SET delivery_status = ?,
+				 next_retry_at = NULL,
+				 failure_detail = ?,
+				 updated_at = ?
+			 WHERE incident_id = ?
+				AND action_type = ?
+				AND delivery_status IN (?, ?, ?)';
+		$params = ['failed', $failureDetail, $now, $incidentId, 'alert_call', 'pending', 'snoozed', 'sending'];
+		if ($excludeHistoryId !== null && $excludeHistoryId > 0) {
+			$sql .= ' AND id <> ?';
+			$params[] = $excludeHistoryId;
+		}
+		$stmt = $this->pdo->prepare($sql);
+		$stmt->execute($params);
+
+		return $stmt->rowCount();
+	}
+
+	public function cancelAlertCallAttempt(int $historyId, string $now, string $failureDetail = 'cancelled after incident accepted'): bool {
+		$stmt = $this->pdo->prepare(
+			'UPDATE repeatcaller_incident_alert_history
+			 SET delivery_status = ?,
+				 next_retry_at = NULL,
+				 failure_detail = ?,
+				 updated_at = ?
+			 WHERE id = ?
+				AND action_type = ?
+				AND delivery_status IN (?, ?, ?, ?, ?)'
+		);
+		$stmt->execute(['failed', $failureDetail, $now, $historyId, 'alert_call', 'pending', 'snoozed', 'sending', 'sent', 'failed']);
+
+		return $stmt->rowCount() > 0;
 	}
 
 	public function loadIncidentAlertHistory(int $limit = 200): array {
@@ -1806,8 +1851,8 @@ final class RepeatCallerRepository {
 		$didScopeModeExpr = $this->columnExpr('repeatcaller_rules', 'did_scope_mode', "'all'");
 		$thresholdCountExpr = $this->columnExpr('repeatcaller_rules', 'threshold_count', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
-		// Only pending/snoozed call stages are deliverable. Failed call outcomes are
-		// terminal for that stage and must wait for the next due reminder stage.
+		// Only active incidents may continue originating Alert Calls. Once an incident
+		// is accepted, further alert-call activity becomes ineligible.
 		$stmt = $this->pdo->prepare(
 			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label, h.event_type, h.stage_n,
 				h.recipient, h.delivery_status, h.repeat_mode,
@@ -1821,15 +1866,13 @@ final class RepeatCallerRepository {
 			 WHERE h.action_type = ?
 				AND h.delivery_status IN (?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
-				AND (
-					(i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?))
-					OR (i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?))
-				)
+				AND i.state = ?
+				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 				AND ' . $isDeletedExpr . ' = 0
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['alert_call', 'pending', 'snoozed', $now, 'active', $now, 'accepted', $now]);
+		$stmt->execute(['alert_call', 'pending', 'snoozed', $now, 'active', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1857,17 +1900,25 @@ final class RepeatCallerRepository {
 				AND h.action_type = ?
 				AND h.delivery_status IN (?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
-				AND (
-					(i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?))
-					OR (i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?))
-				)
+				AND i.state = ?
+				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 				AND ' . $isDeletedExpr . ' = 0
 			 LIMIT 1'
 		);
-		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now, 'accepted', $now]);
+		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now]);
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		return is_array($row) ? $row : null;
+	}
+
+	public function orderedAlertCallStageRecipientCount(int $historyId): int {
+		$attempt = $this->loadOrderedAttemptContext($historyId);
+		if ($attempt === null) {
+			return 0;
+		}
+
+		$destinationEntries = $this->parseAlertCallDestinationEntries((string)($attempt['alert_call_destinations'] ?? ''));
+		return count($destinationEntries);
 	}
 
 	public function loadAlertCallAttemptHistoryByIncident(int $incidentId): array {

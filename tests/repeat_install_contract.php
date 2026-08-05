@@ -562,6 +562,8 @@ assert_same(0, (int)$upgradeContinuityDb->query("SELECT COUNT(*) FROM repeatcall
 $controllerSource = file_get_contents($root . '/Repeatcaller.class.php');
 assert_true($controllerSource !== false, 'Repeatcaller.class.php should be readable');
 assert_true(strpos($controllerSource, "setSetting('initial_processing_boundary_at'") === false, 'ordinary settings saves must not persist the internal initial_processing_boundary_at key');
+assert_true(strpos($controllerSource, 'astDbGetValue(') !== false && strpos($controllerSource, 'astmanAction(') !== false, 'controller acceptance path must query tracked live channels and issue AMI control actions');
+assert_true(strpos($controllerSource, "'Redirect'") !== false && strpos($controllerSource, "'Hangup'") !== false, 'controller acceptance path must redirect answered playback legs and hang up launch or ringing legs');
 
 assert_true(strpos($installSource, '$astetc . \'/repeatcaller_alert.conf\'') !== false, 'alert-call dialplan must be generated as a module-owned fragment, not by editing a FreePBX-generated file directly');
 assert_true(strpos($installSource, '$astetc . \'/extensions_custom.conf\'') !== false, 'install hook may only add the module-owned include to extensions_custom.conf');
@@ -571,19 +573,15 @@ assert_true(strpos($installSource, "'/repeatcaller_alert_response.php'") !== fal
 assert_true(strpos($installSource, '@copy($sourceAgiPath, $deployedAgiPath)') !== false, 'install hook must copy the AGI source into the Asterisk AGI directory');
 assert_true(strpos($installSource, '@chmod($deployedAgiPath, 0755)') !== false, 'install hook must explicitly enforce executable mode on the deployed AGI script');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}') !== false, 'originate dialplan must route answered calls through the module playback subroutine');
-assert_true(strpos($installSource, 'Set(REPEATCALLER_ATTEMPT=1)') !== false, 'alert-call prompt loop must start at the first playback attempt');
-assert_true(strpos($installSource, 'While($[${REPEATCALLER_ATTEMPT} <= 3])') === false, 'alert-call response loop must be finite without replaying the full incident message through a While structure');
-assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF,,1,,1,10)') !== false, 'alert-call prompt loop must wait 10 seconds for one DTMF digit after each playback');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"="1"]?accepted)') !== false, 'DTMF 1 must stop the retry loop and route to accepted handling');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"="2"]?declined)') !== false, 'DTMF 2 must stop the retry loop and route to declined handling');
-assert_true(strpos($installSource, 'Set(REPEATCALLER_RESPONSE_PHASE=recording)') !== false && strpos($installSource, 'Set(REPEATCALLER_RESPONSE_PHASE=summary)') !== false && strpos($installSource, 'Set(REPEATCALLER_RESPONSE_PHASE=menu)') !== false, 'alert-call dialplan must distinguish recording, summary, and menu phases across each full playback attempt');
-assert_true(strpos($installSource, 'Set(REPEATCALLER_ATTEMPT=$[${REPEATCALLER_ATTEMPT} + 1])') !== false, 'invalid or missing DTMF must consume the current attempt before retrying');
-assert_true(strpos($installSource, 'same => n(begin_attempt),Set(REPEATCALLER_DTMF=)') !== false, 'each attempt must restart from the beginning of the full alert');
-assert_true(strpos($installSource, 'GotoIf($[${REPEATCALLER_ATTEMPT} >= 3]?no_response)') !== false, 'the third unsuccessful attempt must terminate through the no-response path instead of looping again');
-assert_true(strpos($installSource, 'same => n,Goto(begin_attempt)') !== false, 'missing or invalid DTMF must restart the complete alert while attempts remain');
-assert_true(strpos($installSource, 'same => n(no_response),AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third unsuccessful attempt, dialplan must record answered_no_response and hang up when the alert call has not been accepted');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third response window expires, dialplan must record answered_no_response and hang up because the alert call was not accepted via the deployed AGI-bin script');
-assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'accepted, declined, and third-attempt no-response terminal outcomes must play thank-you then goodbye');
+assert_true(strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_channel)=${CHANNEL(name)})') !== false && strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_uniqueid)=${CHANNEL(uniqueid)})') !== false, 'launch dialplan must track live launch channel identifiers for acceptance-time hangup');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_PLAYBACK_TARGET},${REPEATCALLER_SUMMARY_MODE},${REPEATCALLER_SUMMARY_CALL_COUNT},${REPEATCALLER_SUMMARY_THRESHOLD},${REPEATCALLER_SUMMARY_WINDOW_MINUTES},${REPEATCALLER_SUMMARY_CALLER_KIND},${REPEATCALLER_SUMMARY_CALLER_VALUE},${REPEATCALLER_SUMMARY_DID_VALUE})') !== false, 'answered-call interaction must be delegated to the dedicated AGI session');
+assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF') === false, 'answered-call interaction must no longer depend on dialplan Read()');
+assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'remote accepted handling must still play thank-you then goodbye');
+assert_true(strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_channel)=${CHANNEL(name)})') !== false && strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_uniqueid)=${CHANNEL(uniqueid)})') !== false, 'answered playback dialplan must track live playback channel identifiers for immediate remote acceptance redirect');
+assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'answered alert-call legs must have a dedicated remote_accepted redirect target to thank and disconnect the caller');
+assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'playback context must expose a dedicated remote_accepted extension for AMI Redirect');
+assert_true(strpos($installSource, 'exten => h,1,Set(REPEATCALLER_LAUNCH_DB_DELETE=${DB_DELETE(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_channel)})') !== false, 'launch dialplan must clean up tracked launch channels on hangup');
+assert_true(strpos($installSource, 'Set(REPEATCALLER_PLAYBACK_DB_DELETE=${DB_DELETE(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_channel)})') !== false, 'playback dialplan must clean up tracked playback channels on hangup');
 assert_true(strpos($installSource, 'exten => h,1,GotoIf($["${REPEATCALLER_ALERT_COMPLETED}"="1"]?done)') !== false, 'hangup during the prompt loop must be recorded as answered_no_response only when no answered terminal outcome already completed');
 assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},dialstatus,${REPEATCALLER_ALERT_RECIPIENT},${DIALSTATUS},${HANGUPCAUSE})') !== false, 'launch context must pass DIALSTATUS and HANGUPCAUSE to the AGI callback after Dial returns');
 assert_true(strpos($installSource, "str_replace('__REPEATCALLER_AGI_SCRIPT__', \$agiScriptName") !== false, 'generated dialplan must reference the deployed AGI script name used in Asterisk AGI-bin');
@@ -591,14 +589,18 @@ assert_true(strpos($installSource, "str_replace('__REPEATCALLER_AGI_SCRIPT__', \
 $agiSource = file_get_contents($root . '/agi/repeatcaller_alert_response.php');
 assert_true($agiSource !== false, 'alert-call AGI handler should be readable');
 assert_true(strpos($agiSource, 'recordAlertCallDtmfResponse($historyId, $incidentId, $response, $recipient, $digit') !== false, 'AGI handler must route exact alert attempt context to the repository response handler');
+assert_true(strpos($agiSource, 'function repeatcallerAgiCreateTransport()') !== false && strpos($agiSource, 'new class implements \\FreePBX\\modules\\Repeatcaller\\AlertCallAgiTransport') !== false, 'AGI handler must expose a dedicated interactive transport for AGI audio and digit primitives after loading the session interface');
+assert_true(strpos($agiSource, 'STREAM FILE') !== false && strpos($agiSource, 'SAY NUMBER') !== false && strpos($agiSource, 'SAY DIGITS') !== false && strpos($agiSource, 'WAIT FOR DIGIT ') !== false, 'AGI interactive path must use digit-interruptible AGI primitives for recordings, spoken numbers, spoken digits, and menu wait');
+$agiSessionSource = file_get_contents($root . '/src/AlertCallAgiSession.php');
+assert_true($agiSessionSource !== false, 'AlertCallAgiSession.php should be readable');
+assert_true(strpos($agiSessionSource, 'waitForDigit(1)') !== false, 'AGI interactive path must retain a digit entered immediately after answer');
+assert_true(strpos($agiSessionSource, 'waitForDigit(10000)') !== false, 'AGI interactive path must preserve the 10-second response wait after spoken prompts');
 assert_true(strpos($agiSource, 'function repeatcallerTryImmediateOrderedFollowUp(') !== false, 'AGI handler must include a focused immediate ordered follow-up bridge');
-assert_true(strpos($agiSource, 'loadDeliverableCallAlertByHistoryId($nextHistoryId') !== false, 'AGI immediate bridge must load the newly reserved alert-call history row from repository state');
-assert_true(strpos($agiSource, 'markCallAlertSending($nextHistoryId') !== false, 'AGI immediate bridge must reuse existing sending state transition');
+assert_true(strpos($agiSource, 'IncidentAlertProcessor::continueImmediateOrderedStage(') !== false, 'AGI immediate bridge must reuse the shared bounded same-stage continuation helper');
 assert_true(strpos($agiSource, 'sendAlertCall(') !== false, 'AGI immediate bridge must reuse existing module alert-call sender');
-assert_true(strpos($agiSource, 'markCallAlertSent($nextHistoryId') !== false, 'AGI immediate bridge must reuse existing sent state transition on successful originate');
-assert_true(strpos($agiSource, 'markCallAlertSnoozed($nextHistoryId') !== false, 'AGI immediate bridge must keep failed immediate sends deliverable for normal monitor retry');
+assert_true(strpos($agiSource, 'signalIncidentAcceptedForLiveAlertCalls($incidentId, $historyId)') !== false, 'AGI acceptance path must signal live answered alert-call legs when the incident is accepted while excluding the accepting leg');
 assert_true(strpos($agiSource, 'repeatcallerTryImmediateOrderedFollowUp($repository, $moduleRoot, $context, $result, $now);') !== false, 'AGI handler must invoke the immediate ordered follow-up bridge after terminal callback persistence');
-assert_true(strpos($agiSource, "in_array(\$response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus'], true)") !== false, 'AGI handler must allow known DTMF and dialstatus callback actions');
+assert_true(strpos($agiSource, "in_array(\$response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus', 'interactive'], true)") !== false, 'AGI handler must allow known DTMF, interactive, and dialstatus callback actions');
 assert_true(strpos($agiSource, 'function repeatcallerResolveModuleRoot(): ?string') !== false, 'AGI handler must resolve the module root explicitly when executed from Asterisk AGI-bin');
 assert_true(strpos($agiSource, "FreePBX::Config()->get('AMPWEBROOT')") !== false, 'AGI handler must use FreePBX bootstrap configuration to find the installed module path');
 assert_true(strpos($agiSource, 'attempted_roots') !== false, 'AGI handler must log attempted resolver roots on module-path resolution failure');
@@ -645,6 +647,32 @@ $repoStub = "<?php\n"
 	. "    }\n"
 	. "}\n";
 assert_true(file_put_contents($repoStubPath, $repoStub) !== false, 'AGI contract should write a fake RepeatCallerRepository class');
+
+$agiSessionStubPath = $fakeSrcDir . '/AlertCallAgiSession.php';
+$agiSessionStub = '<?php' . "\n"
+	. 'namespace FreePBX\\modules\\Repeatcaller;' . "\n"
+	. 'interface AlertCallAgiTransport {' . "\n"
+	. '    public function setVariable(string $name, string $value): void;' . "\n"
+	. '    public function streamFile(string $file, string $escapeDigits): string;' . "\n"
+	. '    public function sayNumber(int $number, string $escapeDigits): string;' . "\n"
+	. '    public function sayDigits(string $digits, string $escapeDigits): string;' . "\n"
+	. '    public function waitForDigit(int $milliseconds): string;' . "\n"
+	. '}' . "\n"
+	. 'class AlertCallAgiSession {' . "\n"
+	. '    public function run(array $context, AlertCallAgiTransport $transport, callable $isRemotelyAccepted): array {' . "\n"
+	. "        return ['response' => 'accepted', 'digit' => '1', 'accepted' => true];\n"
+	. '    }' . "\n"
+	. '}' . "\n";
+assert_true(file_put_contents($agiSessionStubPath, $agiSessionStub) !== false, 'AGI contract should write a fake AlertCallAgiSession class');
+
+$moduleStubPath = $fakeModuleRoot . '/Repeatcaller.class.php';
+$moduleStub = '<?php' . "\n"
+	. 'namespace FreePBX\\modules;' . "\n"
+	. 'class Repeatcaller {' . "\n"
+	. '    public function __construct($container) {}' . "\n"
+	. '    public function signalIncidentAcceptedForLiveAlertCalls(int $incidentId, ?int $excludeHistoryId = null): void {}' . "\n"
+	. '}' . "\n";
+assert_true(file_put_contents($moduleStubPath, $moduleStub) !== false, 'AGI contract should write a fake Repeatcaller module class for accepted callback signalling');
 
 $runAgi = function (string $scriptPath, string $bootstrap, string $args, ?array &$lines = null): int {
 	$lines = [];

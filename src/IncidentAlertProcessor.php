@@ -106,6 +106,11 @@ final class IncidentAlertProcessor {
 				continue;
 			}
 
+			if (!$this->repository->isIncidentActive((int)$callAlert['incident_id'])) {
+				$this->repository->cancelAlertCallAttempt((int)$callAlert['id'], $now);
+				continue;
+			}
+
 			$result = $this->sendAlertCall($callAlert);
 
 			if (!empty($result['status'])) {
@@ -117,6 +122,19 @@ final class IncidentAlertProcessor {
 			$error = trim((string)($result['message'] ?? 'Unknown alert call error'));
 			$this->repository->markCallAlertFailed((int)$callAlert['id'], $error, $now);
 			$summary['alert_call_failed']++;
+			$nextHistoryId = $this->repository->reserveNextOrderedAlertCallAttempt((int)$callAlert['id'], $now);
+			$followUp = self::continueImmediateOrderedStage(
+				$this->repository,
+				function (array $nextCall): array {
+					return $this->sendAlertCall($nextCall);
+				},
+				$nextHistoryId !== null ? (int)$nextHistoryId : 0,
+				$now
+			);
+			$summary['alert_call_failed'] += (int)($followUp['failed_attempts'] ?? 0);
+			if (!empty($followUp['sent'])) {
+				$summary['alert_call_sent']++;
+			}
 		}
 
 		$alertCutoff = $this->pruneCutoff((string)($settings['alert_history_prune_policy'] ?? 'never'), $now);
@@ -237,8 +255,9 @@ final class IncidentAlertProcessor {
 		}
 
 		$ruleCallEnabled = !empty($incident['alert_call_enabled']) && (string)$incident['alert_call_enabled'] !== '0';
+		$incidentState = strtolower(trim((string)($incident['state'] ?? 'active')));
 		$callDestinationEntries = $this->normaliseAlertCallDestinationEntries((string)($incident['alert_call_destinations'] ?? ''));
-		if (!$ruleCallEnabled || !$callDestinationEntries) {
+		if ($incidentState === 'accepted' || !$ruleCallEnabled || !$callDestinationEntries) {
 			return $reservedAny;
 		}
 
@@ -324,6 +343,60 @@ final class IncidentAlertProcessor {
 			$callerId,
 			$context
 		);
+	}
+
+	public static function continueImmediateOrderedStage(RepeatCallerRepository $repository, callable $sendAttempt, int $nextHistoryId, string $now, ?int $maxAttempts = null): array {
+		if ($nextHistoryId <= 0) {
+			return ['sent' => false, 'failed_attempts' => 0, 'attempted' => 0, 'stopped' => 'no_next'];
+		}
+
+		if ($maxAttempts === null) {
+			$maxAttempts = $repository->orderedAlertCallStageRecipientCount($nextHistoryId);
+		}
+		$maxAttempts = max(1, (int)$maxAttempts);
+
+		$attempted = 0;
+		$failedAttempts = 0;
+		$currentHistoryId = $nextHistoryId;
+		$visited = [];
+
+		while ($currentHistoryId > 0 && $attempted < $maxAttempts && !isset($visited[$currentHistoryId])) {
+			$visited[$currentHistoryId] = true;
+			$callAlert = $repository->loadDeliverableCallAlertByHistoryId($currentHistoryId, $now);
+			if (!is_array($callAlert)) {
+				return ['sent' => false, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'not_deliverable', 'history_id' => $currentHistoryId];
+			}
+
+			if (!$repository->markCallAlertSending($currentHistoryId, $now)) {
+				return ['sent' => false, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'not_sendable', 'history_id' => $currentHistoryId];
+			}
+
+			if (!$repository->isIncidentActive((int)$callAlert['incident_id'])) {
+				$repository->cancelAlertCallAttempt($currentHistoryId, $now);
+				return ['sent' => false, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'accepted_elsewhere', 'history_id' => $currentHistoryId];
+			}
+
+			$result = $sendAttempt($callAlert);
+			$attempted++;
+
+			if (!empty($result['status'])) {
+				$repository->markCallAlertSent($currentHistoryId, $now);
+				return ['sent' => true, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'queued', 'history_id' => $currentHistoryId];
+			}
+
+			$error = trim((string)($result['message'] ?? 'Unknown alert call error'));
+			$repository->markCallAlertFailed($currentHistoryId, $error, $now);
+			$failedAttempts++;
+			$currentHistoryId = (int)($repository->reserveNextOrderedAlertCallAttempt($currentHistoryId, $now) ?? 0);
+		}
+
+		return [
+			'sent' => false,
+			'failed_attempts' => $failedAttempts,
+			'attempted' => $attempted,
+			'stopped' => $currentHistoryId > 0 ? 'bounded' : 'completed',
+			'history_id' => $currentHistoryId,
+		];
 	}
 
 	private function buildAlertCallSummaryContext(array $callAlert): array {

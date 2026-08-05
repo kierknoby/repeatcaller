@@ -666,6 +666,7 @@ class Repeatcaller implements \BMO {
 		if (!$repository->acceptActiveIncident($incidentId, $user, $this->now(), 'gui')) {
 			return ['status' => false, 'message' => _('Incident is not active or was already accepted.')];
 		}
+		$this->signalIncidentAcceptedForLiveAlertCalls($incidentId);
 		return [
 			'status' => true,
 			'message' => _('Incident accepted.'),
@@ -1210,6 +1211,107 @@ class Repeatcaller implements \BMO {
 	private function astmanConnection() {
 		global $astman;
 		return is_object($astman) ? $astman : null;
+	}
+
+	public function signalIncidentAcceptedForLiveAlertCalls(int $incidentId, ?int $excludeHistoryId = null): void {
+		if ($incidentId <= 0) {
+			return;
+		}
+
+		$astman = $this->astmanConnection();
+		if (!is_object($astman)) {
+			return;
+		}
+
+		try {
+			if (method_exists($astman, 'send_request')) {
+				$astman->send_request('DBPut', [
+					'Family' => 'repeatcaller',
+					'Key' => 'incident/' . $incidentId . '/accepted',
+					'Val' => '1',
+				]);
+
+				$repository = $this->rcRepository();
+				foreach ($repository->loadAlertCallAttemptHistoryByIncident($incidentId) as $attempt) {
+					$historyId = (int)($attempt['id'] ?? 0);
+					if ($historyId <= 0 || ($excludeHistoryId !== null && $historyId === $excludeHistoryId)) {
+						continue;
+					}
+
+					$launchChannel = $this->astDbGetValue($astman, 'repeatcaller', 'alertcall/' . $historyId . '/launch_channel');
+					$playbackChannel = $this->astDbGetValue($astman, 'repeatcaller', 'alertcall/' . $historyId . '/playback_channel');
+
+					if ($playbackChannel !== '') {
+						$redirected = $this->astmanAction($astman, 'Redirect', [
+							'Channel' => $playbackChannel,
+							'Context' => 'repeatcaller-alert-playback',
+							'Exten' => 'remote_accepted',
+							'Priority' => '1',
+						]);
+						if (!$redirected) {
+							$this->astmanAction($astman, 'Hangup', ['Channel' => $playbackChannel]);
+						}
+					}
+
+					if ($launchChannel !== '') {
+						$this->astmanAction($astman, 'Hangup', ['Channel' => $launchChannel]);
+					}
+				}
+			}
+		} catch (\Throwable $e) {
+		}
+	}
+
+	private function astmanAction($astman, string $action, array $params): bool {
+		if (!method_exists($astman, 'send_request')) {
+			return false;
+		}
+
+		try {
+			$result = $astman->send_request($action, $params);
+			if ($result === true) {
+				return true;
+			}
+			if (is_array($result)) {
+				$response = strtolower(trim((string)($result['Response'] ?? $result['response'] ?? '')));
+				$message = strtolower(trim((string)($result['Message'] ?? $result['message'] ?? '')));
+				return $response === 'success' || strpos($message, 'success') !== false;
+			}
+			if (is_string($result)) {
+				$normalized = strtolower(trim($result));
+				return strpos($normalized, 'success') !== false;
+			}
+		} catch (\Throwable $e) {
+		}
+
+		return false;
+	}
+
+	private function astDbGetValue($astman, string $family, string $key): string {
+		if (!method_exists($astman, 'send_request')) {
+			return '';
+		}
+
+		try {
+			$result = $astman->send_request('DBGet', [
+				'Family' => $family,
+				'Key' => $key,
+			]);
+			if (is_array($result)) {
+				foreach (['Val', 'val', 'Value', 'value', 'Data', 'data'] as $field) {
+					if (isset($result[$field])) {
+						return trim((string)$result[$field]);
+					}
+				}
+				$message = trim((string)($result['Message'] ?? $result['message'] ?? ''));
+				if (preg_match('/Value\s*:\s*(.+)$/i', $message, $matches)) {
+					return trim((string)$matches[1]);
+				}
+			}
+		} catch (\Throwable $e) {
+		}
+
+		return '';
 	}
 
 	private function resolveSystemRecordingPlayback(string $recordingId): array {
