@@ -1663,7 +1663,8 @@
 		var values = [];
 		$('#rc-rule-alert-call-destination-list li').each(function () {
 			var destination = String($(this).attr('data-destination') || '');
-			var keepTryingFlag = $(this).attr('data-keep-trying') === '0' ? '0' : '1';
+			var orderedKeepTryingFlag = $(this).attr('data-keep-trying-ordered') === '1' ? '1' : '0';
+			var keepTryingFlag = orderedKeepTryingFlag;
 			if (destination !== '') {
 				values.push(destination + '|' + keepTryingFlag);
 			}
@@ -1779,15 +1780,16 @@
 	}
 
 	function buildAlertCallDestinationItem(destination, keepTryingEnabled) {
-		var keepTrying = keepTryingEnabled === undefined ? true : !!keepTryingEnabled;
-		var $li = $('<li class="list-group-item rc-alert-call-destination-item"/>').attr('data-destination', destination).attr('data-keep-trying', keepTrying ? '1' : '0');
+		var orderedStrategy = $('#rc-rule-alert-call-strategy').val() === 'ordered';
+		var keepTrying = keepTryingEnabled === undefined ? orderedStrategy : !!keepTryingEnabled;
+		var $li = $('<li class="list-group-item rc-alert-call-destination-item"/>').attr('data-destination', destination).attr('data-keep-trying-ordered', keepTrying ? '1' : '0');
 		var $order = $('<span class="rc-alert-call-destination-order"/>').text('1.');
 		var $dragHandle = $('<button type="button" class="btn btn-xs btn-default rc-alert-call-destination-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag to reorder"/>')
 			.append($('<i class="fa fa-bars" aria-hidden="true"/>'));
 		var $value = $('<span class="rc-alert-call-destination-value"/>').text(destination);
 		var $keepTryingToggle = $('<label class="rc-alert-call-destination-keep-trying"/>')
 			.append($('<input type="checkbox" class="rc-alert-call-destination-keep-trying-checkbox"/>').prop('checked', keepTrying).on('change', function () {
-				$li.attr('data-keep-trying', $(this).is(':checked') ? '1' : '0');
+				$li.attr('data-keep-trying-ordered', $(this).is(':checked') ? '1' : '0');
 				updateAlertCallDestinationHiddenField();
 			}))
 			.append(' Keep Trying');
@@ -1797,6 +1799,8 @@
 			updateAlertCallDestinationAddButtonState();
 		});
 		$li.append($order).append($dragHandle).append($value).append($keepTryingToggle).append($remove);
+		$keepTryingToggle.toggleClass('rc-control-disabled', !orderedStrategy);
+		$keepTryingToggle.find('input').prop('disabled', !orderedStrategy).prop('checked', orderedStrategy ? keepTrying : false);
 
 		$dragHandle.on('dragstart', function (event) {
 			$li.addClass('rc-dragging');
@@ -1848,6 +1852,21 @@
 		return true;
 	}
 
+	function updateAlertCallStrategyEditorState() {
+		var orderedStrategy = $('#rc-rule-alert-call-strategy').val() === 'ordered';
+		var alertCallEnabled = $('#rc-rule-alert-call-enabled').is(':checked');
+		$('#rc-rule-alert-call-destination-list li').each(function () {
+			var $li = $(this);
+			var orderedState = $li.attr('data-keep-trying-ordered') === '1';
+			var $toggle = $li.find('.rc-alert-call-destination-keep-trying');
+			var $checkbox = $toggle.find('input');
+			var canEditKeepTrying = alertCallEnabled && orderedStrategy;
+			$toggle.toggleClass('rc-control-disabled', !canEditKeepTrying);
+			$checkbox.prop('disabled', !canEditKeepTrying).prop('checked', canEditKeepTrying ? orderedState : false);
+		});
+		updateAlertCallDestinationHiddenField();
+	}
+
 	function splitCallerListValues(rawValue) {
 		var parts = String(rawValue || '').split(/[\s,]+/);
 		var values = [];
@@ -1873,7 +1892,7 @@
 
 	function addAlertCallDestinationsFromInput() {
 		var raw = $('#rc-rule-alert-call-destination-input').val();
-		var defaultKeepTrying = true;
+		var defaultKeepTrying = $('#rc-rule-alert-call-strategy').val() === 'ordered';
 		var autoAddedIgnoreEntries = 0;
 		$.each(normaliseAlertCallDestinationEntries(raw, defaultKeepTrying), function (_, destinationRow) {
 			addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);
@@ -2170,6 +2189,7 @@
 		$('#rc-rule-alert-call-strategy').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-destination-input').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-destination-list').find('input, button').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
+		updateAlertCallStrategyEditorState();
 		$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);
 		$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);
 		updateAlertCallCallerIdState();
@@ -2457,6 +2477,7 @@
 			showWarning: true,
 			showConflictMessage: true
 		});
+		var orderedStrategy = $('#rc-rule-alert-call-strategy').val() === 'ordered';
 		if (callerIdSafeguard.conflict) {
 			if (onDone) { onDone(); }
 			return;
@@ -2484,7 +2505,7 @@
 			email_enabled: $('#rc-rule-email-enabled').is(':checked') ? 1 : 0,
 			alert_call_enabled: $('#rc-rule-alert-call-enabled').is(':checked') ? 1 : 0,
 			alert_call_strategy: $('#rc-rule-alert-call-strategy').val(),
-			alert_call_keep_trying: 1,
+			alert_call_keep_trying: orderedStrategy ? 1 : 0,
 			alert_call_destinations: $('#rc-rule-alert-call-destinations').val(),
 			alert_call_recording_id: $('#rc-rule-alert-call-recording-id').val(),
 			alert_call_handle_callerid_upstream: handleCallerIdUpstream ? 1 : 0,
@@ -2537,6 +2558,7 @@
 			$('#rc-rule-alert-call-enabled').prop('checked', parseInt(rule.alert_call_enabled || 0, 10) === 1);
 			$('#rc-rule-alert-call-strategy').val(rule.alert_call_strategy || 'ringall');
 			renderAlertCallDestinations(rule.alert_call_destinations || '', true);
+			updateAlertCallStrategyEditorState();
 			ensureRecordingOptionExists(rule.alert_call_recording_id);
 			$('#rc-rule-alert-call-recording-id').val(rule.alert_call_recording_id || '');
 			$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', parseInt(rule.alert_call_handle_callerid_upstream || 0, 10) === 1);
@@ -2894,6 +2916,9 @@
 		$('#rc-rule-alert-call-enabled').off('change.repeatcaller').on('change.repeatcaller', function () {
 			updateAlertCallAndEmailState();
 			applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+		});
+		$('#rc-rule-alert-call-strategy').off('change.repeatcaller').on('change.repeatcaller', function () {
+			updateAlertCallStrategyEditorState();
 		});
 		$('#rc-rule-alert-call-handle-callerid-upstream').off('change.repeatcaller').on('change.repeatcaller', function () {
 			updateAlertCallAndEmailState();

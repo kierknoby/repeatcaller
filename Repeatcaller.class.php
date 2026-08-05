@@ -477,14 +477,15 @@ class Repeatcaller implements \BMO {
 					? (int)$existingRule['alert_call_recording_id']
 					: null);
 
+			$strategy = $this->normaliseAlertCallStrategy((string)($_REQUEST['alert_call_strategy'] ?? 'ringall'));
 			$payload = [
 				'id' => $ruleId,
 				'name' => $name,
 				'enabled' => !empty($_REQUEST['enabled']) ? 1 : 0,
 				'email_enabled' => !empty($_REQUEST['email_enabled']) ? 1 : 0,
 				'alert_call_enabled' => !empty($_REQUEST['alert_call_enabled']) ? 1 : 0,
-				'alert_call_destinations' => implode(', ', $this->normaliseAlertCallDestinations((string)($_REQUEST['alert_call_destinations'] ?? ''))),
-				'alert_call_strategy' => $this->normaliseAlertCallStrategy((string)($_REQUEST['alert_call_strategy'] ?? 'ringall')),
+				'alert_call_destinations' => implode(', ', $this->normaliseAlertCallDestinations((string)($_REQUEST['alert_call_destinations'] ?? ''), true)),
+				'alert_call_strategy' => $strategy,
 				'alert_call_keep_trying' => isset($_REQUEST['alert_call_keep_trying']) ? (!empty($_REQUEST['alert_call_keep_trying']) ? 1 : 0) : 1,
 				'alert_call_recording_id' => $recordingId,
 				'alert_call_handle_callerid_upstream' => array_key_exists('alert_call_handle_callerid_upstream', $_REQUEST)
@@ -513,6 +514,7 @@ class Repeatcaller implements \BMO {
 		}
 
 		$payload['mode'] = $payload['mode'] === 'invert' ? 'invert' : 'repeat';
+		$payload['alert_call_keep_trying'] = $payload['alert_call_strategy'] === 'ordered' ? $payload['alert_call_keep_trying'] : 0;
 		if (!in_array($payload['caller_mode'], ['any', 'withheld_only', 'specific_only'], true)) {
 			$payload['caller_mode'] = 'any';
 		}
@@ -1019,7 +1021,7 @@ class Repeatcaller implements \BMO {
 		return $values;
 	}
 
-	private function normaliseAlertCallDestinations(string $raw): array {
+	private function normaliseAlertCallDestinations(string $raw, bool $preserveKeepTrying = true): array {
 		$parts = preg_split('/[,;\n\r]+/', trim($raw));
 		$destinations = [];
 		foreach ($parts as $part) {
@@ -1027,9 +1029,27 @@ class Repeatcaller implements \BMO {
 			if ($value === '') {
 				continue;
 			}
+			if ($preserveKeepTrying && preg_match('/^(.*)\|([01])$/', $value, $matches)) {
+				$destination = trim((string)$matches[1]);
+				$keepTrying = ((int)$matches[2]) === 1 ? 1 : 0;
+				$destinations[] = $destination . '|' . $keepTrying;
+				continue;
+			}
 			$destinations[$value] = $value;
 		}
 		return array_values($destinations);
+	}
+
+	private function defaultAlertCallKeepTryingRequestValue(): int {
+		return isset($_REQUEST['alert_call_keep_trying']) ? (!empty($_REQUEST['alert_call_keep_trying']) ? 1 : 0) : 1;
+	}
+
+	private function normaliseAlertCallKeepTryingFlag(string $strategy, int $default): int {
+		$strategy = $this->normaliseAlertCallStrategy($strategy);
+		if ($strategy !== 'ordered') {
+			return 0;
+		}
+		return $default !== 0 ? 1 : 0;
 	}
 
 	private function normaliseAlertCallStrategy(string $strategy): string {

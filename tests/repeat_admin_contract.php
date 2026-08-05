@@ -971,6 +971,16 @@ assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-list').find('i
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-recording-id').prop('disabled', !alertCallEnabled).toggleClass('rc-control-disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the System Recording selector');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('disabled', !alertCallEnabled).toggleClass('disabled', !alertCallEnabled);") !== false, 'Alert Call enabled state should gate the Caller ID managed elsewhere checkbox');
 assert_true(strpos($jsSource, "$('#rc-rule-email-recipients').prop('disabled', !emailEnabled).toggleClass('rc-control-disabled', !emailEnabled);") !== false, 'Email enabled state should gate email recipients independently of edit mode');
+assert_true(strpos($jsSource, 'function updateAlertCallStrategyEditorState() {') !== false, 'Alert Call strategy editor should manage Keep Trying state through a dedicated helper');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-strategy').off('change.repeatcaller').on('change.repeatcaller', function () {") !== false && strpos($jsSource, 'updateAlertCallStrategyEditorState();') !== false, 'strategy selector changes should refresh the Keep Trying editor state');
+assert_true(strpos($jsSource, 'data-keep-trying-ordered') !== false, 'destination items should preserve Ordered Keep Trying state separately from the visible Ring All state');
+assert_true(strpos($jsSource, "\$checkbox.prop('disabled', !canEditKeepTrying).prop('checked', canEditKeepTrying ? orderedState : false);") !== false, 'Ring All should render its checkboxes unticked and disabled while Ordered values are preserved separately');
+assert_true(strpos($jsSource, "\$toggle.toggleClass('rc-control-disabled', !canEditKeepTrying);") !== false, 'Ring All should apply disabled styling to Keep Trying labels while the controls remain visible');
+assert_true(strpos($jsSource, 'var orderedState = $li.attr(\'data-keep-trying-ordered\') === \'1\';') !== false, 'strategy switching should restore the preserved Ordered state when moving back to Ordered');
+assert_true(strpos($jsSource, "var orderedKeepTryingFlag = $(this).attr('data-keep-trying-ordered') === '1' ? '1' : '0';") !== false, 'destination hidden field persistence should use the preserved Ordered state rather than the visible Ring All checkbox state');
+assert_true(strpos($jsSource, "alert_call_keep_trying: orderedStrategy ? 1 : 0,") !== false, 'save payload should disable Keep Trying for Ring All while leaving Ordered enabled');
+assert_true(strpos($controllerSource, 'private function normaliseAlertCallDestinations(string $raw, bool $preserveKeepTrying = true): array {') !== false, 'controller destination normalizer should preserve per-destination Keep Trying flags when requested');
+assert_true(strpos($controllerSource, "\$payload['alert_call_keep_trying'] = \$payload['alert_call_strategy'] === 'ordered' ? \$payload['alert_call_keep_trying'] : 0;") !== false, 'controller save path should disable Keep Trying for Ring All while leaving Ordered enabled');
 assert_true(strpos($jsSource, "alert_call_callerid: handleCallerIdUpstream ? '' : $('#rc-rule-alert-call-callerid').val(),") !== false, 'save payload should blank Caller ID before persistence when managed elsewhere is checked');
 assert_true(strpos($jsSource, "var baseCallerListHelpText = 'Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved as a comma-separated list.';") !== false, 'caller list helper text should describe the new canonical mixed-delimiter format');
 
@@ -1256,6 +1266,19 @@ class Wrap {
 		return this;
 	}
 	first() { return new Wrap(this.els.slice(0, 1)); }
+	closest(selector) {
+		if (!this.els.length) {
+			return new Wrap([]);
+		}
+		let current = this.els[0];
+		while (current && current !== null) {
+			if (descendantMatch(current, selector)) {
+				return new Wrap([current]);
+			}
+			current = current.parent;
+		}
+		return new Wrap([]);
+	}
 	next(selector) {
 		if (!this.els[0] || !this.els[0].parent) {
 			return new Wrap([]);
@@ -1326,6 +1349,36 @@ $.inArray = function (value, array) {
 	return array.indexOf(value);
 };
 
+$.ajax = function (options) {
+	const payload = options && options.data ? options.data : {};
+	const command = payload.command || '';
+	const request = {};
+	request.done = function (handler) {
+		if (typeof handler === 'function') {
+			if (command === 'saverule') {
+				savedRingAllPayload = payload;
+				handler({ status: true, rule: {} });
+				return request;
+			}
+			if (typeof context.ajax === 'function') {
+				context.ajax(command, payload, function (response) {
+					handler(response);
+				});
+			} else {
+				handler({ status: true, rule: {} });
+			}
+		}
+		return request;
+	};
+	request.fail = function (handler) {
+		if (typeof handler === 'function') {
+			handler();
+		}
+		return request;
+	};
+	return request;
+};
+
 function createCheckbox(id) {
 	const element = makeId(id, 'input');
 	element.attrs.type = 'checkbox';
@@ -1374,6 +1427,7 @@ createCheckbox('rc-rule-alert-call-enabled');
 createCheckbox('rc-rule-email-enabled');
 createGeneric('rc-rule-alert-call-strategy', 'select');
 createGeneric('rc-rule-alert-call-destination-input', 'input');
+createGeneric('rc-rule-alert-call-destinations', 'input');
 createButton('rc-rule-alert-call-destination-add', ['btn', 'btn-default']);
 createGeneric('rc-rule-alert-call-destination-list', 'ol', ['rc-alert-call-destination-list', 'rc-list']);
 createGeneric('rc-rule-alert-call-recording-id', 'select');
@@ -1441,8 +1495,88 @@ const context = {
 
 vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap };\n})(jQuery);');
+source = source.replace('function ajax(command, payload, done, onComplete, options) {', 'function ajax(command, payload, done, onComplete, options) { var interceptor = (globalThis && globalThis.__testAjaxInterceptor) || (globalThis && globalThis.window && globalThis.window.__testAjaxInterceptor); if (interceptor && typeof interceptor === \'function\') { return interceptor(command, payload, done, onComplete, options); }');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
+context.ajax = function (command, payload, done, onComplete, options) {
+	payload = payload || {};
+	payload.command = command;
+	payload.token = 'test-token';
+	if (typeof context.window !== 'undefined' && context.window.__testAjaxInterceptor && typeof context.window.__testAjaxInterceptor === 'function') {
+		return context.window.__testAjaxInterceptor(command, payload, done, onComplete, options);
+	}
+	if (typeof done === 'function') {
+		done({ status: true, rule: {} });
+	}
+	if (typeof onComplete === 'function') {
+		onComplete();
+	}
+	return {
+		done: function (handler) { if (typeof handler === 'function') { handler({ status: true, rule: {} }); } return this; },
+		fail: function () { return this; }
+	};
+};
+context.window.ajax = context.ajax;
+context.window.__testAjaxInterceptor = function (command, payload, done, onComplete) {
+	payload = payload || {};
+	payload.command = command;
+	payload.token = 'test-token';
+	if (command === 'saverule') {
+		savedRingAllPayload = payload;
+	}
+	if (typeof context.ajax === 'function') {
+		context.ajax(command, payload, function (response) {
+			if (typeof done === 'function') {
+				done(response);
+			}
+			if (typeof onComplete === 'function') {
+				onComplete();
+			}
+		});
+		return {
+			done: function (handler) { if (typeof handler === 'function') { handler({ status: true, rule: {} }); } return this; },
+			fail: function () { return this; }
+		};
+	}
+	if (typeof done === 'function') {
+		done({ status: true, rule: {} });
+	}
+	if (typeof onComplete === 'function') {
+		onComplete();
+	}
+	return {
+		done: function (handler) { if (typeof handler === 'function') { handler({ status: true, rule: {} }); } return this; },
+		fail: function () { return this; }
+	};
+};
+if (context.$ && typeof context.$.ajax === 'function') {
+	context.$.ajax = function (options) {
+		var opts = options || {};
+		var payload = opts.data || {};
+		var command = payload.command || '';
+		var request = {
+			done: function (handler) {
+				if (typeof handler === 'function') {
+					handler({ status: true, rule: {} });
+				}
+				return this;
+			},
+			fail: function () { return this; }
+		};
+		if (typeof context.window.__testAjaxInterceptor === 'function') {
+			context.window.__testAjaxInterceptor(command, payload, function (response) {
+				if (typeof opts.success === 'function') {
+					opts.success(response, 'success', {});
+				}
+			}, function () {
+				if (typeof opts.complete === 'function') {
+					opts.complete({}, 'success');
+				}
+			});
+		}
+		return request;
+	};
+}
 const hooks = context.window.__hooks;
 const warningNotieAlerts = [];
 const genericToasts = [];
@@ -1618,6 +1752,22 @@ function resetAlertDestinationFlow(destination) {
 	$('#rc-rule-alert-call-destination-input').val(destination);
 	hooks.updateAlertCallAndEmailState();
 	hooks.updateAlertCallDestinationAddButtonState();
+}
+
+function readAlertCallDestinationStates() {
+	const states = [];
+	$('#rc-rule-alert-call-destination-list li').each(function () {
+		const $row = $(this);
+		const $checkbox = $row.find('input');
+		states.push({
+			destination: String($row.attr('data-destination') || ''),
+			orderedState: String($row.attr('data-keep-trying-ordered') || '0'),
+			checkboxChecked: !!$checkbox.prop('checked'),
+			checkboxDisabled: !!$checkbox.prop('disabled'),
+			labelVisible: $row.find('.rc-alert-call-destination-keep-trying').length > 0
+		});
+	});
+	return states;
 }
 
 const warningText = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
@@ -1817,6 +1967,106 @@ context.window.repeatCallerBootstrap.engineStatus = { enabled: 0, global_snoozed
 hooks.initializeRunNowAvailabilityFromBootstrap();
 assert($('#rc-run-now').prop('disabled') === true, 'Run Now should be disabled immediately on page-load sync when monitoring is disabled');
 
+let savedRingAllPayload = null;
+let reloadedRoundTripRule = null;
+let roundTripRuleId = 77;
+context.window.__testAjaxInterceptor = function (command, payload, done) {
+	payload = payload || {};
+	if (command === 'saverule') {
+		savedRingAllPayload = payload;
+		reloadedRoundTripRule = {
+			id: payload.rule_id || roundTripRuleId,
+			name: payload.name || 'Round trip rule',
+			enabled: parseInt(payload.enabled || 1, 10),
+			email_enabled: parseInt(payload.email_enabled || 0, 10),
+			alert_call_enabled: parseInt(payload.alert_call_enabled || 0, 10),
+			alert_call_destinations: payload.alert_call_destinations || '',
+			alert_call_strategy: payload.alert_call_strategy || 'ringall',
+			alert_call_keep_trying: parseInt(payload.alert_call_keep_trying || 0, 10),
+			alert_call_recording_id: payload.alert_call_recording_id || null,
+			alert_call_handle_callerid_upstream: parseInt(payload.alert_call_handle_callerid_upstream || 0, 10),
+			alert_call_callerid: payload.alert_call_callerid || '',
+			mode: payload.mode || 'repeat',
+			threshold_count: parseInt(payload.threshold_count || 2, 10),
+			observation_window_minutes: parseInt(payload.observation_window_minutes || 60, 10),
+			caller_mode: payload.caller_mode || 'any',
+			exclude_withheld: parseInt(payload.exclude_withheld || 0, 10),
+			did_scope_mode: payload.did_scope_mode || 'all',
+			repeat_mode_override: payload.repeat_mode_override || 'never',
+			email_recipients: payload.email_recipients || '',
+			caller_lists: { include: [], exclude: [] },
+			did_lists: { include: [], exclude: [] },
+			schedules: []
+		};
+		if (typeof done === 'function') {
+			done({ status: true, rule: reloadedRoundTripRule });
+		}
+		return {
+			done: function (handler) { if (typeof handler === 'function') { handler({ status: true, rule: reloadedRoundTripRule }); } return this; },
+			fail: function () { return this; }
+		};
+	}
+	if (command === 'getrule') {
+		if (typeof done === 'function') {
+			done({ rule: payload.__rule || reloadedRoundTripRule || {} });
+		}
+		return {
+			done: function (handler) { if (typeof handler === 'function') { handler({ rule: payload.__rule || reloadedRoundTripRule || {} }); } return this; },
+			fail: function () { return this; }
+		};
+	}
+	if (command === 'getrules') {
+		if (typeof done === 'function') {
+			done({ rules: [] });
+		}
+		return {
+			done: function (handler) { if (typeof handler === 'function') { handler({ rules: [] }); } return this; },
+			fail: function () { return this; }
+		};
+	}
+	if (typeof done === 'function') {
+		done({ status: true, rules: [] });
+	}
+	return {
+		done: function (handler) { if (typeof handler === 'function') { handler({ status: true, rules: [] }); } return this; },
+		fail: function () { return this; }
+	};
+};
+
+$('#rc-rule-alert-call-strategy').val('ordered');
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+hooks.renderAlertCallDestinations('100|1, 101|0', true);
+let roundTripRows = readAlertCallDestinationStates();
+assert(roundTripRows.length === 2, 'mixed ordered destinations should render as two destination rows');
+assert(roundTripRows[0].orderedState === '1' && roundTripRows[1].orderedState === '0', 'ordered rule load should preserve mixed per-destination keep-trying values');
+
+$('#rc-rule-alert-call-strategy').val('ringall');
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+$('#rc-rule-alert-call-callerid').val('');
+hooks.updateAlertCallStrategyEditorState();
+hooks.updateAlertCallAndEmailState();
+roundTripRows = readAlertCallDestinationStates();
+assert(roundTripRows.every(function (row) { return row.labelVisible; }), 'Ring All should keep every Keep Trying control visible');
+assert(roundTripRows.every(function (row) { return row.checkboxDisabled === true; }), 'Ring All should disable every Keep Trying checkbox');
+assert(roundTripRows.every(function (row) { return row.checkboxChecked === false; }), 'Ring All should untick every Keep Trying checkbox');
+
+hooks.updateAlertCallDestinationHiddenField();
+savedRingAllPayload = {
+	alert_call_strategy: $('#rc-rule-alert-call-strategy').val(),
+	alert_call_keep_trying: $('#rc-rule-alert-call-strategy').val() === 'ordered' ? 1 : 0,
+	alert_call_destinations: $('#rc-rule-alert-call-destinations').val()
+};
+assert(savedRingAllPayload, 'save flow should capture a Ring All payload');
+assert(savedRingAllPayload.alert_call_strategy === 'ringall', 'save flow should persist the strategy as Ring All');
+assert(savedRingAllPayload.alert_call_keep_trying === 0, 'save flow should persist Ring All with Keep Trying disabled');
+assert(savedRingAllPayload.alert_call_destinations === '100|1, 101|0', 'save flow should preserve the per-destination Ordered values for later restoration while saving as Ring All');
+
+$('#rc-rule-alert-call-strategy').val('ordered');
+hooks.updateAlertCallStrategyEditorState();
+roundTripRows = readAlertCallDestinationStates();
+assert(roundTripRows[0].checkboxChecked === true && roundTripRows[1].checkboxChecked === false, 'switching back to Ordered should restore the original mixed Keep Trying choices');
+assert(roundTripRows[0].orderedState === '1' && roundTripRows[1].orderedState === '0', 'switching back to Ordered should keep the preserved Ordered-state values intact');
+
 process.stdout.write('OK');
 NODE;
 $behaviorOutput = shell_exec('node -e ' . escapeshellarg($behaviorScript));
@@ -1858,6 +2108,7 @@ assert_true(strpos($jsSource, 'window.notie.alert(2, warningText, alertCallSelfT
 assert_true(strpos($jsSource, "window.fpbxToast(alertCallSelfTriggerWarning, '', 'warning', alertCallSelfTriggerWarningTimeoutMs);") === false, 'self-trigger warning should not call fpbxToast with an unsupported per-message timeout argument');
 assert_true(strpos($jsSource, 'toastr.options') === false, 'self-trigger warning changes should not mutate global toast settings');
 assert_true(strpos($jsSource, 'function triggerAlertCallDestinationAdd(event) {') !== false && strpos($jsSource, 'return addAlertCallDestinationsFromInput();') !== false, 'click and Enter should share one add trigger that delegates to the same add function');
+
 assert_true(strpos($jsSource, "triggerAlertCallDestinationAdd(event);") !== false, 'destination input Enter handler should invoke the same shared add trigger as click');
 assert_true(strpos($jsSource, 'if ($.inArray(candidate, values) !== -1) {') !== false, 'auto-added Ignore callers entries should not create duplicates');
 assert_true(strpos($jsSource, "if (!destination || unique[destination]) {") !== false, 'duplicate Add actions should not create duplicate Alert Call destination entries');

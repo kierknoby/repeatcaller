@@ -1388,6 +1388,7 @@ assert_true($hangupIncidentRow['accepted_by'] === null, 'hangup during the promp
 assert_same('answered_no_response', (string)$hangupHistory['delivery_status'], 'hangup during the prompt loop should record answered_no_response');
 assert_true(strpos((string)$hangupHistory['failure_detail'], 'answered call ended without a valid DTMF response') !== false, 'hangup result should record the no-response reason');
 
+// Ordered progression is stage-based: a non-accepted result reserves the next cumulative stage after a 60-second pause, and only destinations with Keep Trying enabled carry into later stages.
 $orderedClock = new TestClock('2026-07-13 13:40:00');
 $orderedSender = new FakeCallSender();
 [$orderedDb, $orderedProcessor] = create_alert_environment($orderedClock, new FakeEmailSender(), $orderedSender);
@@ -1409,9 +1410,113 @@ $orderedRepo->recordAlertCallDialDisposition($orderedFirstHistoryId, $orderedInc
 $orderedFirstHistory = $orderedDb->query("SELECT delivery_status, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$orderedFirstHistoryId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('busy', (string)$orderedFirstHistory['delivery_status'], 'dialstatus BUSY must map to busy outcome');
 assert_true(strpos((string)$orderedFirstHistory['failure_detail'], 'DIALSTATUS=BUSY; HANGUPCAUSE=17') !== false, 'dialstatus callback must persist raw DIALSTATUS/HANGUPCAUSE details');
+$queuedOrderedRows = $orderedDb->query("SELECT recipient, delivery_status, next_retry_at FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(3, count($queuedOrderedRows), 'ordered callback should reserve the full next cumulative stage as deferred pending rows');
+assert_same('700', (string)$queuedOrderedRows[1]['recipient'], 'ordered callback should retain the earlier destination in the next stage because keep-trying is enabled');
+assert_same('701', (string)$queuedOrderedRows[2]['recipient'], 'ordered callback should introduce the next destination in the next stage');
+assert_same('pending', (string)$queuedOrderedRows[1]['delivery_status'], 'ordered callback should reserve the retained destination as pending');
+assert_same('pending', (string)$queuedOrderedRows[2]['delivery_status'], 'ordered callback should reserve the introduced destination as pending');
+assert_true((string)$queuedOrderedRows[1]['next_retry_at'] !== '', 'ordered callback should defer the retained destination with a retry timestamp');
+assert_true((string)$queuedOrderedRows[2]['next_retry_at'] !== '', 'ordered callback should defer the introduced destination with a retry timestamp');
+assert_same(1, count($orderedSender->calls), 'ordered callback should not originate deferred stage-2 rows before their retry time');
+$orderedClock->now = '2026-07-13 13:41:20';
 $orderedProcessor->run(settings());
-assert_same(2, count($orderedSender->calls), 'ordered progression should advance to next eligible recipient through normal backend processing');
-assert_same('701', (string)$orderedSender->calls[1]['destination'], 'ordered progression should advance in saved order');
+assert_same(3, count($orderedSender->calls), 'ordered progression should originate the deferred cumulative stage once the scheduler permits it');
+assert_same('700', (string)$orderedSender->calls[1]['destination'], 'ordered progression should retry the retained destination once the deferred stage becomes deliverable');
+assert_same('701', (string)$orderedSender->calls[2]['destination'], 'ordered progression should originate the newly introduced destination once the deferred stage becomes deliverable');
+
+$orderedNoAnswerClock = new TestClock('2026-07-13 13:41:00');
+$orderedNoAnswerSender = new FakeCallSender();
+[$orderedNoAnswerDb, $orderedNoAnswerProcessor] = create_alert_environment($orderedNoAnswerClock, new FakeEmailSender(), $orderedNoAnswerSender);
+$orderedNoAnswerRule = insert_rule($orderedNoAnswerDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '800,801',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedNoAnswerIncident = insert_incident($orderedNoAnswerDb, ['rule_id' => $orderedNoAnswerRule, 'subject_key' => 'ordered-no-answer', 'first_matched_at' => '2026-07-13 13:41:00', 'suppression_expires_at' => '2026-07-13 14:41:00']);
+$orderedNoAnswerProcessor->run(settings());
+$orderedNoAnswerHistoryId = (int)$orderedNoAnswerDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoAnswerIncident} AND recipient = '800' LIMIT 1")->fetchColumn();
+$orderedNoAnswerRepo = new RepeatCallerRepository($orderedNoAnswerDb);
+$orderedNoAnswerResult = $orderedNoAnswerRepo->recordAlertCallDialDisposition($orderedNoAnswerHistoryId, $orderedNoAnswerIncident, '800', 'NOANSWER', '19', '2026-07-13 13:41:10');
+assert_true(!empty($orderedNoAnswerResult['next_history_id']), 'non-accepted ordered callback should reserve the next destination history row');
+$orderedNoAnswerRows = $orderedNoAnswerDb->query("SELECT recipient, delivery_status, next_retry_at FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoAnswerIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(3, count($orderedNoAnswerRows), 'non-accepted ordered callback should create a deferred cumulative stage with the retained destination and the new destination');
+assert_same('800', (string)$orderedNoAnswerRows[0]['recipient'], 'first ordered destination should remain the original recipient');
+assert_same('no_answer', (string)$orderedNoAnswerRows[0]['delivery_status'], 'NOANSWER dialstatus should mark the first ordered attempt as no_answer');
+assert_same('800', (string)$orderedNoAnswerRows[1]['recipient'], 'retained ordered destination should be reserved in the next cumulative stage');
+assert_same('801', (string)$orderedNoAnswerRows[2]['recipient'], 'next ordered destination should be reserved after the first NOANSWER callback');
+assert_same('pending', (string)$orderedNoAnswerRows[1]['delivery_status'], 'retained next-stage ordered destination should be reserved as pending');
+assert_same('pending', (string)$orderedNoAnswerRows[2]['delivery_status'], 'new next-stage ordered destination should be reserved as pending');
+assert_true((string)$orderedNoAnswerRows[1]['next_retry_at'] !== '', 'retained next-stage destination should be deferred with a retry timestamp');
+assert_true((string)$orderedNoAnswerRows[2]['next_retry_at'] !== '', 'new next-stage destination should be deferred with a retry timestamp');
+assert_true(strtotime((string)$orderedNoAnswerRows[1]['next_retry_at']) > strtotime('2026-07-13 13:41:10'), 'next-stage retained destination should not be deliverable immediately');
+assert_true(strtotime((string)$orderedNoAnswerRows[2]['next_retry_at']) > strtotime('2026-07-13 13:41:10'), 'next-stage new destination should not be deliverable immediately');
+
+$orderedNoKeepTryingClock = new TestClock('2026-07-13 13:42:20');
+$orderedNoKeepTryingSender = new FakeCallSender();
+[$orderedNoKeepTryingDb, $orderedNoKeepTryingProcessor] = create_alert_environment($orderedNoKeepTryingClock, new FakeEmailSender(), $orderedNoKeepTryingSender);
+$orderedNoKeepTryingRule = insert_rule($orderedNoKeepTryingDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '910|0,911|1',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedNoKeepTryingIncident = insert_incident($orderedNoKeepTryingDb, ['rule_id' => $orderedNoKeepTryingRule, 'subject_key' => 'ordered-no-keep-trying', 'first_matched_at' => '2026-07-13 13:42:20', 'suppression_expires_at' => '2026-07-13 14:42:20']);
+$orderedNoKeepTryingProcessor->run(settings());
+$orderedNoKeepTryingHistoryId = (int)$orderedNoKeepTryingDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoKeepTryingIncident} AND recipient = '910' LIMIT 1")->fetchColumn();
+$orderedNoKeepTryingEventType = (string)$orderedNoKeepTryingDb->query("SELECT event_type FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoKeepTryingIncident} AND action_type = 'alert_call' ORDER BY id ASC LIMIT 1")->fetchColumn();
+$orderedNoKeepTryingPreCallbackRows = $orderedNoKeepTryingDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoKeepTryingIncident} AND action_type = 'alert_call' AND stage_n = 1")->fetchColumn();
+assert_same('0', (string)$orderedNoKeepTryingPreCallbackRows, 'ordered stage progression should have no stage-2 rows before the NOANSWER callback when keep trying is disabled');
+$orderedNoKeepTryingRepo = new RepeatCallerRepository($orderedNoKeepTryingDb);
+$orderedNoKeepTryingResult = $orderedNoKeepTryingRepo->recordAlertCallDialDisposition($orderedNoKeepTryingHistoryId, $orderedNoKeepTryingIncident, '910', 'NOANSWER', '19', '2026-07-13 13:42:30');
+assert_true(!empty($orderedNoKeepTryingResult['next_history_id']), 'ordered stage progression should reserve the next stage rows after a terminal first attempt even when the first destination has keep trying disabled');
+$orderedNoKeepTryingRows = $orderedNoKeepTryingDb->query("SELECT recipient, stage_n, delivery_status, next_retry_at, dedupe_key FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoKeepTryingIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedNoKeepTryingRows), 'ordered stage progression should reserve the original stage plus the stage-2 destination when keep trying is disabled for the first destination');
+assert_same(['910', '911'], array_map(static function (array $row): string { return (string)$row['recipient']; }, $orderedNoKeepTryingRows), 'ordered stage progression should keep the original first destination and introduce only the new second destination when keep trying is disabled');
+assert_same('1', (string)$orderedNoKeepTryingRows[1]['stage_n'], 'ordered stage progression should assign the deferred follow-up row to the next stage number when keep trying is disabled');
+assert_same('pending', (string)$orderedNoKeepTryingRows[1]['delivery_status'], 'ordered stage progression should reserve the newly introduced destination as pending when keep trying is disabled');
+assert_true((string)$orderedNoKeepTryingRows[1]['next_retry_at'] !== '', 'ordered stage progression should defer the newly introduced destination with a retry timestamp when keep trying is disabled');
+assert_same('incident:' . $orderedNoKeepTryingIncident . '|event:' . $orderedNoKeepTryingEventType . '|stage:1|action:alert_call|recipient:911', (string)$orderedNoKeepTryingRows[1]['dedupe_key'], 'ordered stage progression should create the expected dedupe key for the deferred stage-2 destination');
+assert_same(1, count($orderedNoKeepTryingSender->calls), 'ordered stage progression should not originate deferred stage-2 rows before their retry time when keep trying is disabled');
+
+$orderedStageTwoClock = new TestClock('2026-07-13 13:43:00');
+$orderedStageTwoSender = new FakeCallSender();
+[$orderedStageTwoDb, $orderedStageTwoProcessor] = create_alert_environment($orderedStageTwoClock, new FakeEmailSender(), $orderedStageTwoSender);
+$orderedStageTwoRule = insert_rule($orderedStageTwoDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '900|1,901|0',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedStageTwoIncident = insert_incident($orderedStageTwoDb, ['rule_id' => $orderedStageTwoRule, 'subject_key' => 'ordered-stage-two', 'first_matched_at' => '2026-07-13 13:43:00', 'suppression_expires_at' => '2026-07-13 14:43:00']);
+$orderedStageTwoProcessor->run(settings());
+$orderedStageTwoHistoryId = (int)$orderedStageTwoDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedStageTwoIncident} AND recipient = '900' LIMIT 1")->fetchColumn();
+$orderedStageTwoEventType = (string)$orderedStageTwoDb->query("SELECT event_type FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedStageTwoIncident} AND action_type = 'alert_call' ORDER BY id ASC LIMIT 1")->fetchColumn();
+$orderedStageTwoPreCallbackRows = $orderedStageTwoDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedStageTwoIncident} AND action_type = 'alert_call' AND stage_n = 1")->fetchColumn();
+assert_same('0', (string)$orderedStageTwoPreCallbackRows, 'ordered stage progression should have no stage-2 rows before the NOANSWER callback when keep trying is enabled');
+$orderedStageTwoRepo = new RepeatCallerRepository($orderedStageTwoDb);
+$orderedStageTwoResult = $orderedStageTwoRepo->recordAlertCallDialDisposition($orderedStageTwoHistoryId, $orderedStageTwoIncident, '900', 'NOANSWER', '19', '2026-07-13 13:43:10');
+assert_true(!empty($orderedStageTwoResult['next_history_id']), 'ordered stage progression should reserve the next stage rows after a terminal first attempt');
+$orderedStageTwoRows = $orderedStageTwoDb->query("SELECT recipient, stage_n, delivery_status, next_retry_at, dedupe_key FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedStageTwoIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(3, count($orderedStageTwoRows), 'ordered stage progression should reserve the original stage plus the next cumulative stage destinations when the first stage fails');
+assert_same(['900', '900', '901'], array_map(static function (array $row): string { return (string)$row['recipient']; }, $orderedStageTwoRows), 'ordered stage progression should include the original first destination, the retained first destination, and the newly introduced second destination');
+assert_same('1', (string)$orderedStageTwoRows[1]['stage_n'], 'ordered stage progression should assign the retained deferred follow-up row to the next stage number');
+assert_same('1', (string)$orderedStageTwoRows[2]['stage_n'], 'ordered stage progression should assign the newly introduced deferred follow-up row to the next stage number');
+assert_same('pending', (string)$orderedStageTwoRows[1]['delivery_status'], 'ordered stage progression should reserve the retained destination as pending');
+assert_same('pending', (string)$orderedStageTwoRows[2]['delivery_status'], 'ordered stage progression should reserve the newly introduced destination as pending');
+assert_true((string)$orderedStageTwoRows[1]['next_retry_at'] !== '', 'ordered stage progression should defer the retained destination with a retry timestamp');
+assert_true((string)$orderedStageTwoRows[2]['next_retry_at'] !== '', 'ordered stage progression should defer the newly introduced destination with a retry timestamp');
+assert_same('incident:' . $orderedStageTwoIncident . '|event:' . $orderedStageTwoEventType . '|stage:1|action:alert_call|recipient:900', (string)$orderedStageTwoRows[1]['dedupe_key'], 'ordered stage progression should create the expected dedupe key for the retained stage-2 destination');
+assert_same('incident:' . $orderedStageTwoIncident . '|event:' . $orderedStageTwoEventType . '|stage:1|action:alert_call|recipient:901', (string)$orderedStageTwoRows[2]['dedupe_key'], 'ordered stage progression should create the expected dedupe key for the newly introduced stage-2 destination');
+$orderedStageTwoProcessor->run(settings());
+assert_same(1, count($orderedStageTwoSender->calls), 'ordered stage progression should not originate deferred stage-2 rows before their retry time');
 
 $orderedOriginateFailClock = new TestClock('2026-07-13 13:45:00');
 $orderedOriginateFailSender = new FakeCallSender();
@@ -1505,6 +1610,81 @@ $orderedAcceptHistoryId = (int)$orderedAcceptAfterFailDb->query("SELECT id FROM 
 (new RepeatCallerRepository($orderedAcceptAfterFailDb))->recordAlertCallDtmfResponse($orderedAcceptHistoryId, $orderedAcceptAfterFailIncident, 'accepted', '771', '1', '2026-07-13 13:48:10');
 assert_same(0, count_history($orderedAcceptAfterFailDb, "incident_id = {$orderedAcceptAfterFailIncident} AND action_type = 'alert_call' AND recipient = '772'"), 'eventual answered-and-accepted ordered destination should stop progression before later destinations are reserved');
 
+$orderedChainClock = new TestClock('2026-07-13 13:49:00');
+$orderedChainSender = new FakeCallSender();
+[$orderedChainDb, $orderedChainProcessor] = create_alert_environment($orderedChainClock, new FakeEmailSender(), $orderedChainSender);
+$orderedChainRule = insert_rule($orderedChainDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '1000|1,1001|0,1002|1',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedChainIncident = insert_incident($orderedChainDb, ['rule_id' => $orderedChainRule, 'subject_key' => 'ordered-chain', 'first_matched_at' => '2026-07-13 13:49:00', 'suppression_expires_at' => '2026-07-13 14:49:00']);
+$orderedChainProcessor->run(settings());
+assert_same(1, count($orderedChainSender->calls), 'ordered three-destination chain should start with the first destination for stage 1');
+assert_same('1000', (string)$orderedChainSender->calls[0]['destination'], 'ordered three-destination chain should begin with destination 1');
+$orderedChainStageOneHistoryId = (int)$orderedChainDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND recipient = '1000' AND stage_n = 0 LIMIT 1")->fetchColumn();
+$orderedChainRepo = new RepeatCallerRepository($orderedChainDb);
+$orderedChainStageOneResult = $orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageOneHistoryId, $orderedChainIncident, '1000', 'NOANSWER', '19', '2026-07-13 13:49:10');
+assert_true(!empty($orderedChainStageOneResult['next_history_id']), 'ordered three-destination chain should reserve the next stage after stage 1 completes without acceptance');
+$orderedChainRows = $orderedChainDb->query("SELECT id, recipient, stage_n, delivery_status, next_retry_at FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(3, count($orderedChainRows), 'ordered three-destination chain should reserve stage 2 with destinations 1 and 2 after stage 1 completes');
+assert_same(['1000', '1000', '1001'], array_map(static function (array $row): string { return (string)$row['recipient']; }, $orderedChainRows), 'ordered three-destination chain should retain destination 1 and add destination 2 in stage 2');
+assert_same(['0', '1', '1'], array_map(static function (array $row): string { return (string)$row['stage_n']; }, $orderedChainRows), 'ordered three-destination chain should assign stage 1 as stage 0 and stage 2 as stage 1');
+assert_same('pending', (string)$orderedChainRows[1]['delivery_status'], 'ordered three-destination chain should reserve stage-2 destination 1 as pending');
+assert_same('pending', (string)$orderedChainRows[2]['delivery_status'], 'ordered three-destination chain should reserve stage-2 destination 2 as pending');
+assert_true((string)$orderedChainRows[1]['next_retry_at'] !== '', 'ordered three-destination chain should defer stage-2 destination 1 by 60 seconds');
+assert_true((string)$orderedChainRows[2]['next_retry_at'] !== '', 'ordered three-destination chain should defer stage-2 destination 2 by 60 seconds');
+$orderedChainStageTwoRows = $orderedChainDb->query("SELECT id, recipient FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedChainStageTwoRows), 'ordered three-destination chain should create exactly two stage-2 attempts');
+$orderedChainStageTwoFirstId = (int)$orderedChainStageTwoRows[0]['id'];
+$orderedChainStageTwoSecondId = (int)$orderedChainStageTwoRows[1]['id'];
+$orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageTwoFirstId, $orderedChainIncident, '1000', 'NOANSWER', '19', '2026-07-13 13:49:20');
+$orderedChainStageTwoPendingRows = $orderedChainDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 2")->fetchColumn();
+assert_same('0', (string)$orderedChainStageTwoPendingRows, 'ordered three-destination chain should not schedule stage 3 while one stage-2 sibling remains active');
+$orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageTwoSecondId, $orderedChainIncident, '1001', 'NOANSWER', '19', '2026-07-13 13:49:30');
+$orderedChainStageThreeRows = $orderedChainDb->query("SELECT id, recipient, stage_n, delivery_status, next_retry_at FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 2 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedChainStageThreeRows), 'ordered three-destination chain should create stage 3 with destinations 1 and 3 after every stage-2 attempt finishes');
+assert_same(['1000', '1002'], array_map(static function (array $row): string { return (string)$row['recipient']; }, $orderedChainStageThreeRows), 'ordered three-destination chain should retain destination 1 and introduce destination 3 in stage 3');
+assert_same(['2', '2'], array_map(static function (array $row): string { return (string)$row['stage_n']; }, $orderedChainStageThreeRows), 'ordered three-destination chain should assign stage-3 rows to stage number 2');
+assert_same('pending', (string)$orderedChainStageThreeRows[0]['delivery_status'], 'ordered three-destination chain should reserve stage-3 destination 1 as pending');
+assert_same('pending', (string)$orderedChainStageThreeRows[1]['delivery_status'], 'ordered three-destination chain should reserve stage-3 destination 3 as pending');
+assert_true((string)$orderedChainStageThreeRows[0]['next_retry_at'] !== '', 'ordered three-destination chain should defer stage-3 destination 1 by 60 seconds');
+assert_true((string)$orderedChainStageThreeRows[1]['next_retry_at'] !== '', 'ordered three-destination chain should defer stage-3 destination 3 by 60 seconds');
+$orderedChainStageThreeDestinationTwoRows = $orderedChainDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND recipient = '1001' AND stage_n >= 2")->fetchColumn();
+assert_same('0', (string)$orderedChainStageThreeDestinationTwoRows, 'ordered three-destination chain should not bring back destination 2 after its introduction stage');
+$orderedChainStageThreeFirstId = (int)$orderedChainStageThreeRows[0]['id'];
+$orderedChainStageThreeSecondId = (int)$orderedChainStageThreeRows[1]['id'];
+$orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageThreeFirstId, $orderedChainIncident, '1000', 'NOANSWER', '19', '2026-07-13 13:49:40');
+$orderedChainStageFourPendingRows = $orderedChainDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 3")->fetchColumn();
+assert_same('0', (string)$orderedChainStageFourPendingRows, 'ordered three-destination chain should not schedule stage 4 while one stage-3 sibling remains active');
+$orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageThreeSecondId, $orderedChainIncident, '1002', 'NOANSWER', '19', '2026-07-13 13:49:50');
+$orderedChainStageFourRows = $orderedChainDb->query("SELECT id, recipient, stage_n FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 3 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedChainStageFourRows), 'ordered three-destination chain should create stage 4 with destinations 1 and 3 after stage 3 completes');
+assert_same(['1000', '1002'], array_map(static function (array $row): string { return (string)$row['recipient']; }, $orderedChainStageFourRows), 'ordered three-destination chain should continue retrying destinations 1 and 3 in later stages');
+$orderedChainStageFourFirstId = (int)$orderedChainStageFourRows[0]['id'];
+$orderedChainStageFourSecondId = (int)$orderedChainStageFourRows[1]['id'];
+$orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageFourFirstId, $orderedChainIncident, '1000', 'NOANSWER', '19', '2026-07-13 13:49:60');
+$orderedChainStageFivePendingRows = $orderedChainDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 4")->fetchColumn();
+assert_same('0', (string)$orderedChainStageFivePendingRows, 'ordered three-destination chain should not schedule a later stage while one stage-4 sibling remains active');
+$orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageFourSecondId, $orderedChainIncident, '1002', 'NOANSWER', '19', '2026-07-13 13:49:70');
+$orderedChainStageFiveRows = $orderedChainDb->query("SELECT id, recipient, stage_n FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND stage_n = 4 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedChainStageFiveRows), 'ordered three-destination chain should continue retrying destinations 1 and 3 in later stages after stage 4');
+assert_same(['1000', '1002'], array_map(static function (array $row): string { return (string)$row['recipient']; }, $orderedChainStageFiveRows), 'ordered three-destination chain should preserve destinations 1 and 3 in subsequent continuation stages');
+$orderedChainAcceptanceId = (int)$orderedChainDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND recipient = '1000' AND stage_n = 1 ORDER BY id ASC LIMIT 1")->fetchColumn();
+$orderedChainAcceptedResult = $orderedChainRepo->recordAlertCallDtmfResponse($orderedChainAcceptanceId, $orderedChainIncident, 'accepted', '1000', '1', '2026-07-13 13:49:80');
+assert_true(!empty($orderedChainAcceptedResult['accepted']), 'ordered three-destination chain should accept the incident when any destination accepts');
+$orderedChainPendingAfterAcceptance = $orderedChainDb->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedChainIncident} AND action_type = 'alert_call' AND delivery_status IN ('pending', 'snoozed', 'sending')")->fetchColumn();
+assert_same('0', (string)$orderedChainPendingAfterAcceptance, 'ordered three-destination chain should cancel pending future rows when any destination accepts');
+$orderedChainSiblingCallbackResult = $orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageTwoSecondId, $orderedChainIncident, '1001', 'NOANSWER', '19', '2026-07-13 13:49:90');
+assert_true(empty($orderedChainSiblingCallbackResult['next_history_id']), 'ordered three-destination chain should prevent later sibling callbacks from creating another stage after acceptance');
+$orderedChainDuplicateAcceptanceResult = $orderedChainRepo->recordAlertCallDtmfResponse($orderedChainAcceptanceId, $orderedChainIncident, 'accepted', '1000', '1', '2026-07-13 13:49:95');
+assert_true(empty($orderedChainDuplicateAcceptanceResult['accepted']), 'ordered three-destination chain should keep acceptance callbacks idempotent');
+$orderedChainLateCallbackResult = $orderedChainRepo->recordAlertCallDialDisposition($orderedChainStageThreeSecondId, $orderedChainIncident, '1002', 'NOANSWER', '19', '2026-07-13 13:50:00');
+assert_true(empty($orderedChainLateCallbackResult['next_history_id']), 'ordered three-destination chain should keep late callbacks idempotent after acceptance');
+
 $parallelAcceptClock = new TestClock('2026-07-13 13:49:00');
 $parallelAcceptSender = new FakeCallSender();
 [$parallelAcceptDb, $parallelAcceptProcessor] = create_alert_environment($parallelAcceptClock, new FakeEmailSender(), $parallelAcceptSender);
@@ -1582,7 +1762,42 @@ assert_true(empty($secondAccept['accepted']), 'concurrent acceptance callbacks m
 assert_same('accepted', (string)$idempotentIncident['state'], 'concurrent acceptance callbacks must leave the incident accepted');
 assert_same('alert_call', (string)$idempotentIncident['accept_source'], 'concurrent acceptance callbacks must preserve the first acceptance source');
 
-$orderedNoRetryClock = new TestClock('2026-07-13 13:50:00');
+$ignoredCallerOrderedClock = new TestClock('2026-07-13 13:50:00');
+$ignoredCallerOrderedSender = new FakeCallSender();
+[$ignoredCallerOrderedDb, $ignoredCallerOrderedProcessor] = create_alert_environment($ignoredCallerOrderedClock, new FakeEmailSender(), $ignoredCallerOrderedSender);
+$ignoredCallerOrderedRule = insert_rule($ignoredCallerOrderedDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '810,811',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$ignoredCallerOrderedDb->prepare('INSERT INTO repeatcaller_rule_callers (rule_id, list_type, raw_value, normalized_value, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ignoredCallerOrderedRule, 'exclude', '810', '810', '2026-07-13 13:50:00']);
+$ignoredCallerOrderedIncident = insert_incident($ignoredCallerOrderedDb, ['rule_id' => $ignoredCallerOrderedRule, 'subject_key' => 'ignored-caller-ordered', 'first_matched_at' => '2026-07-13 13:50:00', 'suppression_expires_at' => '2026-07-13 14:50:00']);
+$ignoredCallerOrderedProcessor->run(settings());
+assert_same(1, count($ignoredCallerOrderedSender->calls), 'ordered alert calls must still originate the first configured destination even when that destination also appears in ignore callers');
+assert_same('810', (string)$ignoredCallerOrderedSender->calls[0]['destination'], 'ordered alert calls must not skip a destination merely because it appears in ignore callers');
+
+// Ring All remains destination-wide while Ignore Callers remains an inbound-detection safeguard.
+$ignoredCallerRingAllClock = new TestClock('2026-07-13 13:51:00');
+$ignoredCallerRingAllSender = new FakeCallSender();
+[$ignoredCallerRingAllDb, $ignoredCallerRingAllProcessor] = create_alert_environment($ignoredCallerRingAllClock, new FakeEmailSender(), $ignoredCallerRingAllSender);
+$ignoredCallerRingAllRule = insert_rule($ignoredCallerRingAllDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '820,821',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$ignoredCallerRingAllDb->prepare('INSERT INTO repeatcaller_rule_callers (rule_id, list_type, raw_value, normalized_value, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ignoredCallerRingAllRule, 'exclude', '820', '820', '2026-07-13 13:51:00']);
+$ignoredCallerRingAllIncident = insert_incident($ignoredCallerRingAllDb, ['rule_id' => $ignoredCallerRingAllRule, 'subject_key' => 'ignored-caller-ringall', 'first_matched_at' => '2026-07-13 13:51:00', 'suppression_expires_at' => '2026-07-13 14:51:00']);
+$ignoredCallerRingAllProcessor->run(settings());
+assert_same(2, count($ignoredCallerRingAllSender->calls), 'ring-all alert calls must include every enabled destination even when one destination also appears in ignore callers');
+assert_same(['820', '821'], array_map(static function (array $call): string { return (string)$call['destination']; }, $ignoredCallerRingAllSender->calls), 'ring-all alert calls must not drop an enabled destination because it also appears in ignore callers');
+
+$orderedNoRetryClock = new TestClock('2026-07-13 13:52:00');
 $orderedNoRetrySender = new FakeCallSender();
 [$orderedNoRetryDb, $orderedNoRetryProcessor] = create_alert_environment($orderedNoRetryClock, new FakeEmailSender(), $orderedNoRetrySender);
 $orderedNoRetryRule = insert_rule($orderedNoRetryDb, [
@@ -1593,10 +1808,10 @@ $orderedNoRetryRule = insert_rule($orderedNoRetryDb, [
 	'alert_call_recording_id' => 55,
 	'repeat_mode_override' => '5m',
 ]);
-$orderedNoRetryIncident = insert_incident($orderedNoRetryDb, ['rule_id' => $orderedNoRetryRule, 'subject_key' => 'ordered-no-retry', 'first_matched_at' => '2026-07-13 13:50:00', 'suppression_expires_at' => '2026-07-13 14:50:00']);
+$orderedNoRetryIncident = insert_incident($orderedNoRetryDb, ['rule_id' => $orderedNoRetryRule, 'subject_key' => 'ordered-no-retry', 'first_matched_at' => '2026-07-13 13:52:00', 'suppression_expires_at' => '2026-07-13 14:52:00']);
 $orderedNoRetryProcessor->run(settings());
 $orderedNoRetryHistoryId = (int)$orderedNoRetryDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedNoRetryIncident} AND recipient = '710' LIMIT 1")->fetchColumn();
-(new RepeatCallerRepository($orderedNoRetryDb))->recordAlertCallDialDisposition($orderedNoRetryHistoryId, $orderedNoRetryIncident, '710', 'NOANSWER', '19', '2026-07-13 13:50:10');
+(new RepeatCallerRepository($orderedNoRetryDb))->recordAlertCallDialDisposition($orderedNoRetryHistoryId, $orderedNoRetryIncident, '710', 'NOANSWER', '19', '2026-07-13 13:52:10');
 $orderedNoRetryClock->now = '2026-07-13 13:55:00';
 $orderedNoRetryProcessor->run(settings());
 assert_same(1, count($orderedNoRetrySender->calls), 'destination-scoped keep-trying disabled should limit each recipient to one attempt even when rule-level keep-trying is enabled');

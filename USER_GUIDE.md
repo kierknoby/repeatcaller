@@ -377,10 +377,13 @@ Operational notes:
 
 - Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.
 - Declining does not close or resolve the incident.
-- Declining excludes that recipient from further Alert Calls for that incident.
-- Keep Trying controls whether unsuccessful destinations remain eligible on later reminders.
-- Ordered advances to the next destination when current attempt ends unaccepted.
-- Ring All contacts all currently eligible destinations.
+- Declining ends the current attempt. It does not accept or close the incident, and later eligibility follows the selected strategy and that destination's Keep Trying setting.
+- Only an explicit ACCEPTED response stops Alert Call progression.
+- Ordered stages add one new destination at a time. Earlier destinations remain eligible in later stages only when their own Keep Trying option is enabled.
+- Each completed Ordered stage pauses for 60 seconds before the next stage, and a multi-destination stage advances only after every attempt in that stage finishes without acceptance.
+- Ring All contacts every enabled destination on every cycle. Keep Trying is not applicable to Ring All and is shown unticked and disabled.
+- Ignore Callers affects inbound detection only and does not filter Alert Call destinations.
+- Acceptance cancels pending future attempts and late callbacks cannot restart escalation.
 - No same-recipient rapid retry loop occurs within one reminder point.
 
 ## Snooze Monitoring

@@ -1747,7 +1747,7 @@ final class RepeatCallerRepository {
 		$updated = $this->updateAlertCallAttemptResult($historyId, $deliveryStatus, $successfulAt, $failureDetail, $now);
 		$reservedNextHistoryId = null;
 		if ($updated && !$accepted && $deliveryStatus !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
-			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now);
+			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now, true);
 		}
 
 		return ['status' => $updated, 'accepted' => $accepted, 'delivery_status' => $deliveryStatus, 'next_history_id' => $reservedNextHistoryId];
@@ -1785,7 +1785,7 @@ final class RepeatCallerRepository {
 		$updated = $this->updateAlertCallAttemptResult($historyId, $mapped, null, $detail, $now);
 		$reservedNextHistoryId = null;
 		if ($updated && $mapped !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
-			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now);
+			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now, true);
 		}
 
 		return ['status' => $updated, 'delivery_status' => $mapped, 'next_history_id' => $reservedNextHistoryId];
@@ -1934,7 +1934,7 @@ final class RepeatCallerRepository {
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
-	public function reserveNextOrderedAlertCallAttempt(int $historyId, string $now): ?int {
+	public function reserveNextOrderedAlertCallAttempt(int $historyId, string $now, bool $defer = false): ?int {
 		$attempt = $this->loadOrderedAttemptContext($historyId);
 		if ($attempt === null) {
 			return null;
@@ -1951,6 +1951,10 @@ final class RepeatCallerRepository {
 		$currentRecipient = trim((string)$attempt['recipient']);
 		if ($currentRecipient === '') {
 			return null;
+		}
+
+		if ($defer) {
+			return $this->reserveNextOrderedAlertCallStage($historyId, $now);
 		}
 
 		$destinationEntries = $this->parseAlertCallDestinationEntries((string)$attempt['alert_call_destinations']);
@@ -2371,6 +2375,178 @@ final class RepeatCallerRepository {
 	private function alertDedupeKey(int $incidentId, string $eventType, int $stageN, string $actionType, ?string $recipient): string {
 		$recipientKey = $recipient === null ? '-' : strtolower(trim($recipient));
 		return sprintf('incident:%d|event:%s|stage:%d|action:%s|recipient:%s', $incidentId, $eventType, $stageN, $actionType, $recipientKey);
+	}
+
+	private function reserveNextOrderedAlertCallStage(int $historyId, string $now): ?int {
+		$attempt = $this->loadOrderedAttemptContext($historyId);
+		if ($attempt === null) {
+			return null;
+		}
+
+		if ((string)$attempt['strategy'] !== 'ordered') {
+			return null;
+		}
+
+		if ((string)$attempt['incident_state'] !== 'active') {
+			return null;
+		}
+
+		$stageN = (int)$attempt['stage_n'] + 1;
+		$destinationEntries = $this->parseAlertCallDestinationEntries((string)$attempt['alert_call_destinations']);
+		if (!$destinationEntries) {
+			return null;
+		}
+
+		$activeSiblings = $this->loadActiveOrderedStageSiblings((int)$attempt['incident_id'], (string)$attempt['event_type'], (int)$attempt['stage_n'], $historyId);
+		if ($activeSiblings) {
+			return null;
+		}
+
+		$eligible = $this->buildNextOrderedAlertCallStageRecipients(
+			(int)$attempt['incident_id'],
+			(string)$attempt['event_type'],
+			(int)$attempt['stage_n'],
+			$destinationEntries
+		);
+		if (!$eligible) {
+			return null;
+		}
+
+		$nextRetryAt = $this->futureTimestamp($now, 60);
+		$insertedHistoryId = null;
+		foreach ($eligible as $recipient) {
+			$inserted = $this->reserveIncidentAlertHistory([
+				'incident_id' => (int)$attempt['incident_id'],
+				'rule_id' => (int)$attempt['rule_id'],
+				'subject_key' => (string)$attempt['subject_key'],
+				'subject_label' => (string)$attempt['subject_label'],
+				'action_type' => 'alert_call',
+				'event_type' => (string)$attempt['event_type'],
+				'stage_n' => $stageN,
+				'recipient' => $recipient,
+				'delivery_status' => 'pending',
+				'attempted_at' => null,
+				'successful_at' => null,
+				'next_retry_at' => $nextRetryAt,
+				'failure_detail' => null,
+				'repeat_mode' => (string)$attempt['repeat_mode'],
+				'dedupe_key' => $this->alertDedupeKey((int)$attempt['incident_id'], (string)$attempt['event_type'], $stageN, 'alert_call', $recipient),
+				'created_at' => $now,
+				'updated_at' => $now,
+			]);
+			if ($inserted && $insertedHistoryId === null) {
+				$insertedHistoryId = (int)$this->pdo->lastInsertId();
+			}
+		}
+
+		return $insertedHistoryId;
+	}
+
+	private function buildNextOrderedAlertCallStageRecipients(int $incidentId, string $eventType, int $stageN, array $destinationEntries): array {
+		$orderedDestinations = [];
+		$destinationLookup = [];
+		foreach ($destinationEntries as $entry) {
+			$destination = '';
+			$keepTrying = false;
+			if (is_array($entry)) {
+				$destination = trim((string)($entry['destination'] ?? ''));
+				$keepTrying = ((int)($entry['keep_trying'] ?? 0)) === 1;
+			} else {
+				$destination = trim((string)$entry);
+			}
+			if ($destination === '') {
+				continue;
+			}
+			$orderedDestinations[] = $destination;
+			$destinationLookup[$destination] = [
+				'index' => count($orderedDestinations) - 1,
+				'keep_trying' => $keepTrying,
+			];
+		}
+		if (!$orderedDestinations) {
+			return [];
+		}
+
+		$history = $this->loadAlertCallAttemptHistoryByIncident($incidentId);
+		$declined = [];
+		$attempted = [];
+		$currentStageRecipients = [];
+		$currentStageLastIndex = -1;
+		foreach ($history as $row) {
+			$recipient = trim((string)($row['recipient'] ?? ''));
+			if ($recipient === '') {
+				continue;
+			}
+			$attempted[$recipient] = true;
+			$status = strtolower(trim((string)($row['delivery_status'] ?? '')));
+			if ($status === self::ALERT_CALL_OUTCOME_DECLINED) {
+				$declined[$recipient] = true;
+			}
+			if ((string)($row['event_type'] ?? '') === $eventType && (int)($row['stage_n'] ?? 0) === $stageN) {
+				$currentStageRecipients[] = $recipient;
+				$lookup = $destinationLookup[$recipient] ?? null;
+				if (is_array($lookup) && (int)($lookup['index'] ?? -1) > $currentStageLastIndex) {
+					$currentStageLastIndex = (int)$lookup['index'];
+				}
+			}
+		}
+
+		$carryOver = [];
+		foreach ($currentStageRecipients as $recipient) {
+			if ($recipient === '' || isset($declined[$recipient])) {
+				continue;
+			}
+			$lookup = $destinationLookup[$recipient] ?? null;
+			if (!is_array($lookup) || ((int)($lookup['keep_trying'] ?? 0)) !== 1) {
+				continue;
+			}
+			$carryOver[] = $recipient;
+		}
+
+		$eligible = $carryOver;
+		$nextRecipient = null;
+		for ($i = $currentStageLastIndex + 1; $i < count($orderedDestinations); $i++) {
+			$candidate = $orderedDestinations[$i];
+			if ($candidate === '' || isset($declined[$candidate]) || isset($attempted[$candidate])) {
+				continue;
+			}
+			$nextRecipient = $candidate;
+			break;
+		}
+		if ($nextRecipient !== null) {
+			$eligible[] = $nextRecipient;
+		}
+
+		return $eligible;
+	}
+
+	private function loadActiveOrderedStageSiblings(int $incidentId, string $eventType, int $stageN, int $excludeHistoryId): bool {
+		$stmt = $this->pdo->prepare(
+			'SELECT COUNT(*)
+			 FROM repeatcaller_incident_alert_history
+			 WHERE incident_id = ?
+				AND action_type = ?
+				AND event_type = ?
+				AND stage_n = ?
+				AND id <> ?
+				AND delivery_status IN (?, ?, ?, ?)
+			 LIMIT 1'
+		);
+		$stmt->execute([$incidentId, 'alert_call', $eventType, $stageN, $excludeHistoryId, 'pending', 'snoozed', 'sending', 'sent']);
+
+		return (int)$stmt->fetchColumn() > 0;
+	}
+
+	private function futureTimestamp(string $now, int $seconds): ?string {
+		try {
+			return (new \DateTimeImmutable($now))->modify('+' . $seconds . ' seconds')->format('Y-m-d H:i:s');
+		} catch (\Throwable $e) {
+			$timestamp = strtotime($now);
+			if ($timestamp === false) {
+				return null;
+			}
+			return date('Y-m-d H:i:s', $timestamp + $seconds);
+		}
 	}
 
 	private function mapDialStatusOutcome(string $dialStatus): string {

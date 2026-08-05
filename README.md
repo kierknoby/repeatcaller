@@ -344,6 +344,20 @@ Alert Call destinations and Alert Call caller ID values are administrator-
 controlled PBX configuration. Only use trusted values that are appropriate for
 your dialplan, routing, and outbound calling policy.
 
+Alert Call progression follows the selected strategy. Ordered stages add one
+new destination at a time. Earlier destinations remain eligible in later stages
+only when their own Keep Trying option is enabled; for example, destinations
+1/2/3 with settings enabled/disabled/enabled produce 1, then 1+2, then 1+3,
+then 1+3 repeatedly. Each completed stage pauses for 60 seconds before the
+next one. A multi-destination stage advances only after every attempt in that
+stage finishes without acceptance. Only an explicit ACCEPTED response stops
+progression; NOANSWER, BUSY, DECLINED, answered-no-response, unavailable,
+congestion, and failed attempts do not stop progression. Ring All includes
+every enabled destination on every cycle. Keep Trying is not applicable to
+Ring All and is shown unticked and disabled. Ignore Callers applies only to
+inbound detection and never filters Alert Call destinations. Acceptance
+cancels pending future attempts and late callbacks cannot restart escalation.
+
 Repeat Caller also marks internally originated Alert Call legs and excludes
 those marked internal legs from detection. This internal marker is useful for
 on-box call legs only and does not survive a call that leaves through a
@@ -688,10 +702,21 @@ Recordings, and administrator-controlled routing.
 - Caller presentation remains the responsibility of PBX routing, trunks, or
   providers.
 
-#### Documentation and coverage
+#### Ordered Alert Call progression
 
-- Documentation and focused admin coverage were updated to reflect final 1.0.1
-  behavior.
+- Ordered stages add one new destination at a time.
+- Earlier destinations remain eligible in later stages only when their own
+  Keep Trying option is enabled.
+- Each completed stage pauses for 60 seconds before the next stage.
+- A multi-destination stage advances only after every attempt in that stage
+  finishes without acceptance.
+- Only explicit ACCEPTED responses stop progression; other outcomes do not.
+- Ring All includes every enabled destination on every cycle, while Keep
+  Trying is not applicable and remains unticked and disabled.
+- Ignore Callers applies only to inbound detection and never filters Alert
+  Call destinations.
+- Acceptance cancels pending future attempts and late callbacks cannot restart
+  escalation.
 
 #### Invert activation timing
 

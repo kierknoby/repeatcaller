@@ -73,6 +73,33 @@ Expected v1 fresh-install tables include:
 	- Yearly
 21. Run manual pruning and review returned delete counts.
 
+## Alert Call contract coverage
+
+Run the focused documentation and behavior contracts:
+
+```bash
+cd /workspaces/repeatcaller
+php tests/repeat_admin_contract.php
+php tests/repeat_alerting_contract.php
+php tests/repeat_release_contract.php
+```
+
+The alerting contract covers first-destination NOANSWER progression, cumulative Ordered stages, mixed Keep Trying values, waiting for all sibling attempts, repeated stages after the final destination, acceptance and late-callback protection, Ring All editor and destination behaviour, and Ignore Callers separation. The admin and release contracts cover the Ring All/Ordered editor round-trip and documentation/help-text parity.
+
+## Additional real FreePBX Alert Call checks
+
+These are additional manual installation checks beyond the contract suites:
+
+39. Configure an Ordered rule with destination 1 enabled, destination 2 disabled, and destination 3 enabled. Confirm that the first stage calls destination 1, the next stage calls destination 1 again when Keep Trying is enabled for destination 1 and introduces destination 2, and the following stage calls destination 1 and destination 3 while destination 2 remains absent.
+40. Configure an Ordered rule where the first destination has Keep Trying disabled. Confirm that after its introduction stage, that destination does not return in later stages while the next destination is introduced.
+41. Configure a multi-destination Ordered stage and confirm the stage does not advance until every call in that stage has finished without acceptance.
+42. Confirm that the next Ordered stage waits approximately 60 seconds after the previous stage completes.
+43. Confirm that decline, NOANSWER, BUSY, and answered-without-acceptance outcomes continue progression rather than stop it.
+44. Confirm that an explicit ACCEPTED response stops progression and prevents pending later calls from being sent.
+45. Confirm that Ring All calls every enabled destination on every cycle.
+46. Confirm that Ring All shows Keep Trying as visible, unticked, and disabled.
+47. Confirm that Ignore Callers does not prevent an Alert Call destination from being called.
+
 ## Upgrade and Preservation
 
 22. Run the supported update sequence:
