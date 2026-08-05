@@ -6,6 +6,7 @@ namespace FreePBX\modules\Repeatcaller;
 
 use PDO;
 use PDOException;
+use Throwable;
 
 final class RepeatCallerRepository {
 	private const SEEN_CALL_RETENTION_DAYS = 8;
@@ -293,7 +294,23 @@ final class RepeatCallerRepository {
 		$hasDeletedAt = $this->hasColumn('repeatcaller_rules', 'deleted_at');
 		$alertCallStrategy = $this->normaliseAlertCallStrategy((string)($payload['alert_call_strategy'] ?? 'ringall'));
 		$alertCallKeepTrying = $this->alertCallKeepTryingFlag($payload, true);
-		if ($ruleId > 0) {
+		$existingSuppressionOverride = is_array($existingRule)
+			? $this->normaliseSuppressionOverrideValue($existingRule['suppression_minutes_override'] ?? null)
+			: null;
+		$newSuppressionOverride = array_key_exists('suppression_minutes_override', $payload)
+			? $this->normaliseSuppressionOverrideValue($payload['suppression_minutes_override'] ?? null)
+			: $existingSuppressionOverride;
+		$shouldReconcileSuppression = $ruleId > 0
+			&& is_array($existingRule)
+			&& array_key_exists('suppression_minutes_override', $payload)
+			&& $existingSuppressionOverride !== $newSuppressionOverride;
+		$ownsTransaction = false;
+		if (!$this->pdo->inTransaction()) {
+			$this->pdo->beginTransaction();
+			$ownsTransaction = true;
+		}
+		try {
+			if ($ruleId > 0) {
 			$set = [
 				'name = ?',
 				'enabled = ?',
@@ -455,7 +472,21 @@ final class RepeatCallerRepository {
 			$now
 		);
 
-		return $ruleId;
+		if ($shouldReconcileSuppression) {
+			$this->reconcileSuppressionForRule($ruleId, $existingSuppressionOverride, $newSuppressionOverride, $now);
+		}
+
+		if ($ownsTransaction) {
+			$this->pdo->commit();
+		}
+
+			return $ruleId;
+		} catch (Throwable $e) {
+			if ($ownsTransaction && $this->pdo->inTransaction()) {
+				$this->pdo->rollBack();
+			}
+			throw $e;
+		}
 	}
 
 	public function setRuleEnabled(int $ruleId, bool $enabled, string $now): void {
@@ -2649,6 +2680,141 @@ final class RepeatCallerRepository {
 
 	private function activeSubjectKey(int $ruleId, string $subjectKey): string {
 		return $ruleId . '|' . $subjectKey;
+	}
+
+	private function reconcileSuppressionForRule(int $ruleId, ?int $previousOverride, ?int $newOverride, string $now): void {
+		$previousMinutes = $this->suppressionMinutesForOverride($previousOverride);
+		$newMinutes = $this->suppressionMinutesForOverride($newOverride);
+		if ($previousMinutes === $newMinutes) {
+			return;
+		}
+
+		$subjectStates = $this->selectRowsSafe(
+			'SELECT rule_id, subject_key, active_incident_id, suppression_expires_at
+			 FROM repeatcaller_rule_subject_state
+			 WHERE rule_id = ?
+				AND (active_incident_id IS NOT NULL OR suppression_expires_at IS NOT NULL)',
+			[$ruleId]
+		);
+		if ($subjectStates === null) {
+			return;
+		}
+
+		$historyRows = $this->selectRowsSafe(
+			'SELECT id, subject_key, suppression_started_at, suppression_expires_at
+			 FROM repeatcaller_incident_suppression_history
+			 WHERE rule_id = ?
+				AND related_incident_id > 0
+				AND (cleared_at IS NULL OR cleared_at IN (?, ?, ?))',
+			[$ruleId, '', '0000-00-00', '0000-00-00 00:00:00']
+		);
+
+		foreach ($subjectStates as $subjectStateRow) {
+			$subjectKey = (string)($subjectStateRow['subject_key'] ?? '');
+			if ($subjectKey === '') {
+				continue;
+			}
+			$incidentId = (int)($subjectStateRow['active_incident_id'] ?? 0);
+			$incident = null;
+			if ($incidentId > 0) {
+				$incidentStmt = $this->pdo->prepare(
+					'SELECT id, state, suppression_expires_at, created_at, first_matched_at
+					 FROM repeatcaller_incidents
+					 WHERE id = ?
+					 LIMIT 1'
+				);
+				$incidentStmt->execute([$incidentId]);
+				$incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+			}
+
+			$startAt = '';
+			if (is_array($incident)) {
+				$startAt = trim((string)($incident['created_at'] ?? ''));
+				if ($startAt === '') {
+					$startAt = trim((string)($incident['first_matched_at'] ?? ''));
+				}
+			}
+			if ($startAt === '' && is_array($historyRows)) {
+				foreach ($historyRows as $historyRow) {
+					if ((string)($historyRow['subject_key'] ?? '') === $subjectKey) {
+						$startAt = trim((string)($historyRow['suppression_started_at'] ?? ''));
+						break;
+					}
+				}
+			}
+			if ($startAt === '') {
+				$startAt = $now;
+			}
+
+			$subjectState = $this->loadSubjectState($ruleId, $subjectKey) ?? [];
+			$subjectState['active_incident_id'] = $newMinutes <= 0 ? ($incidentId > 0 ? $incidentId : null) : null;
+			$subjectState['suppression_expires_at'] = $newMinutes <= 0 ? null : $this->suppressionExpiryForStart($startAt, $newMinutes);
+			$subjectState['last_evaluated_at'] = $now;
+			$subjectState['updated_at'] = $now;
+			$this->saveSubjectState($ruleId, $subjectKey, $subjectState);
+
+			if ($incidentId > 0 && is_array($incident)) {
+				$updateStmt = $this->pdo->prepare(
+					'UPDATE repeatcaller_incidents
+					 SET state = ?,
+						 active_subject_key = ?,
+						 suppression_expires_at = ?,
+						 updated_at = ?
+					 WHERE id = ?'
+				);
+				$updateStmt->execute([
+					$newMinutes <= 0 ? 'active' : 'suppressed',
+					$newMinutes <= 0 ? $this->activeSubjectKey($ruleId, $subjectKey) : null,
+					$this->nullableString($newMinutes <= 0 ? null : $this->suppressionExpiryForStart($startAt, $newMinutes)),
+					$now,
+					$incidentId,
+				]);
+			}
+		}
+
+		if (is_array($historyRows)) {
+			foreach ($historyRows as $historyRow) {
+				$historyStartedAt = trim((string)($historyRow['suppression_started_at'] ?? ''));
+				if ($historyStartedAt === '') {
+					$historyStartedAt = $now;
+				}
+				$nextHistoryExpiry = $newMinutes <= 0
+					? trim((string)($historyRow['suppression_expires_at'] ?? ''))
+					: $this->suppressionExpiryForStart($historyStartedAt, $newMinutes);
+				$nextHistoryExpiry = $nextHistoryExpiry === '' ? $this->suppressionExpiryForStart($historyStartedAt, $newMinutes) : $nextHistoryExpiry;
+				$updateHistoryStmt = $this->pdo->prepare(
+					'UPDATE repeatcaller_incident_suppression_history
+					 SET suppression_minutes = ?,
+						 suppression_expires_at = ?,
+						 cleared_at = ?,
+						 updated_at = ?
+					 WHERE id = ?'
+				);
+				$updateHistoryStmt->execute([
+					$newMinutes,
+					(string)$nextHistoryExpiry,
+					$newMinutes <= 0 ? $now : null,
+					$now,
+					(int)($historyRow['id'] ?? 0),
+				]);
+			}
+		}
+	}
+
+	private function suppressionMinutesForOverride(?int $override): int {
+		$value = $override === null ? 1440 : $override;
+		return max(0, $value);
+	}
+
+	private function suppressionExpiryForStart(string $startedAt, int $minutes): ?string {
+		if ($minutes <= 0) {
+			return null;
+		}
+		return date('Y-m-d H:i:s', strtotime($startedAt) + ($minutes * 60));
+	}
+
+	private function normaliseSuppressionOverrideValue($value): ?int {
+		return $this->nullableInt($value);
 	}
 
 	private function nullableString($value): ?string {

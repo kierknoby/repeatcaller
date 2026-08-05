@@ -222,7 +222,9 @@ final class BackgroundProcessor {
 				continue;
 			}
 
-			$suppressionExpiresAt = date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) + ($suppressionMinutes * 60));
+			$suppressionExpiresAt = $suppressionMinutes > 0
+				? date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) + ($suppressionMinutes * 60))
+				: null;
 			[$firstMatchedAt, $lastMatchedAt] = $this->incidentMatchBounds($matchingRows);
 			$incidentId = $this->repository->createIncident([
 				'rule_id' => $ruleId,
@@ -289,7 +291,9 @@ final class BackgroundProcessor {
 				} else {
 					$activeIncident = $this->repository->loadTrackedIncident((int)$rule['id'], $subject);
 					if (!is_array($activeIncident) && (empty($state['threshold_met']) || !empty($state['clear_observed_since_trigger']))) {
-						$suppressionExpiresAt = date('Y-m-d H:i:s', strtotime($currentWindowEnd) + ($suppressionMinutes * 60));
+						$suppressionExpiresAt = $suppressionMinutes > 0
+							? date('Y-m-d H:i:s', strtotime($currentWindowEnd) + ($suppressionMinutes * 60))
+							: null;
 						$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
 						$incidentId = $this->repository->createIncident([
 							'rule_id' => (int)$rule['id'],

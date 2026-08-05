@@ -71,6 +71,7 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			enabled INTEGER NOT NULL DEFAULT 1,
 			enabled_at TEXT,
 			email_enabled INTEGER NOT NULL DEFAULT 0,
+			email_recipients TEXT,
 			alert_call_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_destinations TEXT,
 			alert_call_recording_id INTEGER,
@@ -262,7 +263,7 @@ function insert_route(PDO $db, string $did, string $cid = '', string $descriptio
 }
 
 function insert_rule(PDO $db, array $rule): int {
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			$rule['name'],
 			$rule['enabled'] ?? 1,
@@ -270,6 +271,7 @@ function insert_rule(PDO $db, array $rule): int {
 				? $rule['enabled_at']
 				: (!empty($rule['enabled'] ?? 1) ? ($rule['created_at'] ?? '2026-07-13 09:00:00') : null),
 			$rule['email_enabled'] ?? 0,
+			$rule['email_recipients'] ?? null,
 			$rule['alert_call_enabled'] ?? 0,
 			$rule['alert_call_destinations'] ?? null,
 			$rule['alert_call_recording_id'] ?? null,
@@ -344,6 +346,21 @@ final class ThrowingMetadataPdo extends PDO {
 
 	public function prepare($query, $options = []) {
 		throw new RuntimeException('forced metadata prepare failure');
+	}
+}
+
+final class FakeEmailSender {
+	/** @var array<int, array{recipient:string, subject:string, message:string}> */
+	public array $calls = [];
+
+	public function __invoke(string $recipient, string $subject, string $message): array {
+		$this->calls[] = [
+			'recipient' => $recipient,
+			'subject' => $subject,
+			'message' => $message,
+		];
+
+		return ['status' => true, 'message' => 'accepted'];
 	}
 }
 
@@ -1305,7 +1322,7 @@ try {
 	assert_same(1, $disabledSuppressionRun['incidents_created'], '0 suppression override should still allow incident creation once threshold is met');
 	$disabledSuppressionIncident = $db7Disabled->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $disabledSuppressionRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
 	assert_true(is_array($disabledSuppressionIncident), 'disabled suppression scenario should create an incident row');
-	assert_same('2026-07-13 09:05:00', (string)$disabledSuppressionIncident['suppression_expires_at'], '0 suppression override should resolve and persist an immediate suppression expiry on the incident');
+	assert_same(null, $disabledSuppressionIncident['suppression_expires_at'], '0 suppression override should disable automatic suppression and leave the incident unsuppressed');
 
 	[$db7, $repository7, $scanner7, $processor7] = create_runtime_environment($dbPath7, '2026-07-13 09:20:00');
 	insert_route($db7, '18005550001', '', 'Main');
@@ -1473,6 +1490,108 @@ try {
 	assert_true(is_array($acceptedLifecycleStateAfterSuppressed), 'accepted lifecycle scenario should retain subject state after blocked re-trigger');
 	assert_same(1, (int)$acceptedLifecycleStateAfterSuppressed['threshold_met'], 'blocked re-trigger should set threshold_met back to true');
 	assert_same(0, (int)$acceptedLifecycleStateAfterSuppressed['clear_observed_since_trigger'], 'blocked re-trigger should reset clear_observed_since_trigger after recording suppression history');
+
+	$dbPathClearWorkflow = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathClearWorkflow === false) {
+		throw new RuntimeException('Unable to create clear-suppression workflow runtime SQLite file');
+	}
+	[$dbClearWorkflow, $repositoryClearWorkflow, $scannerClearWorkflow, $processorClearWorkflow] = create_runtime_environment($dbPathClearWorkflow, '2026-07-13 09:00:00');
+	insert_route($dbClearWorkflow, '18005550001', '', 'Main');
+	$clearWorkflowRuleId = insert_rule($dbClearWorkflow, [
+		'name' => 'Clear Suppression Workflow Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'suppression_minutes_override' => 180,
+		'email_enabled' => 1,
+		'email_recipients' => 'alerts@example.invalid',
+		'alert_call_enabled' => 1,
+		'alert_call_destinations' => '100',
+		'alert_call_recording_id' => 42,
+		'repeat_mode_override' => 'never',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW1', 'calldate' => '2026-07-13 09:00:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW2', 'calldate' => '2026-07-13 09:05:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearWorkflowInitialRun = $processorClearWorkflow->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $clearWorkflowInitialRun['incidents_created'], 'clear-suppression workflow should create the initial active incident');
+	$clearWorkflowIncident = $dbClearWorkflow->query('SELECT id, state FROM repeatcaller_incidents WHERE rule_id = ' . $clearWorkflowRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($clearWorkflowIncident), 'clear-suppression workflow should create an incident row');
+	$clearWorkflowIncidentId = (int)$clearWorkflowIncident['id'];
+	assert_same('active', (string)$clearWorkflowIncident['state'], 'clear-suppression workflow should start with an active incident');
+	assert_true($repositoryClearWorkflow->acceptActiveIncident($clearWorkflowIncidentId, 'operator', '2026-07-13 09:06:00', 'gui'), 'clear-suppression workflow should accept the initial incident');
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW3', 'calldate' => '2026-07-13 10:30:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearWorkflowClearProcessor = new BackgroundProcessor($dbClearWorkflow, $repositoryClearWorkflow, $scannerClearWorkflow, static function (): string {
+		return '2026-07-13 10:31:00';
+	});
+	$clearWorkflowClearRun = $clearWorkflowClearProcessor->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $clearWorkflowClearRun['incidents_created'], 'clear-suppression workflow should clear the original threshold condition without creating a fresh incident');
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW4', 'calldate' => '2026-07-13 10:35:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW5', 'calldate' => '2026-07-13 10:40:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearWorkflowBlockProcessor = new BackgroundProcessor($dbClearWorkflow, $repositoryClearWorkflow, $scannerClearWorkflow, static function (): string {
+		return '2026-07-13 10:41:00';
+	});
+	$clearWorkflowBlockedRun = $clearWorkflowBlockProcessor->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $clearWorkflowBlockedRun['incidents_created'], 'clear-suppression workflow should block a fresh re-trigger while suppression remains active');
+	$suppressedRows = $repositoryClearWorkflow->loadSuppressedIncidentHistory();
+	assert_same(1, count($suppressedRows), 'clear-suppression workflow should record one suppression-history row for the blocked re-trigger');
+	assert_same($clearWorkflowIncidentId, (int)$suppressedRows[0]['related_incident_id'], 'clear-suppression workflow should reference the original accepted incident in suppression history');
+	assert_true($repositoryClearWorkflow->clearSuppressedIncidentHistory((int)$suppressedRows[0]['id'], '2026-07-13 10:42:00'), 'clear-suppression workflow should clear the suppression-history row');
+	$clearedRows = $repositoryClearWorkflow->loadSuppressedIncidentHistory();
+	assert_same(1, count($clearedRows), 'clear-suppression workflow should preserve the suppression-history row after clear');
+	assert_same('2026-07-13 10:42:00', (string)$clearedRows[0]['cleared_at'], 'clear-suppression workflow should mark the cleared audit row');
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW6', 'calldate' => '2026-07-13 10:45:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW7', 'calldate' => '2026-07-13 10:50:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearWorkflowFreshProcessor = new BackgroundProcessor($dbClearWorkflow, $repositoryClearWorkflow, $scannerClearWorkflow, static function (): string {
+		return '2026-07-13 10:51:00';
+	});
+	$clearWorkflowFreshRun = $clearWorkflowFreshProcessor->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $clearWorkflowFreshRun['incidents_created'], 'clear-suppression workflow should create a new active incident after clear suppression');
+	$newWorkflowIncident = $dbClearWorkflow->query('SELECT id, state, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $clearWorkflowRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($newWorkflowIncident), 'clear-suppression workflow should load the new incident row');
+	assert_same('active', (string)$newWorkflowIncident['state'], 'clear-suppression workflow should create an active incident after clear suppression');
+	$emailSender = new FakeEmailSender();
+	$callSender = new FakeCallSender();
+	$alertsClearWorkflow = new IncidentAlertProcessor($repositoryClearWorkflow, $emailSender, static function (): string {
+		return '2026-07-13 10:52:00';
+	}, $callSender);
+	$alertSummary = $alertsClearWorkflow->run([
+		'alert_enabled' => '1',
+		'global_snoozed_until' => '',
+		'alert_history_prune_policy' => 'never',
+		'incident_history_prune_policy' => 'never',
+		'suppression_history_prune_policy' => 'never',
+	]);
+	assert_same(1, $alertSummary['initial_events'], 'clear-suppression workflow should reserve one initial stage for the fresh incident');
+	assert_same(1, $alertSummary['email_queued'], 'clear-suppression workflow should queue one email alert for the fresh incident');
+	assert_same(1, $alertSummary['alert_call_queued'], 'clear-suppression workflow should queue one alert_call reservation for the fresh incident');
+	$workflowHistory = $dbClearWorkflow->query('SELECT action_type, event_type FROM repeatcaller_incident_alert_history WHERE incident_id = ' . (int)$newWorkflowIncident['id'])->fetchAll(PDO::FETCH_ASSOC);
+	assert_same(3, count($workflowHistory), 'clear-suppression workflow should reserve GUI, email and alert_call rows for the fresh incident');
+	assert_same(1, count(array_filter($workflowHistory, static function (array $row): bool {
+		return (string)($row['action_type'] ?? '') === 'gui';
+	})), 'clear-suppression workflow should reserve one GUI row for the fresh incident');
+	assert_same(1, count(array_filter($workflowHistory, static function (array $row): bool {
+		return (string)($row['action_type'] ?? '') === 'email';
+	})), 'clear-suppression workflow should reserve one email row for the fresh incident');
+	assert_same(1, count(array_filter($workflowHistory, static function (array $row): bool {
+		return (string)($row['action_type'] ?? '') === 'alert_call';
+	})), 'clear-suppression workflow should reserve one alert_call row for the fresh incident');
+	assert_same(1, count($emailSender->calls), 'clear-suppression workflow should send one email for the fresh incident');
+	assert_same(1, count($callSender->calls), 'clear-suppression workflow should attempt one alert call for the fresh incident');
 
 	$dbPath4 = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath4 === false) {
