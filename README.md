@@ -275,6 +275,11 @@ warning. Alert Call destinations are automatically added to Ignore these
 callers to reduce the risk of self-triggering if an alert call routes back
 through a monitored DID.
 
+When Alert Call is enabled and Caller ID managed elsewhere is disabled, Repeat
+Caller may also add the configured Alert Call Caller ID to Ignore these
+callers as an additional self-trigger safeguard for external return paths.
+Administrators can remove the Ignore entry if it is not appropriate.
+
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country
@@ -592,6 +597,9 @@ Recordings, and administrator-controlled routing.
   these callers as a safe default, with a one-time warning in the editor.
 - Administrators can remove the Ignore entry if needed; it is not silently
   re-added during save, reload, or normal rendering.
+- When Repeat Caller sets Alert Call Caller ID, that Caller ID may also be
+  added to Ignore these callers as an additional external return-path
+  safeguard.
 - Internal Repeat Caller originated Alert Call legs are marked and excluded
   from detection; this marker does not survive external PSTN hairpin
   leave-and-return paths.

@@ -105,6 +105,8 @@ fwconsole reload
 34. In Caller Includes and Caller Excludes, enter values using a mix of spaces, commas, and new lines; save and reload; confirm include/exclude meaning is preserved.
 35. Reload the Repeat Caller page and confirm Run Now shows the correct initial availability state.
 36. Add an Alert Call destination and confirm the self-trigger warning remains visible for approximately six seconds before disappearing.
+37. With Alert Call enabled and Caller ID managed elsewhere disabled, set or change an Alert Call Caller ID and save; confirm the Caller ID is added to Ignore these callers as an external return-path safeguard when the safeguard is triggered, without creating duplicate entries.
+38. Remove a Caller ID-generated Ignore these callers entry, change an unrelated rule setting, save, and confirm the Ignore entry is not silently recreated.
 
 ## Useful Checks
 

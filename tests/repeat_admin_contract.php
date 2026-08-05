@@ -837,7 +837,7 @@ assert_true(strpos($jsSource, 'function rememberAlertCallCallerIdSessionValue() 
 assert_true(strpos($jsSource, "var callerIdRequired = alertCallEnabled && !handleCallerIdUpstream;") !== false && strpos($jsSource, "var callerIdDisabled = !alertCallEnabled || handleCallerIdUpstream;") !== false, 'Alert Call Caller ID should be required only when Alert Call is enabled and upstream handling is disabled');
 assert_true(strpos($jsSource, "\$callerIdField.prop('disabled', callerIdDisabled).prop('required', callerIdRequired).toggleClass('rc-control-disabled', callerIdDisabled).attr('aria-required', callerIdRequired ? 'true' : 'false').attr('placeholder', callerIdPlaceholder);") !== false, 'Alert Call Caller ID field should update disabled and required state from alert-call and upstream settings');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid-help').text(callerIdHelpText).toggleClass('text-danger', callerIdRequired);") !== false, 'Alert Call Caller ID help text should explain when the field is unused vs required');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').off('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller').on('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller', function () {") !== false, 'Alert Call Caller ID field should remember typed values while it remains editable');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-callerid').off('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller').on('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller', function (event) {") !== false || strpos($jsSource, "$('#rc-rule-alert-call-callerid').off('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller').on('input.repeatcaller change.repeatcaller paste.repeatcaller keyup.repeatcaller', function () {") !== false, 'Alert Call Caller ID field should remember typed values while it remains editable');
 assert_true(strpos($jsSource, "var e164Example = getCallerE164Example($('#rc-setting-country').val());") !== false, 'Alert Call Caller ID helper should compute the E.164 example locally inside the helper');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Not used because caller presentation is managed elsewhere.';") !== false, 'Alert Call Caller ID helper should explain the managed-elsewhere case using the new wording');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Repeat Caller will set the Caller ID. Enter it in E.164 format, e.g. ' + e164Example + '.';") !== false, 'Alert Call Caller ID helper should request E.164 input using the dynamic default-country example');
@@ -959,7 +959,7 @@ assert_true((bool)preg_match('/\'suppression_minutes_override\'\s*=>\s*\(\$_REQU
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-strategy').val(rule.alert_call_strategy || 'ringall');") !== false, 'rule loader must apply persisted alert call strategy with ringall fallback');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);") !== false, 'new-rule reset path should default Handle Caller ID Upstream to enabled');
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', parseInt(rule.alert_call_handle_callerid_upstream || 0, 10) === 1);") !== false, 'editing an existing rule should restore the saved Handle Caller ID Upstream setting');
-assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });") !== false, 'toggling Handle Caller ID Upstream should update the Caller ID field state immediately');
+assert_true(strpos($jsSource, "$('#rc-rule-alert-call-handle-callerid-upstream').off('change.repeatcaller').on('change.repeatcaller', function () {") !== false && strpos($jsSource, 'updateAlertCallAndEmailState();') !== false && strpos($jsSource, 'applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });') !== false, 'toggling Handle Caller ID Upstream should update Caller ID state immediately and apply Caller ID self-trigger safeguards when relevant');
 assert_true(strpos($jsSource, 'function updateAlertCallCallerIdState() {') !== false, 'Alert Call Caller ID state should be handled by a dedicated helper');
 assert_true(strpos($jsSource, "var handleCallerIdUpstream = $('#rc-rule-alert-call-handle-callerid-upstream').is(':checked');") !== false, 'Alert Call Caller ID state should read the checkbox checked state directly');
 assert_true(strpos($jsSource, "callerIdHelpText = 'Not used because caller presentation is managed elsewhere.';") !== false, 'managed-elsewhere help text should use the new wording');
@@ -1441,7 +1441,7 @@ const context = {
 
 vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap };\n})(jQuery);');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 const hooks = context.window.__hooks;
 const warningNotieAlerts = [];
@@ -1703,6 +1703,85 @@ assert(warningNotieAlerts.length === warningCountBeforeEnterDuplicate, 'enter du
 
 // 6) Neither warns when nothing changes.
 
+// 6b) Caller ID safeguard adds Ignore entry when applicable and reuses warning.
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+$('#rc-rule-alert-call-callerid').val('+441111111111');
+$('#rc-rule-caller-include').val('');
+$('#rc-rule-caller-exclude').val('');
+hooks.updateAlertCallAndEmailState();
+const callerIdWarningCountBefore = warningNotieAlerts.length;
+const callerIdSafeguardAdd = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+assert(callerIdSafeguardAdd && callerIdSafeguardAdd.added === true && callerIdSafeguardAdd.conflict === false, 'Caller ID safeguard should add Ignore callers entry when Alert Call is enabled and managed elsewhere is disabled');
+assert($('#rc-rule-caller-exclude').val() === '+441111111111', 'Caller ID safeguard should append Caller ID to Ignore callers');
+assert(warningNotieAlerts.length === callerIdWarningCountBefore + 1, 'Caller ID safeguard should reuse the self-trigger warning when adding a new Ignore callers entry');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].message === warningText, 'Caller ID safeguard should reuse the same self-trigger warning text');
+
+// 6c) Existing Ignore entries are not duplicated and do not warn again.
+const callerIdWarningCountBeforeDuplicate = warningNotieAlerts.length;
+const callerIdSafeguardDuplicate = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+assert(callerIdSafeguardDuplicate && callerIdSafeguardDuplicate.added === false && callerIdSafeguardDuplicate.conflict === false, 'Caller ID safeguard should not add duplicate Ignore callers entries');
+assert($('#rc-rule-caller-exclude').val() === '+441111111111', 'Caller ID safeguard duplicate path should leave Ignore callers unchanged');
+assert(warningNotieAlerts.length === callerIdWarningCountBeforeDuplicate, 'Caller ID safeguard duplicate path should not warn when no new Ignore callers entry is added');
+
+// 6d) Blank Caller ID is ignored.
+$('#rc-rule-alert-call-callerid').val('');
+const blankCallerIdResult = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+assert(blankCallerIdResult && blankCallerIdResult.added === false && blankCallerIdResult.conflict === false, 'Caller ID safeguard should ignore blank Caller ID values');
+
+// 6e) Caller ID managed elsewhere prevents automatic addition.
+$('#rc-rule-alert-call-callerid').val('+442222222222');
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', true);
+hooks.updateAlertCallAndEmailState();
+$('#rc-rule-caller-exclude').val('');
+const upstreamManagedResult = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+assert(upstreamManagedResult && upstreamManagedResult.added === false && upstreamManagedResult.conflict === false, 'Caller ID safeguard should not add Ignore callers entries when Caller ID managed elsewhere is enabled');
+assert($('#rc-rule-caller-exclude').val() === '', 'Caller ID safeguard should leave Ignore callers unchanged when Caller ID managed elsewhere is enabled');
+
+// 6f) Changing Caller ID adds the new value without deleting previous Ignore entries.
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+hooks.updateAlertCallAndEmailState();
+$('#rc-rule-caller-exclude').val('+441111111111');
+$('#rc-rule-alert-call-callerid').val('+443333333333');
+const changedCallerIdResult = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+assert(changedCallerIdResult && changedCallerIdResult.added === true && changedCallerIdResult.conflict === false, 'Caller ID safeguard should add newly configured Caller ID values');
+assert($('#rc-rule-caller-exclude').val() === '+441111111111, +443333333333', 'Caller ID safeguard should preserve previous Ignore callers entries when adding a new Caller ID value');
+
+// 6g) Include-list conflict should block auto-add with explicit warning.
+$('#rc-rule-caller-include').val('+444444444444');
+$('#rc-rule-caller-exclude').val('');
+$('#rc-rule-alert-call-callerid').val('+444444444444');
+const genericToastCountBeforeConflict = genericToasts.length;
+const conflictResult = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
+assert(conflictResult && conflictResult.added === false && conflictResult.conflict === true, 'Caller ID safeguard should report a conflict when Caller ID is in Only monitor callers and missing from Ignore callers');
+assert($('#rc-rule-caller-exclude').val() === '', 'Caller ID safeguard conflict path should not silently modify Ignore callers');
+assert(genericToasts.length === genericToastCountBeforeConflict + 1, 'Caller ID safeguard conflict should emit an explicit validation warning');
+assert(genericToasts[genericToasts.length - 1].type === 'error', 'Caller ID safeguard conflict should be reported as an error-level validation warning');
+
+// 6h) Manually removed Caller ID Ignore entries are not recreated during ordinary state refresh.
+$('#rc-rule-caller-include').val('');
+$('#rc-rule-caller-exclude').val('');
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-handle-callerid-upstream').prop('checked', false);
+$('#rc-rule-alert-call-callerid').val('+445555555555');
+hooks.updateAlertCallCallerIdState();
+hooks.updateAlertCallAndEmailState();
+assert($('#rc-rule-caller-exclude').val() === '', 'ordinary editor refresh should not silently recreate manually removed Caller ID Ignore entries');
+
+// 6i) Manually removed Caller ID Ignore entries are not recreated by unrelated saves.
+hooks.syncAlertCallCallerIdSafeguardState();
+$('#rc-rule-caller-exclude').val('');
+$('#rc-rule-name').val('Unrelated setting update');
+const unrelatedSaveResult = hooks.applyAlertCallCallerIdSelfTriggerSafeguardForSave({ showWarning: true, showConflictMessage: true });
+assert(unrelatedSaveResult && unrelatedSaveResult.triggered === false && unrelatedSaveResult.added === false, 'unrelated saves should not trigger Caller ID safeguard re-addition');
+assert($('#rc-rule-caller-exclude').val() === '', 'unrelated saves should not recreate manually removed Caller ID Ignore entries');
+
+// 6j) Changing Caller ID again recreates the safeguard entry.
+$('#rc-rule-alert-call-callerid').val('+446666666666');
+const changedCallerIdSaveResult = hooks.applyAlertCallCallerIdSelfTriggerSafeguardForSave({ showWarning: true, showConflictMessage: true });
+assert(changedCallerIdSaveResult && changedCallerIdSaveResult.triggered === true && changedCallerIdSaveResult.added === true && changedCallerIdSaveResult.conflict === false, 'changing Caller ID should trigger save-time safeguard re-addition');
+assert($('#rc-rule-caller-exclude').val() === '+446666666666', 'changing Caller ID should recreate the required Ignore callers safeguard entry');
+
 // 7) Fallback warning remains visible for 6000ms when notie is unavailable.
 const fallbackCountBefore = fallbackTimeoutsMs.length;
 const originalNotie = context.window.notie;
@@ -1762,9 +1841,15 @@ assert_true(strpos($jsSource, "if (!destinationExists || !callerExcludePresent) 
 assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarning = ') !== false && strpos($jsSource, 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.') !== false, 'rule editor should define the one-time Alert Call self-trigger warning text');
 assert_true(strpos($jsSource, 'function callerExcludeValues() {') !== false, 'rule editor should define a helper to read Ignore these callers values from the textarea');
 assert_true(strpos($jsSource, 'function ensureCallerExcludeDestination(rawValue) {') !== false, 'rule editor should define a helper that conditionally appends Alert Call destinations to Ignore these callers');
+assert_true(strpos($jsSource, 'function applyAlertCallCallerIdSelfTriggerSafeguard(options) {') !== false, 'rule editor should define a helper that applies Alert Call Caller ID self-trigger safeguards through existing Ignore callers handling');
+assert_true(strpos($jsSource, 'function applyAlertCallCallerIdSelfTriggerSafeguardForSave(options) {') !== false, 'rule editor should define a save-time helper that only applies Caller ID safeguards when relevant changes occurred');
+assert_true(strpos($jsSource, 'function hasAlertCallCallerIdSafeguardTrigger(previousState, nextState) {') !== false, 'rule editor should define explicit safeguard trigger detection for relevant Caller ID and Alert Call transitions');
+assert_true(strpos($jsSource, "Alert Call Caller ID matches an Only monitor these callers entry.") !== false, 'Caller ID safeguard should provide explicit include-list conflict guidance');
 assert_true(strpos($jsSource, 'addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);') !== false, 'Add action should still attempt to add Alert Call destination while preserving de-duplication');
 assert_true(strpos($jsSource, "if (ensureCallerExcludeDestination(destinationRow.destination)) {") !== false, 'Add action should ensure Ignore callers contains the destination even when the destination already exists');
 assert_true(strpos($jsSource, "if (autoAddedIgnoreEntries > 0) {") !== false && strpos($jsSource, 'showAlertCallSelfTriggerWarning();') !== false, 'adding one or more new Alert Call destinations should show a one-time warning when Ignore callers entries are auto-added');
+assert_true(strpos($jsSource, 'var callerIdSafeguard = applyAlertCallCallerIdSelfTriggerSafeguardForSave({') !== false, 'save path should apply Caller ID self-trigger safeguard only through the save trigger gate');
+assert_true(strpos($jsSource, 'if (callerIdSafeguard.conflict) {') !== false, 'save path should block contradictory include-list conflicts for Caller ID safeguard');
 assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarningDurationSeconds = 6;') !== false && strpos($jsSource, 'var alertCallSelfTriggerWarningTimeoutMs = 6000;') !== false, 'self-trigger warning should define explicit 6-second duration constants for toast and local fallback paths');
 assert_true(strpos($jsSource, 'window.notie.alert(2, alertCallSelfTriggerWarning, alertCallSelfTriggerWarningDurationSeconds);') !== false, 'self-trigger warning should use notie alert type 2 with explicit 6-second duration when available');
 assert_true(strpos($jsSource, "window.fpbxToast(alertCallSelfTriggerWarning, '', 'warning', alertCallSelfTriggerWarningTimeoutMs);") === false, 'self-trigger warning should not call fpbxToast with an unsupported per-message timeout argument');
