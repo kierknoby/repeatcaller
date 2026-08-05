@@ -32,6 +32,12 @@ Use with FreePBX/PBXact 16 or 17.
 - PHP 7.4+
 - MariaDB 5.5-compatible schema (utf8/InnoDB key-size compatible)
 
+### Development release compatibility
+
+Repeat Caller 1.0.0 was a development release and should not be used as an
+upgrade source for later releases. Upgrade compatibility guarantees begin with
+the first stable release.
+
 ## Requirements
 
 - FreePBX/PBXact 16 or 17

@@ -33,7 +33,7 @@ class Repeatcaller implements \BMO {
 		'setruleenabled',
 		'getinboundroutes',
 		'getincidents',
-		'claimincident',
+		'acceptincident',
 		'getalerthistory',
 		'clearsuppression',
 		'getuichangetoken',
@@ -232,7 +232,7 @@ class Repeatcaller implements \BMO {
 				case 'getinboundroutes': return $this->rcHandleGetInboundRoutes();
 				case 'getincidents': return $this->rcHandleGetIncidents();
 				case 'getsuppressedincidents': return $this->rcHandleGetSuppressedIncidents();
-				case 'claimincident': return $this->rcHandleClaimIncident();
+				case 'acceptincident': return $this->rcHandleAcceptIncident();
 				case 'getalerthistory': return $this->rcHandleGetAlertHistory();
 				case 'clearsuppression': return $this->rcHandleClearSuppression();
 				case 'getuichangetoken': return $this->rcHandleGetUiChangeToken();
@@ -330,7 +330,7 @@ class Repeatcaller implements \BMO {
 			'globalSettings' => $settings,
 			'rules' => $repository->loadRulesSummary(),
 			'activeIncidents' => $repository->loadIncidents('active', 100),
-			'recentIncidents' => $repository->loadIncidents('claimed', 200),
+			'recentIncidents' => $repository->loadIncidents('accepted', 200),
 			'alertHistory' => $repository->loadIncidentAlertHistory(200),
 			'inboundRoutes' => $repository->loadInboundRoutes(),
 			'systemRecordings' => $this->loadSystemRecordingsForEditor(),
@@ -613,11 +613,11 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleGetIncidents(): array {
 		$view = strtolower(trim((string)($_REQUEST['view'] ?? 'active')));
-		if (!in_array($view, ['active', 'recent', 'claimed'], true)) {
+		if (!in_array($view, ['active', 'recent', 'accepted'], true)) {
 			$view = 'active';
 		}
 		if ($view === 'recent') {
-			$view = 'claimed';
+			$view = 'accepted';
 		}
 		return ['status' => true, 'incidents' => $this->rcRepository()->loadIncidents($view, 300)];
 	}
@@ -647,7 +647,7 @@ class Repeatcaller implements \BMO {
 		];
 	}
 
-	private function rcHandleClaimIncident(): array {
+	private function rcHandleAcceptIncident(): array {
 		$incidentId = $this->positiveRequestId('incident_id');
 		if ($incidentId <= 0) {
 			return ['status' => false, 'message' => _('Missing incident ID.')];
@@ -662,14 +662,14 @@ class Repeatcaller implements \BMO {
 		}
 		$user = $user !== '' ? $user : 'gui';
 		$repository = $this->rcRepository();
-		if (!$repository->claimActiveIncident($incidentId, $user, $this->now(), 'gui')) {
+		if (!$repository->acceptActiveIncident($incidentId, $user, $this->now(), 'gui')) {
 			return ['status' => false, 'message' => _('Incident is not active or was already accepted.')];
 		}
 		return [
 			'status' => true,
 			'message' => _('Incident accepted.'),
 			'activeIncidents' => $repository->loadIncidents('active', 200),
-			'recentIncidents' => $repository->loadIncidents('claimed', 300),
+			'recentIncidents' => $repository->loadIncidents('accepted', 300),
 		];
 	}
 
@@ -732,7 +732,7 @@ class Repeatcaller implements \BMO {
 			'deleted' => $deleted,
 			'alertHistory' => $repository->loadIncidentAlertHistory(300),
 			'suppressedIncidents' => $repository->loadSuppressedIncidentHistory(300),
-			'recentIncidents' => $repository->loadIncidents('claimed', 300),
+			'recentIncidents' => $repository->loadIncidents('accepted', 300),
 		];
 	}
 

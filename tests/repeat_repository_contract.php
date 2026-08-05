@@ -132,9 +132,9 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			last_matched_at TEXT NOT NULL,
 			matched_call_count INTEGER NOT NULL DEFAULT 0,
 			state TEXT NOT NULL,
-			claimed_by TEXT,
-			claimed_at TEXT,
-			claim_source TEXT,
+			accepted_by TEXT,
+			accepted_at TEXT,
+			accept_source TEXT,
 			suppression_expires_at TEXT,
 			cleared_at TEXT,
 			created_at TEXT,
@@ -514,13 +514,13 @@ try {
 	assert_same(3, (int)$updatedIncident['matched_call_count'], 'further matching calls should update the same active incident');
 	assert_same('2026-07-13 09:20:00', $updatedIncident['last_matched_at'], 'updated incident should persist latest matched time');
 
-	assert_true($repo->claimActiveIncident($incidentId, 'admin', '2026-07-13 09:25:00', 'gui'), 'claiming an active incident should succeed');
-	assert_true($repo->loadActiveIncident($ruleId, '+441234567890') === null, 'claim should move the incident out of the active state');
-	assert_true(is_array($repo->loadTrackedIncident($ruleId, '+441234567890')), 'claimed incident should remain tracked so later matching calls update it');
-	$claimedState = $repo->loadSubjectState($ruleId, '+441234567890');
-	assert_same($incidentId, (int)$claimedState['active_incident_id'], 'claim must not clear the subject-state link; later matching calls update the same claimed incident');
-	$claimedIncidentRow = $db->query('SELECT active_subject_key FROM repeatcaller_incidents WHERE id = ' . (int)$incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_true((string)$claimedIncidentRow['active_subject_key'] !== '', 'claimed incident should retain its active subject linkage to block a duplicate active incident');
+	assert_true($repo->acceptActiveIncident($incidentId, 'admin', '2026-07-13 09:25:00', 'gui'), 'accepting an active incident should succeed');
+	assert_true($repo->loadActiveIncident($ruleId, '+441234567890') === null, 'accept should move the incident out of the active state');
+	assert_true(is_array($repo->loadTrackedIncident($ruleId, '+441234567890')), 'accepted incident should remain tracked so later matching calls update it');
+	$acceptedState = $repo->loadSubjectState($ruleId, '+441234567890');
+	assert_same($incidentId, (int)$acceptedState['active_incident_id'], 'accept must not clear the subject-state link; later matching calls update the same accepted incident');
+	$acceptedIncidentRow = $db->query('SELECT active_subject_key FROM repeatcaller_incidents WHERE id = ' . (int)$incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_true((string)$acceptedIncidentRow['active_subject_key'] !== '', 'accepted incident should retain its active subject linkage to block a duplicate active incident');
 
 	$otherIncidentId = $repo->createIncident([
 		'rule_id' => $ruleId,
@@ -538,13 +538,13 @@ try {
 		'created_at' => '2026-07-13 09:26:05',
 		'updated_at' => '2026-07-13 09:26:05',
 	]);
-	assert_true($repo->claimActiveIncident($otherIncidentId, 'admin', '2026-07-13 09:27:00', 'gui'), 'claiming a second active incident should succeed independently');
-	$claimedRows = $repo->loadIncidents('claimed', 50);
-	assert_same(2, count($claimedRows), 'claimed incident retrieval should return all currently claimed incidents');
-	assert_same($otherIncidentId, (int)$claimedRows[0]['id'], 'claimed incident retrieval should order newest claim first');
-	assert_same($incidentId, (int)$claimedRows[1]['id'], 'earlier claimed incident should remain visible after later claims');
+	assert_true($repo->acceptActiveIncident($otherIncidentId, 'admin', '2026-07-13 09:27:00', 'gui'), 'accepting a second active incident should succeed independently');
+	$acceptedRows = $repo->loadIncidents('accepted', 50);
+	assert_same(2, count($acceptedRows), 'accepted incident retrieval should return all currently accepted incidents');
+	assert_same($otherIncidentId, (int)$acceptedRows[0]['id'], 'accepted incident retrieval should order newest accept first');
+	assert_same($incidentId, (int)$acceptedRows[1]['id'], 'earlier accepted incident should remain visible after later accepts');
 
-	$duplicateWhileClaimedFailed = false;
+	$duplicateWhileAcceptedFailed = false;
 	try {
 		$repo->createIncident([
 			'rule_id' => $ruleId,
@@ -565,9 +565,9 @@ try {
 			'updated_at' => '2026-07-13 09:30:05',
 		]);
 	} catch (Throwable $e) {
-		$duplicateWhileClaimedFailed = true;
+		$duplicateWhileAcceptedFailed = true;
 	}
-	assert_true($duplicateWhileClaimedFailed, 'no second incident should be creatable while the claimed incident has not genuinely cleared');
+	assert_true($duplicateWhileAcceptedFailed, 'no second incident should be creatable while the accepted incident has not genuinely cleared');
 
 	$repo->markConditionCleared($ruleId, '+441234567890', '2026-07-13 10:00:00');
 	$rearmedState = $repo->loadSubjectState($ruleId, '+441234567890');
@@ -640,16 +640,16 @@ try {
 	$repo->updateIncidentWithCall($activeProbeIncidentId, '2026-07-13 12:12:00', 2);
 	$tokensAfterActiveUpdate = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterActiveUpdate['activeIncidents'] !== $tokensWithActiveProbe['activeIncidents'], 'active incident updates should change only activeIncidents token');
-	assert_same($tokensWithActiveProbe['claimedIncidents'], $tokensAfterActiveUpdate['claimedIncidents'], 'active incident updates should not change claimedIncidents token');
+	assert_same($tokensWithActiveProbe['acceptedIncidents'], $tokensAfterActiveUpdate['acceptedIncidents'], 'active incident updates should not change acceptedIncidents token');
 	assert_same($tokensWithActiveProbe['alertHistory'], $tokensAfterActiveUpdate['alertHistory'], 'active incident updates should not change alertHistory token');
 	assert_same($tokensWithActiveProbe['engineStatus'], $tokensAfterActiveUpdate['engineStatus'], 'active incident updates should not change engineStatus token');
 
-	assert_true($repo->claimActiveIncident($activeProbeIncidentId, 'admin', '2026-07-13 12:13:00', 'gui'), 'claiming the active probe incident should succeed');
-	$tokensAfterClaim = $repo->loadUiChangeTokens();
-	assert_true($tokensAfterClaim['activeIncidents'] !== $tokensAfterActiveUpdate['activeIncidents'], 'claiming should change activeIncidents token');
-	assert_true($tokensAfterClaim['claimedIncidents'] !== $tokensAfterActiveUpdate['claimedIncidents'], 'claiming should change claimedIncidents token');
-	assert_same($tokensAfterActiveUpdate['alertHistory'], $tokensAfterClaim['alertHistory'], 'claiming should not change alertHistory token');
-	assert_same($tokensAfterActiveUpdate['engineStatus'], $tokensAfterClaim['engineStatus'], 'claiming should not change engineStatus token');
+	assert_true($repo->acceptActiveIncident($activeProbeIncidentId, 'admin', '2026-07-13 12:13:00', 'gui'), 'accepting the active probe incident should succeed');
+	$tokensAfterAccept = $repo->loadUiChangeTokens();
+	assert_true($tokensAfterAccept['activeIncidents'] !== $tokensAfterActiveUpdate['activeIncidents'], 'accepting should change activeIncidents token');
+	assert_true($tokensAfterAccept['acceptedIncidents'] !== $tokensAfterActiveUpdate['acceptedIncidents'], 'accepting should change acceptedIncidents token');
+	assert_same($tokensAfterActiveUpdate['alertHistory'], $tokensAfterAccept['alertHistory'], 'accepting should not change alertHistory token');
+	assert_same($tokensAfterActiveUpdate['engineStatus'], $tokensAfterAccept['engineStatus'], 'accepting should not change engineStatus token');
 
 	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'gui', 'initial', 0, null, 'recorded', 'never', 'repo-token-1', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
@@ -667,16 +667,16 @@ try {
 	assert_same(1, count($orphanRows), 'orphan alert-history row should be queryable');
 	assert_true($orphanRows[0]['incident_mode'] === null, 'alert history should return null incident mode when originating incident row is missing');
 	$tokensAfterAlertInsert = $repo->loadUiChangeTokens();
-	assert_true($tokensAfterAlertInsert['alertHistory'] !== $tokensAfterClaim['alertHistory'], 'alert-history inserts should change alertHistory token');
-	assert_same($tokensAfterClaim['activeIncidents'], $tokensAfterAlertInsert['activeIncidents'], 'alert-history inserts should not change activeIncidents token');
-	assert_same($tokensAfterClaim['claimedIncidents'], $tokensAfterAlertInsert['claimedIncidents'], 'alert-history inserts should not change claimedIncidents token');
-	assert_same($tokensAfterClaim['engineStatus'], $tokensAfterAlertInsert['engineStatus'], 'alert-history inserts should not change engineStatus token');
+	assert_true($tokensAfterAlertInsert['alertHistory'] !== $tokensAfterAccept['alertHistory'], 'alert-history inserts should change alertHistory token');
+	assert_same($tokensAfterAccept['activeIncidents'], $tokensAfterAlertInsert['activeIncidents'], 'alert-history inserts should not change activeIncidents token');
+	assert_same($tokensAfterAccept['acceptedIncidents'], $tokensAfterAlertInsert['acceptedIncidents'], 'alert-history inserts should not change acceptedIncidents token');
+	assert_same($tokensAfterAccept['engineStatus'], $tokensAfterAlertInsert['engineStatus'], 'alert-history inserts should not change engineStatus token');
 
 	$db->prepare('UPDATE repeatcaller_settings SET setting_value = ?, updated_at = ? WHERE setting_key = ?')->execute(['2026-07-13 12:20:00', '2026-07-13 12:20:00', 'engine_last_success_at']);
 	$tokensAfterEngineUpdate = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterEngineUpdate['engineStatus'] !== $tokensAfterAlertInsert['engineStatus'], 'engine last-run updates should change only engineStatus token');
 	assert_same($tokensAfterAlertInsert['activeIncidents'], $tokensAfterEngineUpdate['activeIncidents'], 'engine-only updates should not change activeIncidents token');
-	assert_same($tokensAfterAlertInsert['claimedIncidents'], $tokensAfterEngineUpdate['claimedIncidents'], 'engine-only updates should not change claimedIncidents token');
+	assert_same($tokensAfterAlertInsert['acceptedIncidents'], $tokensAfterEngineUpdate['acceptedIncidents'], 'engine-only updates should not change acceptedIncidents token');
 	assert_same($tokensAfterAlertInsert['alertHistory'], $tokensAfterEngineUpdate['alertHistory'], 'engine-only updates should not change alertHistory token');
 
 	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -686,7 +686,7 @@ try {
 	$tokensAfterDelete = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterDelete['alertHistory'] !== $tokensBeforeDelete['alertHistory'], 'alert-history deletion must change alertHistory token even when max timestamp is unchanged');
 	assert_same($tokensBeforeDelete['activeIncidents'], $tokensAfterDelete['activeIncidents'], 'alert-history deletion should not change activeIncidents token');
-	assert_same($tokensBeforeDelete['claimedIncidents'], $tokensAfterDelete['claimedIncidents'], 'alert-history deletion should not change claimedIncidents token');
+	assert_same($tokensBeforeDelete['acceptedIncidents'], $tokensAfterDelete['acceptedIncidents'], 'alert-history deletion should not change acceptedIncidents token');
 	assert_same($tokensBeforeDelete['engineStatus'], $tokensAfterDelete['engineStatus'], 'alert-history deletion should not change engineStatus token');
 
 	$clearCount = $repo->clearIncidentAlertHistory();
@@ -694,7 +694,7 @@ try {
 	$tokensAfterClear = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterClear['alertHistory'] !== $tokensAfterDelete['alertHistory'], 'clearIncidentAlertHistory should change alertHistory token');
 	assert_same($tokensAfterDelete['activeIncidents'], $tokensAfterClear['activeIncidents'], 'clearIncidentAlertHistory should not change activeIncidents token');
-	assert_same($tokensAfterDelete['claimedIncidents'], $tokensAfterClear['claimedIncidents'], 'clearIncidentAlertHistory should not change claimedIncidents token');
+	assert_same($tokensAfterDelete['acceptedIncidents'], $tokensAfterClear['acceptedIncidents'], 'clearIncidentAlertHistory should not change acceptedIncidents token');
 	assert_same($tokensAfterDelete['engineStatus'], $tokensAfterClear['engineStatus'], 'clearIncidentAlertHistory should not change engineStatus token');
 
 	assert_true($repo->reserveSuppressedIncidentHistory([
@@ -716,7 +716,7 @@ try {
 		'suppression_minutes' => 30,
 		'suppression_started_at' => '2026-07-13 12:20:00',
 		'suppression_expires_at' => '2026-07-13 12:50:00',
-		'related_incident_state' => 'claimed',
+		'related_incident_state' => 'accepted',
 		'detected_at' => '2026-07-13 12:20:00',
 		'created_at' => '2026-07-13 12:20:00',
 		'updated_at' => '2026-07-13 12:20:00',
@@ -740,7 +740,7 @@ try {
 		'suppression_minutes' => 30,
 		'suppression_started_at' => '2026-07-13 12:20:00',
 		'suppression_expires_at' => '2026-07-13 12:50:00',
-		'related_incident_state' => 'claimed',
+		'related_incident_state' => 'accepted',
 		'detected_at' => '2026-07-13 12:20:00',
 		'created_at' => '2026-07-13 12:20:00',
 		'updated_at' => '2026-07-13 12:20:00',
@@ -757,7 +757,7 @@ try {
 	$tokensAfterSuppressionClear = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterSuppressionClear['suppressedIncidents'] !== $tokensAfterSuppressionInsert['suppressedIncidents'], 'suppression history clear should change suppressedIncidents token');
 	assert_same($tokensAfterClear['activeIncidents'], $tokensAfterSuppressionInsert['activeIncidents'], 'suppression history inserts should not change activeIncidents token');
-	assert_same($tokensAfterClear['claimedIncidents'], $tokensAfterSuppressionInsert['claimedIncidents'], 'suppression history inserts should not change claimedIncidents token');
+	assert_same($tokensAfterClear['acceptedIncidents'], $tokensAfterSuppressionInsert['acceptedIncidents'], 'suppression history inserts should not change acceptedIncidents token');
 	assert_same($tokensAfterClear['alertHistory'], $tokensAfterSuppressionInsert['alertHistory'], 'suppression history inserts should not change alertHistory token');
 	assert_same($tokensAfterClear['engineStatus'], $tokensAfterSuppressionInsert['engineStatus'], 'suppression history inserts should not change engineStatus token');
 	assert_same(1, $repo->pruneSuppressedIncidentHistory('2026-07-13 12:40:00'), 'suppression history pruning should delete stale rows');
@@ -803,9 +803,9 @@ try {
 	$deliverable = $repo->loadDeliverableCallAlertByHistoryId($pendingHistoryId, '2026-07-13 12:21:00');
 	assert_true(is_array($deliverable), 'pending alert_call row should be loadable as a deliverable single-row follow-up target');
 	assert_same('102', (string)$deliverable['recipient'], 'single-row deliverable lookup should return the reserved recipient');
-	$repo->claimActiveIncident($followupIncidentId, 'qa', '2026-07-13 12:21:10', 'gui');
-	$deliverableAfterClaim = $repo->loadDeliverableCallAlertByHistoryId($pendingHistoryId, '2026-07-13 12:21:11');
-	assert_true($deliverableAfterClaim === null, 'single-row deliverable lookup should stop once incident is no longer active');
+	$repo->acceptActiveIncident($followupIncidentId, 'qa', '2026-07-13 12:21:10', 'gui');
+	$deliverableAfterAccept = $repo->loadDeliverableCallAlertByHistoryId($pendingHistoryId, '2026-07-13 12:21:11');
+	assert_true($deliverableAfterAccept === null, 'single-row deliverable lookup should stop once incident is no longer active');
 	unset($repo, $db);
 
 	$dbReloaded = new PDO('sqlite:' . $dbPath);

@@ -236,9 +236,9 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			last_matched_at TEXT NOT NULL,
 			matched_call_count INTEGER NOT NULL DEFAULT 0,
 			state TEXT NOT NULL,
-			claimed_by TEXT,
-			claimed_at TEXT,
-			claim_source TEXT,
+			accepted_by TEXT,
+			accepted_at TEXT,
+			accept_source TEXT,
 			suppression_expires_at TEXT,
 			cleared_at TEXT,
 			created_at TEXT,
@@ -399,7 +399,7 @@ try {
 
 	$incident = $db->query('SELECT matched_call_count, state, mode FROM repeatcaller_incidents WHERE rule_id = 1')->fetch(PDO::FETCH_ASSOC);
 	assert_same(3, (int)$incident['matched_call_count'], 'same caller should accumulate matching call journeys into one incident');
-	assert_same('active', $incident['state'], 'repeat incident should remain active until claim or expiry');
+	assert_same('active', $incident['state'], 'repeat incident should remain active until accept or expiry');
 	assert_same('repeat', $incident['mode'], 'repeat mode behavior should remain unchanged when threshold is reached');
 
 	$repeatRun = $processor->run([
@@ -576,12 +576,12 @@ try {
 			'2026-07-13 08:50:00',
 			'2026-07-13 08:50:00',
 			1,
-			'claimed',
+			'accepted',
 			null,
 			'2026-07-13 08:50:00',
 			'2026-07-13 08:50:00',
 		]);
-	$legacyClaimedId = (int)$dbRouteNoActive->lastInsertId();
+	$legacyAcceptedId = (int)$dbRouteNoActive->lastInsertId();
 	$dbRouteNoActive->prepare('INSERT INTO repeatcaller_rule_subject_state (rule_id, subject_key, current_window_started_at, current_window_ends_at, current_window_call_count, threshold_met, clear_observed_since_trigger, active_incident_id, suppression_expires_at, last_call_at, last_evaluated_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			1,
@@ -591,7 +591,7 @@ try {
 			1,
 			1,
 			0,
-			$legacyClaimedId,
+			$legacyAcceptedId,
 			null,
 			'2026-07-13 08:50:00',
 			'2026-07-13 08:50:00',
@@ -609,13 +609,13 @@ try {
 	assert_true(is_array($legacyStateStillExists), 'legacy caller-only state row with no active incident should remain unchanged');
 	$routeNoActiveState = $repositoryRouteNoActive->loadSubjectState(1, $mainNoActiveRouteSubjectKey);
 	assert_true(is_array($routeNoActiveState), 'fresh route-scoped subject state should be created normally when adoption is skipped');
-	$legacyClaimedStillExists = $dbRouteNoActive->query('SELECT id, subject_key, state FROM repeatcaller_incidents WHERE id = ' . $legacyClaimedId)->fetch(PDO::FETCH_ASSOC);
-	assert_same('claimed', (string)$legacyClaimedStillExists['state'], 'legacy claimed incident should not be modified by adoption compatibility path');
-	assert_same($legacyNoActiveSubjectKey, (string)$legacyClaimedStillExists['subject_key'], 'legacy claimed incident subject key should remain caller-only when no active legacy incident exists');
+	$legacyAcceptedStillExists = $dbRouteNoActive->query('SELECT id, subject_key, state FROM repeatcaller_incidents WHERE id = ' . $legacyAcceptedId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('accepted', (string)$legacyAcceptedStillExists['state'], 'legacy accepted incident should not be modified by adoption compatibility path');
+	assert_same($legacyNoActiveSubjectKey, (string)$legacyAcceptedStillExists['subject_key'], 'legacy accepted incident subject key should remain caller-only when no active legacy incident exists');
 	$freshRouteIncident = $dbRouteNoActive->query("SELECT id, state, subject_key FROM repeatcaller_incidents WHERE rule_id = 1 AND subject_key = '" . $mainNoActiveRouteSubjectKey . "' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
 	assert_true(is_array($freshRouteIncident), 'fresh route-scoped active incident should be created when legacy adoption is skipped');
 	assert_same('active', (string)$freshRouteIncident['state'], 'fresh route-scoped incident should be active');
-	assert_true((int)$freshRouteIncident['id'] !== $legacyClaimedId, 'fresh route-scoped incident should not reuse historical claimed incident id');
+	assert_true((int)$freshRouteIncident['id'] !== $legacyAcceptedId, 'fresh route-scoped incident should not reuse historical accepted incident id');
 
 	$dbPathRoute = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPathRoute === false) {
@@ -718,9 +718,9 @@ try {
 	assert_same(4, (int)$mainUpdated['matched_call_count'], 'same caller on the same adopted route should keep updating the preserved incident id');
 	assert_same(2, (int)$secondaryUnchanged['matched_call_count'], 'same caller on a different route should not update the other route incident');
 	assert_same(1, (int)$dbRoute->query("SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1 AND subject_key = '" . $mainRouteSubjectKey . "' AND state = 'active'")->fetchColumn(), 'no duplicate active incident should exist for the adopted route');
-	assert_true($repositoryRoute->claimActiveIncident((int)$mainIncident['id'], 'admin', '2026-07-13 10:31:00', 'gui'), 'main-route incident should remain independently claimable');
-	assert_true($repositoryRoute->claimActiveIncident((int)$secondaryIncident['id'], 'admin', '2026-07-13 10:32:00', 'gui'), 'secondary-route incident should remain independently claimable');
-	assert_same(2, (int)$dbRoute->query("SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1 AND state = 'claimed'")->fetchColumn(), 'both route incidents should remain independently claimable without overwriting each other');
+	assert_true($repositoryRoute->acceptActiveIncident((int)$mainIncident['id'], 'admin', '2026-07-13 10:31:00', 'gui'), 'main-route incident should remain independently acceptable');
+	assert_true($repositoryRoute->acceptActiveIncident((int)$secondaryIncident['id'], 'admin', '2026-07-13 10:32:00', 'gui'), 'secondary-route incident should remain independently acceptable');
+	assert_same(2, (int)$dbRoute->query("SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1 AND state = 'accepted'")->fetchColumn(), 'both route incidents should remain independently acceptable without overwriting each other');
 
 	$dbPath2 = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath2 === false) {
@@ -1084,7 +1084,7 @@ try {
 	$acceptedLifecycleSubjectKey = (string)$acceptedLifecycleIncident['subject_key'];
 	assert_same('active', (string)$acceptedLifecycleIncident['state'], 'initial accepted lifecycle incident should begin as active');
 	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleIncident['suppression_expires_at'], 'accepted lifecycle scenario should use the 24-hour default suppression window');
-	assert_true($repository7AcceptedLifecycle->claimActiveIncident($acceptedLifecycleIncidentId, 'tester', '2026-07-13 09:12:00', 'gui'), 'accepted lifecycle scenario should allow claiming the active incident');
+	assert_true($repository7AcceptedLifecycle->acceptActiveIncident($acceptedLifecycleIncidentId, 'tester', '2026-07-13 09:12:00', 'gui'), 'accepted lifecycle scenario should allow accepting the active incident');
 
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL4', 'calldate' => '2026-07-13 09:15:00', 'src' => '01234440000', 'clid' => '01234440000']);
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL5', 'calldate' => '2026-07-13 09:20:00', 'src' => '01234440000', 'clid' => '01234440000']);
@@ -1100,8 +1100,8 @@ try {
 	assert_true($acceptedLifecycleSecondRun['incidents_updated'] > 0, 'continued qualifying calls while accepted should update the tracked incident');
 	assert_same(0, count($repository7AcceptedLifecycle->loadSuppressedIncidentHistory()), 'continued qualifying calls while accepted should not create suppression-history rows');
 	$acceptedLifecycleAfterUpdate = $db7AcceptedLifecycle->query('SELECT state, matched_call_count, last_matched_at FROM repeatcaller_incidents WHERE id = ' . $acceptedLifecycleIncidentId . ' LIMIT 1')->fetch(PDO::FETCH_ASSOC);
-	assert_same('claimed', (string)$acceptedLifecycleAfterUpdate['state'], 'accepted lifecycle incident should remain claimed while threshold stays true');
-	assert_true((int)$acceptedLifecycleAfterUpdate['matched_call_count'] >= 6, 'accepted lifecycle incident should continue accumulating matching call count while claimed');
+	assert_same('accepted', (string)$acceptedLifecycleAfterUpdate['state'], 'accepted lifecycle incident should remain accepted while threshold stays true');
+	assert_true((int)$acceptedLifecycleAfterUpdate['matched_call_count'] >= 6, 'accepted lifecycle incident should continue accumulating matching call count while accepted');
 
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL7', 'calldate' => '2026-07-13 09:56:00', 'src' => '01234440000', 'clid' => '01234440000']);
 	$acceptedLifecycleClearProcessor = new BackgroundProcessor($db7AcceptedLifecycle, $repository7AcceptedLifecycle, $scanner7AcceptedLifecycle, static function (): string {
@@ -1118,7 +1118,7 @@ try {
 	assert_same(1, (int)$acceptedLifecycleStateAfterClear['clear_observed_since_trigger'], 'accepted lifecycle scenario should record clear_observed_since_trigger once threshold drops below 3 in 30 minutes');
 	assert_same(0, (int)$acceptedLifecycleStateAfterClear['threshold_met'], 'accepted lifecycle scenario should clear threshold_met after falling below threshold');
 	$acceptedLifecycleClosedIncident = $db7AcceptedLifecycle->query('SELECT state, suppression_expires_at, cleared_at FROM repeatcaller_incidents WHERE id = ' . $acceptedLifecycleIncidentId . ' LIMIT 1')->fetch(PDO::FETCH_ASSOC);
-	assert_same('closed', (string)$acceptedLifecycleClosedIncident['state'], 'accepted lifecycle scenario should close the claimed incident once clear is observed');
+	assert_same('closed', (string)$acceptedLifecycleClosedIncident['state'], 'accepted lifecycle scenario should close the accepted incident once clear is observed');
 	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleClosedIncident['suppression_expires_at'], 'accepted lifecycle scenario should preserve suppression expiry on the closed incident');
 
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL8', 'calldate' => '2026-07-13 10:31:00', 'src' => '01234440000', 'clid' => '01234440000']);
@@ -1132,7 +1132,7 @@ try {
 		'default_country_code' => '44',
 	]);
 	assert_same(0, $acceptedLifecycleSuppressedRun['incidents_created'], 'fresh threshold before suppression expiry should be blocked from creating a new incident');
-	assert_same(0, $acceptedLifecycleSuppressedRun['incidents_updated'], 'fresh blocked threshold should not update any tracked incident when none is active or claimed');
+	assert_same(0, $acceptedLifecycleSuppressedRun['incidents_updated'], 'fresh blocked threshold should not update any tracked incident when none is active or accepted');
 	$acceptedLifecycleSuppressedRows = $repository7AcceptedLifecycle->loadSuppressedIncidentHistory();
 	assert_same(1, count($acceptedLifecycleSuppressedRows), 'fresh threshold before suppression expiry should create exactly one suppression-history row');
 	assert_same($acceptedLifecycleIncidentId, (int)$acceptedLifecycleSuppressedRows[0]['related_incident_id'], 'suppression-history row should reference the previously accepted-and-closed incident');

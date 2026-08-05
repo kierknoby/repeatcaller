@@ -317,9 +317,9 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		last_matched_at TEXT NOT NULL,
 		matched_call_count INTEGER NOT NULL DEFAULT 0,
 		state TEXT NOT NULL,
-		claimed_by TEXT,
-		claimed_at TEXT,
-		claim_source TEXT,
+		accepted_by TEXT,
+		accepted_at TEXT,
+		accept_source TEXT,
 		suppression_expires_at TEXT,
 		created_at TEXT,
 		updated_at TEXT
@@ -438,7 +438,7 @@ assert_true(strpos($schemaSource, 'self::ensureScheduleDayOfWeekIsSigned($pdo);'
 $legacyDb = new SchemaUpgradePDO();
 schemaUpgradeCreateLegacyTables($legacyDb);
 
-$legacyDb->prepare('INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display, withheld_caller, mode, first_matched_at, last_matched_at, matched_call_count, state, claimed_by, claimed_at, claim_source, suppression_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')->execute([
+$legacyDb->prepare('INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display, withheld_caller, mode, first_matched_at, last_matched_at, matched_call_count, state, accepted_by, accepted_at, accept_source, suppression_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')->execute([
 	7,
 	'+441234567890',
 	'active-7',
@@ -524,8 +524,8 @@ assert_true(strpos($installSource, 'Set(REPEATCALLER_ATTEMPT=$[${REPEATCALLER_AT
 assert_true(strpos($installSource, 'same => n(begin_attempt),Set(REPEATCALLER_DTMF=)') !== false, 'each attempt must restart from the beginning of the full alert');
 assert_true(strpos($installSource, 'GotoIf($[${REPEATCALLER_ATTEMPT} >= 3]?no_response)') !== false, 'the third unsuccessful attempt must terminate through the no-response path instead of looping again');
 assert_true(strpos($installSource, 'same => n,Goto(begin_attempt)') !== false, 'missing or invalid DTMF must restart the complete alert while attempts remain');
-assert_true(strpos($installSource, 'same => n(no_response),AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third unsuccessful attempt, dialplan must record answered_no_response and hang up unclaimed');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third response window expires, dialplan must record answered_no_response and hang up unclaimed via the deployed AGI-bin script');
+assert_true(strpos($installSource, 'same => n(no_response),AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third unsuccessful attempt, dialplan must record answered_no_response and hang up when the alert call has not been accepted');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third response window expires, dialplan must record answered_no_response and hang up because the alert call was not accepted via the deployed AGI-bin script');
 assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'accepted, declined, and third-attempt no-response terminal outcomes must play thank-you then goodbye');
 assert_true(strpos($installSource, 'exten => h,1,GotoIf($["${REPEATCALLER_ALERT_COMPLETED}"="1"]?done)') !== false, 'hangup during the prompt loop must be recorded as answered_no_response only when no answered terminal outcome already completed');
 assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},dialstatus,${REPEATCALLER_ALERT_RECIPIENT},${DIALSTATUS},${HANGUPCAUSE})') !== false, 'launch context must pass DIALSTATUS and HANGUPCAUSE to the AGI callback after Dial returns');

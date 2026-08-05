@@ -121,9 +121,9 @@ function make_db(): PDO {
 		last_matched_at TEXT NOT NULL,
 		matched_call_count INTEGER NOT NULL DEFAULT 0,
 		state TEXT NOT NULL,
-		claimed_by TEXT,
-		claimed_at TEXT,
-		claim_source TEXT,
+		accepted_by TEXT,
+		accepted_at TEXT,
+		accept_source TEXT,
 		suppression_expires_at TEXT,
 		cleared_at TEXT,
 		created_at TEXT,
@@ -401,7 +401,7 @@ $db->prepare('INSERT INTO repeatcaller_incident_suppression_history (related_inc
 	1440,
 	'2026-07-13 10:00:00',
 	'2026-07-14 10:00:00',
-	'claimed',
+	'accepted',
 	'2026-07-13 10:05:00',
 	'2026-07-13 10:05:00',
 	'2026-07-13 10:05:00'
@@ -608,13 +608,13 @@ assert_same(1, count($catchAll), 'catch-all inbound routes should be explicitly 
 $db->exec("INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, mode, first_matched_at, last_matched_at, matched_call_count, state, created_at, updated_at) VALUES ({$ruleId}, '+441111111111', '{$ruleId}|+441111111111', '+441111111111', 'repeat', '2026-07-13 10:00:00', '2026-07-13 10:05:00', 3, 'active', '2026-07-13 10:00:00', '2026-07-13 10:05:00')");
 $incidentId = (int)$db->lastInsertId();
 $db->exec("INSERT INTO repeatcaller_rule_subject_state (rule_id, subject_key, active_incident_id, updated_at) VALUES ({$ruleId}, '+441111111111', {$incidentId}, '2026-07-13 10:05:00')");
-$claimOk = $repo->claimActiveIncident($incidentId, 'admin', '2026-07-13 10:06:00', 'gui');
-assert_true($claimOk, 'claim should atomically update active incident');
-$incident = $db->query("SELECT state, claimed_by FROM repeatcaller_incidents WHERE id = {$incidentId}")->fetch(PDO::FETCH_ASSOC);
-assert_same('claimed', $incident['state'], 'claimed incident state should persist');
-assert_same('admin', $incident['claimed_by'], 'claim user should persist');
+$acceptOk = $repo->acceptActiveIncident($incidentId, 'admin', '2026-07-13 10:06:00', 'gui');
+assert_true($acceptOk, 'accept should atomically update active incident');
+$incident = $db->query("SELECT state, accepted_by FROM repeatcaller_incidents WHERE id = {$incidentId}")->fetch(PDO::FETCH_ASSOC);
+assert_same('accepted', $incident['state'], 'accepted incident state should persist');
+assert_same('admin', $incident['accepted_by'], 'accept user should persist');
 $subjectState = $db->query("SELECT active_incident_id FROM repeatcaller_rule_subject_state WHERE rule_id = {$ruleId} AND subject_key = '+441111111111'")->fetch(PDO::FETCH_ASSOC);
-assert_same($incidentId, (int)$subjectState['active_incident_id'], 'claimed incident must remain linked in subject state until clear');
+assert_same($incidentId, (int)$subjectState['active_incident_id'], 'accepted incident must remain linked in subject state until clear');
 
 $db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES ({$incidentId}, {$ruleId}, '+441111111111', '+441111111111', 'gui', 'initial', 0, NULL, 'recorded', 'never', 'k1', '2026-07-13 10:00:00', '2026-07-13 10:00:00')");
 $history = $repo->loadIncidentAlertHistory();
@@ -622,10 +622,10 @@ assert_same('gui', $history[0]['action_type'], 'alert history should read from i
 assert_same('any', (string)$history[0]['caller_mode'], 'alert history rows should include caller scope mode for subject presentation');
 assert_same('all', (string)$history[0]['did_scope_mode'], 'alert history rows should include DID scope mode for subject presentation');
 
-$claimedIncidents = $repo->loadIncidents('claimed', 20);
-assert_true(count($claimedIncidents) >= 1, 'claimed incidents should be returned for admin table rendering');
-assert_same('any', (string)$claimedIncidents[0]['caller_mode'], 'incident rows should include caller scope mode for subject presentation');
-assert_same('all', (string)$claimedIncidents[0]['did_scope_mode'], 'incident rows should include DID scope mode for subject presentation');
+$acceptedIncidents = $repo->loadIncidents('accepted', 20);
+assert_true(count($acceptedIncidents) >= 1, 'accepted incidents should be returned for admin table rendering');
+assert_same('any', (string)$acceptedIncidents[0]['caller_mode'], 'incident rows should include caller scope mode for subject presentation');
+assert_same('all', (string)$acceptedIncidents[0]['did_scope_mode'], 'incident rows should include DID scope mode for subject presentation');
 
 $db->exec("INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, mode, first_matched_at, last_matched_at, matched_call_count, state, created_at, updated_at) VALUES ({$ruleId}, 'closed-1', NULL, 'closed-1', 'repeat', '2026-07-01 00:00:00', '2026-07-01 00:00:00', 3, 'closed', '2026-07-01 00:00:00', '2026-07-01 00:00:00')");
 $closedId = (int)$db->lastInsertId();
@@ -1968,15 +1968,15 @@ assert_true((bool)preg_match('/<th><\?php echo _\(\'Rule\'\); \?><\/th><th><\?ph
 assert_true((bool)preg_match('/<th><\?php echo _\(\'ID\'\); \?><\/th><th><\?php echo _\(\'Time\'\); \?><\/th><th><\?php echo _\(\'Rule\'\); \?><\/th><th><\?php echo _\(\'Mode\'\); \?><\/th>/s', $viewSource), 'required alert history columns must remain present');
 assert_true(strpos($viewSource, 'data-label=') === false && strpos($cssSource, 'td:before') === false, 'mobile table card-layout conversion must not be introduced');
 
-// Focused contract: claimincident should read ampuser username property and avoid direct object string-cast.
-assert_true((bool)preg_match('/\$sessionUser = \$_SESSION\[\'AMP_user\'\] \?\? null;/', $controllerSource), 'claimincident must read AMP_user session value first');
-assert_true((bool)preg_match('/if \(is_object\(\$sessionUser\) && isset\(\$sessionUser->username\)\) \{[\s\S]*\$user = trim\(\(string\)\$sessionUser->username\);/', $controllerSource), 'claimincident must resolve object-based ampuser via public username property');
-assert_true((bool)preg_match('/\$user = \$user !== \'\' \? \$user : \'gui\';/', $controllerSource), 'claimincident must fall back to gui when username cannot be resolved');
-assert_true(strpos($controllerSource, "(string)\$_SESSION['AMP_user']") === false, 'claimincident must not directly cast AMP_user session object to string');
+// Focused contract: acceptincident should read ampuser username property and avoid direct object string-cast.
+assert_true((bool)preg_match('/\$sessionUser = \$_SESSION\[\'AMP_user\'\] \?\? null;/', $controllerSource), 'acceptincident must read AMP_user session value first');
+assert_true((bool)preg_match('/if \(is_object\(\$sessionUser\) && isset\(\$sessionUser->username\)\) \{[\s\S]*\$user = trim\(\(string\)\$sessionUser->username\);/', $controllerSource), 'acceptincident must resolve object-based ampuser via public username property');
+assert_true((bool)preg_match('/\$user = \$user !== \'\' \? \$user : \'gui\';/', $controllerSource), 'acceptincident must fall back to gui when username cannot be resolved');
+assert_true(strpos($controllerSource, "(string)\$_SESSION['AMP_user']") === false, 'acceptincident must not directly cast AMP_user session object to string');
 
 $allowedCommands = [
 	'getenginestatus', 'runmonitor', 'saveglobalsettings', 'getrules', 'getrule', 'saverule', 'deleterule', 'setruleenabled',
-	'getinboundroutes', 'getincidents', 'claimincident', 'getalerthistory', 'getuichangetoken', 'setsnooze', 'resumemonitoring', 'prunehistory', 'clearalerthistory', 'saveuisetting'
+	'getinboundroutes', 'getincidents', 'acceptincident', 'getalerthistory', 'getuichangetoken', 'setsnooze', 'resumemonitoring', 'prunehistory', 'clearalerthistory', 'saveuisetting'
 ];
 assert_true(in_array('invalidcommand', $allowedCommands, true) === false, 'invalid ajax commands should be rejected by allowlist');
 assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'getuichangetoken\'[\s\S]*\];/', $controllerSource), 'AJAX command allowlist must include getuichangetoken');
@@ -1999,13 +1999,13 @@ $jsSource = file_get_contents(__DIR__ . '/../assets/js/repeatcaller.js');
 assert_true($jsSource !== false, 'repeatcaller.js source should be readable');
 assert_true((bool)preg_match('/normalizeChangeTokens\(rawTokens\)/', $jsSource), 'UI poller must normalize independent section tokens');
 assert_true((bool)preg_match('/if \(nextTokens\.activeIncidents !== refreshState\.lastTokens\.activeIncidents\)/', $jsSource), 'UI poller must compare active incident token independently');
-assert_true((bool)preg_match('/if \(nextTokens\.claimedIncidents !== refreshState\.lastTokens\.claimedIncidents\)/', $jsSource), 'UI poller must compare claimed incident token independently');
+assert_true((bool)preg_match('/if \(nextTokens\.acceptedIncidents !== refreshState\.lastTokens\.acceptedIncidents\)/', $jsSource), 'UI poller must compare accepted incident token independently');
 assert_true((bool)preg_match('/if \(nextTokens\.alertHistory !== refreshState\.lastTokens\.alertHistory\)/', $jsSource), 'UI poller must compare alert-history token independently');
 assert_true((bool)preg_match('/if \(nextTokens\.suppressedIncidents !== refreshState\.lastTokens\.suppressedIncidents\)/', $jsSource), 'UI poller must compare suppression-history token independently');
 assert_true((bool)preg_match('/if \(nextTokens\.engineStatus !== refreshState\.lastTokens\.engineStatus\)/', $jsSource), 'UI poller must compare engine-status token independently');
 assert_true((bool)preg_match('/loadEngineStatus\(\{silent: true\}\);/', $jsSource), 'engine token change should refresh only engine status');
 assert_true((bool)preg_match('/loadActiveIncidents\(\{silent: true\}\);/', $jsSource), 'active incident token change should refresh only active incidents table');
-assert_true((bool)preg_match('/loadClaimedIncidents\(\{silent: true\}\);/', $jsSource), 'claimed incident token change should refresh only claimed incidents table');
+assert_true((bool)preg_match('/loadAcceptedIncidents\(\{silent: true\}\);/', $jsSource), 'accepted incident token change should refresh only accepted incidents table');
 assert_true((bool)preg_match('/loadAlertHistory\(\{silent: true\}\);/', $jsSource), 'alert-history token change should refresh only alert-history table');
 assert_true((bool)preg_match('/loadSuppressedIncidents\(\{silent: true\}\);/', $jsSource), 'suppression-history token change should refresh only suppressed incidents table');
 assert_true(strpos($jsSource, "ajax('clearsuppression', {suppression_history_id:") !== false, 'suppression history clear action should call clearsuppression backend command');

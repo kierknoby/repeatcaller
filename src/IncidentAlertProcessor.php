@@ -157,7 +157,7 @@ final class IncidentAlertProcessor {
 		$initialSentAt = isset($state['initial_sent_at']) ? (string)$state['initial_sent_at'] : '';
 		$lastAlertAt = isset($state['last_alert_at']) ? trim((string)$state['last_alert_at']) : '';
 
-		if ($incidentState === 'claimed') {
+		if ($incidentState === 'accepted') {
 			if ($lastMatchedAt === '' || $lastAlertAt === '' || !$this->isAfter($lastMatchedAt, $lastAlertAt)) {
 				return;
 			}

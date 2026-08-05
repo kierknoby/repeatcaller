@@ -251,9 +251,9 @@ function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?Fa
 			last_matched_at TEXT NOT NULL,
 			matched_call_count INTEGER NOT NULL DEFAULT 0,
 			state TEXT NOT NULL,
-			claimed_by TEXT,
-			claimed_at TEXT,
-			claim_source TEXT,
+			accepted_by TEXT,
+			accepted_at TEXT,
+			accept_source TEXT,
 			suppression_expires_at TEXT,
 			cleared_at TEXT,
 			created_at TEXT,
@@ -424,7 +424,7 @@ function insert_incident(PDO $db, array $incident): int {
 		'INSERT INTO repeatcaller_incidents
 			(rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 			 withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-			 claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at)
+			 accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at)
 		 VALUES
 			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 	);
@@ -443,9 +443,9 @@ function insert_incident(PDO $db, array $incident): int {
 		$incident['last_matched_at'] ?? $incident['first_matched_at'],
 		$incident['matched_call_count'] ?? 2,
 		$incident['state'] ?? 'active',
-		$incident['claimed_by'] ?? null,
-		$incident['claimed_at'] ?? null,
-		$incident['claim_source'] ?? null,
+		$incident['accepted_by'] ?? null,
+		$incident['accepted_at'] ?? null,
+		$incident['accept_source'] ?? null,
 		$incident['suppression_expires_at'] ?? null,
 		$incident['cleared_at'] ?? null,
 		$incident['created_at'] ?? $incident['first_matched_at'],
@@ -1109,12 +1109,12 @@ assert_same('', (string)$multiDidSender->calls[0]['context']['summary_did_value'
 
 $callHistoryId = (int)$callDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$callIncident} AND action_type = 'alert_call' AND recipient = '100' LIMIT 1")->fetchColumn();
 $accepted = (new RepeatCallerRepository($callDb))->recordAlertCallDtmfResponse($callHistoryId, $callIncident, 'accepted', '100', '1', '2026-07-13 10:01:00');
-$acceptedIncident = $callDb->query("SELECT state, claimed_by, claimed_at, claim_source FROM repeatcaller_incidents WHERE id = {$callIncident}")->fetch(PDO::FETCH_ASSOC);
+$acceptedIncident = $callDb->query("SELECT state, accepted_by, accepted_at, accept_source FROM repeatcaller_incidents WHERE id = {$callIncident}")->fetch(PDO::FETCH_ASSOC);
 $acceptedHistory = $callDb->query("SELECT delivery_status, successful_at, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$callHistoryId}")->fetch(PDO::FETCH_ASSOC);
-assert_true(!empty($accepted['claimed']), 'DTMF 1 should invoke the existing accept path');
-assert_same('claimed', (string)$acceptedIncident['state'], 'DTMF 1 should accept the incident');
-assert_same('alert-call:100', (string)$acceptedIncident['claimed_by'], 'DTMF 1 acceptance should be attributed to the alert-call recipient');
-assert_same('alert_call', (string)$acceptedIncident['claim_source'], 'DTMF 1 acceptance should use the alert_call acceptance source');
+assert_true(!empty($accepted['accepted']), 'DTMF 1 should invoke the existing accept path');
+assert_same('accepted', (string)$acceptedIncident['state'], 'DTMF 1 should accept the incident');
+assert_same('alert-call:100', (string)$acceptedIncident['accepted_by'], 'DTMF 1 acceptance should be attributed to the alert-call recipient');
+assert_same('alert_call', (string)$acceptedIncident['accept_source'], 'DTMF 1 acceptance should use the alert_call acceptance source');
 assert_same('accepted', (string)$acceptedHistory['delivery_status'], 'DTMF 1 should record the alert call as accepted');
 assert_same('incident accepted', (string)$acceptedHistory['failure_detail'], 'DTMF 1 should record an accepted-friendly failure detail');
 assert_same('2026-07-13 10:01:00', (string)$acceptedHistory['successful_at'], 'DTMF 1 should record the accepted response time');
@@ -1175,10 +1175,10 @@ $declineIncident = insert_incident($declineDb, ['rule_id' => $declineRule, 'subj
 $declineProcessor->run(settings());
 $declineHistoryId = (int)$declineDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$declineIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
 (new RepeatCallerRepository($declineDb))->recordAlertCallDtmfResponse($declineHistoryId, $declineIncident, 'declined', '200', '2', '2026-07-13 11:01:00');
-$declinedIncident = $declineDb->query("SELECT state, claimed_by FROM repeatcaller_incidents WHERE id = {$declineIncident}")->fetch(PDO::FETCH_ASSOC);
+$declinedIncident = $declineDb->query("SELECT state, accepted_by FROM repeatcaller_incidents WHERE id = {$declineIncident}")->fetch(PDO::FETCH_ASSOC);
 $declinedHistory = $declineDb->query("SELECT delivery_status, successful_at, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$declineHistoryId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('active', (string)$declinedIncident['state'], 'DTMF 2 should leave the incident active');
-assert_true($declinedIncident['claimed_by'] === null, 'DTMF 2 should not claim the incident');
+assert_true($declinedIncident['accepted_by'] === null, 'DTMF 2 should not accept the incident');
 assert_same('declined', (string)$declinedHistory['delivery_status'], 'DTMF 2 should record the alert call as declined');
 assert_same('Recipient declined the Alert Call', (string)$declinedHistory['failure_detail'], 'DTMF 2 should record a decline-friendly failure detail');
 $declineSameStageRows = count_history($declineDb, "incident_id = {$declineIncident} AND action_type = 'alert_call' AND event_type = 'initial' AND stage_n = 0");
@@ -1197,10 +1197,10 @@ $timeoutIncident = insert_incident($timeoutDb, ['rule_id' => $timeoutRule, 'subj
 $timeoutProcessor->run(settings());
 $timeoutHistoryId = (int)$timeoutDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$timeoutIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
 (new RepeatCallerRepository($timeoutDb))->recordAlertCallDtmfResponse($timeoutHistoryId, $timeoutIncident, 'timeout', '300', '', '2026-07-13 12:01:00');
-$timeoutIncidentRow = $timeoutDb->query("SELECT state, claimed_by FROM repeatcaller_incidents WHERE id = {$timeoutIncident}")->fetch(PDO::FETCH_ASSOC);
+$timeoutIncidentRow = $timeoutDb->query("SELECT state, accepted_by FROM repeatcaller_incidents WHERE id = {$timeoutIncident}")->fetch(PDO::FETCH_ASSOC);
 $timeoutHistory = $timeoutDb->query("SELECT delivery_status, successful_at, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$timeoutHistoryId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('active', (string)$timeoutIncidentRow['state'], 'timeout should leave the incident active');
-assert_true($timeoutIncidentRow['claimed_by'] === null, 'timeout should not claim the incident');
+assert_true($timeoutIncidentRow['accepted_by'] === null, 'timeout should not accept the incident');
 assert_same('answered_no_response', (string)$timeoutHistory['delivery_status'], 'timeout should record answered_no_response');
 assert_true($timeoutHistory['successful_at'] === null, 'timeout should not record a successful response time');
 $timeoutSameStageRows = count_history($timeoutDb, "incident_id = {$timeoutIncident} AND action_type = 'alert_call' AND event_type = 'initial' AND stage_n = 0");
@@ -1219,10 +1219,10 @@ $invalidIncident = insert_incident($invalidDb, ['rule_id' => $invalidRule, 'subj
 $invalidProcessor->run(settings());
 $invalidHistoryId = (int)$invalidDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$invalidIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
 (new RepeatCallerRepository($invalidDb))->recordAlertCallDtmfResponse($invalidHistoryId, $invalidIncident, 'timeout', '400', '9', '2026-07-13 13:01:00');
-$invalidIncidentRow = $invalidDb->query("SELECT state, claimed_by FROM repeatcaller_incidents WHERE id = {$invalidIncident}")->fetch(PDO::FETCH_ASSOC);
+$invalidIncidentRow = $invalidDb->query("SELECT state, accepted_by FROM repeatcaller_incidents WHERE id = {$invalidIncident}")->fetch(PDO::FETCH_ASSOC);
 $invalidHistory = $invalidDb->query("SELECT delivery_status, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$invalidHistoryId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('active', (string)$invalidIncidentRow['state'], 'invalid DTMF should leave the incident active');
-assert_true($invalidIncidentRow['claimed_by'] === null, 'invalid DTMF should not claim the incident');
+assert_true($invalidIncidentRow['accepted_by'] === null, 'invalid DTMF should not accept the incident');
 assert_same('answered_no_response', (string)$invalidHistory['delivery_status'], 'invalid DTMF after all attempts should be recorded as answered_no_response');
 assert_true(strpos((string)$invalidHistory['failure_detail'], 'last digit: 9') !== false, 'invalid DTMF should record the last invalid digit after retries are exhausted');
 
@@ -1233,10 +1233,10 @@ $hangupIncident = insert_incident($hangupDb, ['rule_id' => $hangupRule, 'subject
 $hangupProcessor->run(settings());
 $hangupHistoryId = (int)$hangupDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$hangupIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
 (new RepeatCallerRepository($hangupDb))->recordAlertCallDtmfResponse($hangupHistoryId, $hangupIncident, 'hangup', '450', '', '2026-07-13 13:31:00');
-$hangupIncidentRow = $hangupDb->query("SELECT state, claimed_by FROM repeatcaller_incidents WHERE id = {$hangupIncident}")->fetch(PDO::FETCH_ASSOC);
+$hangupIncidentRow = $hangupDb->query("SELECT state, accepted_by FROM repeatcaller_incidents WHERE id = {$hangupIncident}")->fetch(PDO::FETCH_ASSOC);
 $hangupHistory = $hangupDb->query("SELECT delivery_status, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$hangupHistoryId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('active', (string)$hangupIncidentRow['state'], 'hangup during the prompt loop should leave the incident active');
-assert_true($hangupIncidentRow['claimed_by'] === null, 'hangup during the prompt loop should not claim the incident');
+assert_true($hangupIncidentRow['accepted_by'] === null, 'hangup during the prompt loop should not accept the incident');
 assert_same('answered_no_response', (string)$hangupHistory['delivery_status'], 'hangup during the prompt loop should record answered_no_response');
 assert_true(strpos((string)$hangupHistory['failure_detail'], 'answered call ended without a valid DTMF response') !== false, 'hangup result should record the no-response reason');
 
@@ -1315,20 +1315,20 @@ $answerRepo->recordAlertCallDialDisposition($answerPreserveHistoryId, $answerPre
 $answerRow = $answerPreserveDb->query("SELECT delivery_status FROM repeatcaller_incident_alert_history WHERE id = {$answerPreserveHistoryId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('declined', (string)$answerRow['delivery_status'], 'ANSWER dialstatus callback must not overwrite final DTMF disposition');
 
-$existingClaimClock = new TestClock('2026-07-13 14:00:00');
-[$existingClaimDb, $existingClaimProcessor] = create_alert_environment($existingClaimClock, new FakeEmailSender(), new FakeCallSender());
-$existingClaimRule = insert_rule($existingClaimDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '500', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
-$existingClaimIncident = insert_incident($existingClaimDb, ['rule_id' => $existingClaimRule, 'subject_key' => 'already-claimed', 'first_matched_at' => '2026-07-13 14:00:00', 'suppression_expires_at' => '2026-07-13 15:00:00']);
-$existingClaimProcessor->run(settings());
-$existingClaimHistoryId = (int)$existingClaimDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$existingClaimIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
-(new RepeatCallerRepository($existingClaimDb))->claimActiveIncident($existingClaimIncident, 'admin', '2026-07-13 14:00:30', 'gui');
-$existingClaimResult = (new RepeatCallerRepository($existingClaimDb))->recordAlertCallDtmfResponse($existingClaimHistoryId, $existingClaimIncident, 'accepted', '500', '1', '2026-07-13 14:01:00');
-$existingClaimIncidentRow = $existingClaimDb->query("SELECT state, claimed_by, claimed_at, claim_source FROM repeatcaller_incidents WHERE id = {$existingClaimIncident}")->fetch(PDO::FETCH_ASSOC);
-assert_true(empty($existingClaimResult['claimed']), 'DTMF 1 after an existing claim should not create a second claim');
-assert_same('claimed', (string)$existingClaimIncidentRow['state'], 'existing claimed incident should remain claimed');
-assert_same('admin', (string)$existingClaimIncidentRow['claimed_by'], 'existing claim user must not be overwritten');
-assert_same('2026-07-13 14:00:30', (string)$existingClaimIncidentRow['claimed_at'], 'existing claim timestamp must not be overwritten');
-assert_same('gui', (string)$existingClaimIncidentRow['claim_source'], 'existing claim source must not be overwritten');
+$existingAcceptClock = new TestClock('2026-07-13 14:00:00');
+[$existingAcceptDb, $existingAcceptProcessor] = create_alert_environment($existingAcceptClock, new FakeEmailSender(), new FakeCallSender());
+$existingAcceptRule = insert_rule($existingAcceptDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '500', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
+$existingAcceptIncident = insert_incident($existingAcceptDb, ['rule_id' => $existingAcceptRule, 'subject_key' => 'already-accepted', 'first_matched_at' => '2026-07-13 14:00:00', 'suppression_expires_at' => '2026-07-13 15:00:00']);
+$existingAcceptProcessor->run(settings());
+$existingAcceptHistoryId = (int)$existingAcceptDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$existingAcceptIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
+(new RepeatCallerRepository($existingAcceptDb))->acceptActiveIncident($existingAcceptIncident, 'admin', '2026-07-13 14:00:30', 'gui');
+$existingAcceptResult = (new RepeatCallerRepository($existingAcceptDb))->recordAlertCallDtmfResponse($existingAcceptHistoryId, $existingAcceptIncident, 'accepted', '500', '1', '2026-07-13 14:01:00');
+$existingAcceptIncidentRow = $existingAcceptDb->query("SELECT state, accepted_by, accepted_at, accept_source FROM repeatcaller_incidents WHERE id = {$existingAcceptIncident}")->fetch(PDO::FETCH_ASSOC);
+assert_true(empty($existingAcceptResult['accepted']), 'DTMF 1 after an existing accept should not create a second accept');
+assert_same('accepted', (string)$existingAcceptIncidentRow['state'], 'existing accepted incident should remain accepted');
+assert_same('admin', (string)$existingAcceptIncidentRow['accepted_by'], 'existing accept user must not be overwritten');
+assert_same('2026-07-13 14:00:30', (string)$existingAcceptIncidentRow['accepted_at'], 'existing accept timestamp must not be overwritten');
+assert_same('gui', (string)$existingAcceptIncidentRow['accept_source'], 'existing accept source must not be overwritten');
 
 $callSender->failuresByDestination['101'] = 'originate failed';
 $reminderClock = new TestClock('2026-07-13 10:05:00');
@@ -1350,11 +1350,11 @@ $callIncidentFail = insert_incident($callDbFail, [
 ]);
 $callFailSummary = $callProcessorFail->run(settings());
 $failedCallHistory = $callDbFail->query("SELECT delivery_status, failure_detail FROM repeatcaller_incident_alert_history WHERE incident_id = {$callIncidentFail} AND action_type = 'alert_call' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-$failedCallIncident = $callDbFail->query("SELECT state, claimed_by FROM repeatcaller_incidents WHERE id = {$callIncidentFail}")->fetch(PDO::FETCH_ASSOC);
+$failedCallIncident = $callDbFail->query("SELECT state, accepted_by FROM repeatcaller_incidents WHERE id = {$callIncidentFail}")->fetch(PDO::FETCH_ASSOC);
 assert_same('failed', (string)$failedCallHistory['delivery_status'], 'failed call alerts should store failed result in history');
 assert_same('originate failed', (string)$failedCallHistory['failure_detail'], 'failed call alerts should store transport failure detail');
 assert_same('active', (string)$failedCallIncident['state'], 'originate failure should leave the incident active');
-assert_true($failedCallIncident['claimed_by'] === null, 'originate failure should not claim the incident');
+assert_true($failedCallIncident['accepted_by'] === null, 'originate failure should not accept the incident');
 assert_same(1, $callFailSummary['alert_call_failed'], 'failed call alerts should be counted as failed');
 $failedSameStageRows = count_history($callDbFail, "incident_id = {$callIncidentFail} AND action_type = 'alert_call' AND event_type = 'initial' AND stage_n = 0");
 $failedCallAttemptsBefore = count($callSender->calls);
@@ -1562,18 +1562,18 @@ $clockG->now = '2026-07-13 10:00:00';
 $processorG->run(settings());
 assert_same(0, count_history($dbG, "incident_id = {$incidentGlobal} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'default never mode should not trigger reminders for unset overrides');
 
-// 14, 15, 16: claimed/suppressed incident eligibility
+// 14, 15, 16: accepted/suppressed incident eligibility
 $clockCS = new TestClock('2026-07-13 10:05:00');
 $senderCS = new FakeEmailSender();
 $callSenderCS = new FakeCallSender();
 [$dbCS, $processorCS] = create_alert_environment($clockCS, $senderCS, $callSenderCS);
 $ruleCS = insert_rule($dbCS, ['email_enabled' => 1, 'alert_call_enabled' => 1, 'alert_call_destinations' => '301', 'alert_call_recording_id' => 55, 'repeat_mode_override' => '5m']);
-$claimedNoNewIncident = insert_incident($dbCS, [
+$acceptedNoNewIncident = insert_incident($dbCS, [
 	'rule_id' => $ruleCS,
-	'subject_key' => 'claimed-no-new-subject',
+	'subject_key' => 'accepted-no-new-subject',
 	'first_matched_at' => '2026-07-13 10:00:00',
 	'last_matched_at' => '2026-07-13 10:00:00',
-	'state' => 'claimed',
+	'state' => 'accepted',
 	'suppression_expires_at' => '2026-07-13 11:00:00',
 ]);
 $dbCS->prepare(
@@ -1582,7 +1582,7 @@ $dbCS->prepare(
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
-	$claimedNoNewIncident,
+	$acceptedNoNewIncident,
 	$ruleCS,
 	'5m',
 	'2026-07-13 10:00:00',
@@ -1593,13 +1593,13 @@ $dbCS->prepare(
 	'2026-07-13 10:00:00',
 ]);
 
-$claimedWithNewIncident = insert_incident($dbCS, [
+$acceptedWithNewIncident = insert_incident($dbCS, [
 	'rule_id' => $ruleCS,
-	'subject_key' => 'claimed-with-new-subject',
+	'subject_key' => 'accepted-with-new-subject',
 	'first_matched_at' => '2026-07-13 10:00:00',
 	'last_matched_at' => '2026-07-13 10:03:00',
 	'matched_call_count' => 3,
-	'state' => 'claimed',
+	'state' => 'accepted',
 	'suppression_expires_at' => '2026-07-13 11:00:00',
 ]);
 $dbCS->prepare(
@@ -1608,7 +1608,7 @@ $dbCS->prepare(
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
-	$claimedWithNewIncident,
+	$acceptedWithNewIncident,
 	$ruleCS,
 	'5m',
 	'2026-07-13 10:00:00',
@@ -1627,25 +1627,25 @@ $suppressedIncident = insert_incident($dbCS, [
 	'suppression_expires_at' => '2026-07-13 11:00:00',
 ]);
 $processorCS->run(settings());
-assert_same(0, count_history($dbCS, "incident_id = {$claimedNoNewIncident}"), 'claimed incidents with no new qualifying activity should not generate further alerts');
-assert_same(0, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'gui' AND event_type = 'reminder'"), 'claimed incidents with new qualifying activity should not reserve GUI reminders while suppression remains active');
-assert_same(0, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'email' AND event_type = 'reminder'"), 'claimed incidents with new qualifying activity should not reserve email reminders while suppression remains active');
-assert_same(0, count_history($dbCS, "incident_id = {$claimedWithNewIncident} AND action_type = 'alert_call' AND event_type = 'reminder'"), 'claimed incidents with new qualifying activity should not reserve alert_call reminders while suppression remains active');
-assert_same(0, count($senderCS->calls), 'claimed incidents with new qualifying activity should not send email while suppression remains active');
-assert_same(0, count($callSenderCS->calls), 'claimed incidents with new qualifying activity should not send alert calls while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedNoNewIncident}"), 'accepted incidents with no new qualifying activity should not generate further alerts');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'gui' AND event_type = 'reminder'"), 'accepted incidents with new qualifying activity should not reserve GUI reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'email' AND event_type = 'reminder'"), 'accepted incidents with new qualifying activity should not reserve email reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'alert_call' AND event_type = 'reminder'"), 'accepted incidents with new qualifying activity should not reserve alert_call reminders while suppression remains active');
+assert_same(0, count($senderCS->calls), 'accepted incidents with new qualifying activity should not send email while suppression remains active');
+assert_same(0, count($callSenderCS->calls), 'accepted incidents with new qualifying activity should not send alert calls while suppression remains active');
 
-$claimedWithNewState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedWithNewIncident}")->fetch(PDO::FETCH_ASSOC);
-assert_same('2026-07-13 10:01:00', (string)$claimedWithNewState['last_alert_at'], 'claimed incidents with new qualifying activity should not advance the last-alert checkpoint while suppression remains active');
-assert_same(0, (int)$claimedWithNewState['reminders_sent'], 'claimed incidents with new qualifying activity should not advance the reminder counter while suppression remains active');
+$acceptedWithNewState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedWithNewIncident}")->fetch(PDO::FETCH_ASSOC);
+assert_same('2026-07-13 10:01:00', (string)$acceptedWithNewState['last_alert_at'], 'accepted incidents with new qualifying activity should not advance the last-alert checkpoint while suppression remains active');
+assert_same(0, (int)$acceptedWithNewState['reminders_sent'], 'accepted incidents with new qualifying activity should not advance the reminder counter while suppression remains active');
 assert_same(0, count_history($dbCS, "incident_id = {$suppressedIncident}"), 'suppressed incidents should not generate further alerts');
 
-$claimedAfterExpiry = insert_incident($dbCS, [
+$acceptedAfterExpiry = insert_incident($dbCS, [
 	'rule_id' => $ruleCS,
-	'subject_key' => 'claimed-after-expiry',
+	'subject_key' => 'accepted-after-expiry',
 	'first_matched_at' => '2026-07-13 10:00:00',
 	'last_matched_at' => '2026-07-13 11:05:00',
 	'matched_call_count' => 4,
-	'state' => 'claimed',
+	'state' => 'accepted',
 	'suppression_expires_at' => '2026-07-13 11:00:00',
 ]);
 $dbCS->prepare(
@@ -1654,7 +1654,7 @@ $dbCS->prepare(
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
-	$claimedAfterExpiry,
+	$acceptedAfterExpiry,
 	$ruleCS,
 	'5m',
 	'2026-07-13 10:00:00',
@@ -1666,13 +1666,13 @@ $dbCS->prepare(
 ]);
 $clockCS->now = '2026-07-13 11:05:00';
 $processorCS->run(settings());
-$claimedAfterExpiryState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedAfterExpiry}")->fetch(PDO::FETCH_ASSOC);
-assert_same('2026-07-13 11:05:00', (string)$claimedAfterExpiryState['last_alert_at'], 'claimed incidents should advance the checkpoint once suppression has expired and fresh activity becomes alert-eligible');
-assert_same(1, (int)$claimedAfterExpiryState['reminders_sent'], 'claimed incidents should advance the reminder counter once suppression has expired and fresh activity becomes alert-eligible');
-assert_same(1, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'claimed incidents should reserve one fresh GUI reminder after suppression expires');
-assert_same(1, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND action_type = 'email' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'claimed incidents should deliver one fresh email reminder after suppression expires');
-assert_same(1, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'claimed incidents should deliver one fresh alert_call reminder after suppression expires');
-assert_same(0, count_history($dbCS, "incident_id = {$claimedAfterExpiry} AND event_type = 'reminder' AND stage_n = 2"), 'claimed incidents should not resume older reminder stages once suppression expires');
+$acceptedAfterExpiryState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedAfterExpiry}")->fetch(PDO::FETCH_ASSOC);
+assert_same('2026-07-13 11:05:00', (string)$acceptedAfterExpiryState['last_alert_at'], 'accepted incidents should advance the checkpoint once suppression has expired and fresh activity becomes alert-eligible');
+assert_same(1, (int)$acceptedAfterExpiryState['reminders_sent'], 'accepted incidents should advance the reminder counter once suppression has expired and fresh activity becomes alert-eligible');
+assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'accepted incidents should reserve one fresh GUI reminder after suppression expires');
+assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'email' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'accepted incidents should deliver one fresh email reminder after suppression expires');
+assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'accepted incidents should deliver one fresh alert_call reminder after suppression expires');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND event_type = 'reminder' AND stage_n = 2"), 'accepted incidents should not resume older reminder stages once suppression expires');
 
 // 16 and 17: global snooze handling
 $clockS = new TestClock('2026-07-13 11:00:00');
@@ -1734,12 +1734,12 @@ $closedIncident = insert_incident($dbP, [
 	'updated_at' => '2026-07-01 00:00:00',
 	'state' => 'closed',
 ]);
-$claimedIncident = insert_incident($dbP, [
+$acceptedIncident = insert_incident($dbP, [
 	'rule_id' => $ruleP,
-	'subject_key' => 'claimed-prune',
+	'subject_key' => 'accepted-prune',
 	'first_matched_at' => '2026-07-01 00:00:00',
 	'updated_at' => '2026-07-01 00:00:00',
-	'state' => 'claimed',
+	'state' => 'accepted',
 ]);
 $dbP->prepare(
 	'INSERT INTO repeatcaller_incident_alert_state
@@ -1747,7 +1747,7 @@ $dbP->prepare(
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
-	$claimedIncident,
+	$acceptedIncident,
 	$ruleP,
 	'never',
 	'2026-07-01 00:00:00',
@@ -1835,10 +1835,10 @@ assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incidents WHE
 // alert state even though an unrelated alert_history_prune_policy just pruned its history.
 assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incidents WHERE id = {$closedIncident}")->fetchColumn(), 'incident retention "never" must preserve the incident even after its alert history is pruned');
 assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_state WHERE incident_id = {$closedIncident}")->fetchColumn(), 'incident alert state must not be removed merely because its alert history was pruned');
-// Point 5: claimed incidents are preserved under incident retention "never" -- not
+// Point 5: accepted incidents are preserved under incident retention "never" -- not
 // disposable merely because alerts stopped.
-assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incidents WHERE id = {$claimedIncident}")->fetchColumn(), 'claimed incidents must be preserved under incident retention never');
-assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_state WHERE incident_id = {$claimedIncident}")->fetchColumn(), 'claimed incident alert state must be preserved under incident retention never');
+assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incidents WHERE id = {$acceptedIncident}")->fetchColumn(), 'accepted incidents must be preserved under incident retention never');
+assert_same(1, (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedIncident}")->fetchColumn(), 'accepted incident alert state must be preserved under incident retention never');
 
 $initialEventsAfterFirstRun = (int)$dbP->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$activeIncident} AND event_type = 'initial'")->fetchColumn();
 

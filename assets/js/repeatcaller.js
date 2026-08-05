@@ -4,7 +4,7 @@
 	var refreshState = {
 		lastTokens: {
 			activeIncidents: '',
-			claimedIncidents: '',
+			acceptedIncidents: '',
 			suppressedIncidents: '',
 			alertHistory: '',
 			engineStatus: ''
@@ -29,7 +29,7 @@
 	var systemRecordingsById = {};
 	var currentRulesById = {};
 	var currentActiveIncidents = [];
-	var currentRecentIncidents = [];
+	var currentAcceptedIncidents = [];
 	var currentSuppressedIncidents = [];
 	var currentAlertHistory = [];
 	var currentEngineLastSuccessfulRun = '';
@@ -356,7 +356,7 @@
 		var t = rawTokens || {};
 		return {
 			activeIncidents: String(t.activeIncidents || ''),
-			claimedIncidents: String(t.claimedIncidents || ''),
+			acceptedIncidents: String(t.acceptedIncidents || ''),
 			suppressedIncidents: String(t.suppressedIncidents || ''),
 			alertHistory: String(t.alertHistory || ''),
 			engineStatus: String(t.engineStatus || '')
@@ -364,7 +364,7 @@
 	}
 
 	function hasTokenBaseline(tokens) {
-		return !!(tokens.activeIncidents || tokens.claimedIncidents || tokens.suppressedIncidents || tokens.alertHistory || tokens.engineStatus);
+		return !!(tokens.activeIncidents || tokens.acceptedIncidents || tokens.suppressedIncidents || tokens.alertHistory || tokens.engineStatus);
 	}
 
 	function token() {
@@ -513,8 +513,8 @@
 		if (nextTokens.activeIncidents !== refreshState.lastTokens.activeIncidents) {
 			loadActiveIncidents({silent: true});
 		}
-		if (nextTokens.claimedIncidents !== refreshState.lastTokens.claimedIncidents) {
-			loadClaimedIncidents({silent: true});
+		if (nextTokens.acceptedIncidents !== refreshState.lastTokens.acceptedIncidents) {
+			loadAcceptedIncidents({silent: true});
 		}
 		if (nextTokens.suppressedIncidents !== refreshState.lastTokens.suppressedIncidents) {
 			loadSuppressedIncidents({silent: true});
@@ -621,7 +621,7 @@
 	var statusLabels = {
 		open: 'Open',
 		active: 'Open',
-		claimed: 'Accepted',
+		accepted: 'Accepted',
 		resolved: 'Resolved',
 		suppressed: 'Suppressed',
 		expired: 'Expired',
@@ -790,7 +790,7 @@
 			return;
 		}
 		if (selector === '#rc-recent-incidents-table') {
-			currentRecentIncidents = rows;
+			currentAcceptedIncidents = rows;
 		}
 	}
 
@@ -901,8 +901,8 @@
 		if (ownActiveIncident) {
 			return 'This rule has an active incident.';
 		}
-		var ownClaimedIncident = latestItemForRuleSubject(currentRecentIncidents, ruleId, subjectKey, ['claimed'], 0);
-		if (ownClaimedIncident) {
+		var ownAcceptedIncident = latestItemForRuleSubject(currentAcceptedIncidents, ruleId, subjectKey, ['accepted'], 0);
+		if (ownAcceptedIncident) {
 			return 'This rule has an accepted incident.';
 		}
 
@@ -940,7 +940,7 @@
 	function ruleStatusSentence(rule) {
 		var ruleId = parseInt(rule && rule.id || 0, 10);
 		var activeIncident = latestItemForRule(currentActiveIncidents, ruleId);
-		var latestIncident = latestItemForRule(currentRecentIncidents, ruleId);
+		var latestIncident = latestItemForRule(currentAcceptedIncidents, ruleId);
 		var activeSuppression = latestItemForRule(currentSuppressedIncidents, ruleId);
 		var source = activeIncident || activeSuppression || latestIncident;
 		var matchedCalls = parseInt(source && source.matched_call_count || 0, 10);
@@ -1379,7 +1379,7 @@
 					+ '<td>' + esc(i.observation_window_minutes) + 'm</td>'
 					+ '<td title="' + esc(rawState) + '">' + esc(stateLabel) + '</td>'
 					+ '<td>' + esc(i.updated_at) + '</td>'
-					+ '<td><button type="button" class="btn btn-xs btn-warning rc-claim-incident">Accept</button></td>'
+					+ '<td><button type="button" class="btn btn-xs btn-warning rc-accept-incident">Accept</button></td>'
 					+ '</tr>');
 			} else {
 				rows.push('<tr>'
@@ -1389,7 +1389,7 @@
 					+ '<td>' + esc(detectionMode) + '</td>'
 					+ '<td>' + esc(subjectDisplay) + '</td>'
 					+ '<td title="' + esc(rawState) + '">' + esc(stateLabel) + '</td>'
-					+ '<td>' + esc(i.claimed_by || '-') + '</td>'
+					+ '<td>' + esc(i.accepted_by || '-') + '</td>'
 					+ '<td>' + esc(i.suppression_expires_at || '-') + '</td>'
 					+ '<td>' + esc(i.updated_at) + '</td>'
 					+ '</tr>');
@@ -1409,7 +1409,7 @@
 		var relatedIncidentId = parseInt(row.related_incident_id || 0, 10);
 		var relatedIncidentLabel = relatedIncidentId > 0 ? 'incident #' + relatedIncidentId : 'the previous incident';
 		var suppressionMinutes = parseInt(row.suppression_minutes || 0, 10);
-		if (normalizeCode(row.related_incident_state || '') === 'claimed') {
+		if (normalizeCode(row.related_incident_state || '') === 'accepted') {
 			return 'New incident suppressed until ' + suppressionExpiresAt + ' because ' + relatedIncidentLabel + ' was accepted.';
 		}
 		if (suppressionMinutes > 0) {
@@ -1481,7 +1481,7 @@
 			var statusKey = normalizeCode(rawStatus);
 			var detail = $.trim(String(rawFailureDetail || ''));
 
-			if (statusKey === 'claimed' || statusKey === 'accepted') {
+			if (statusKey === 'accepted' || statusKey === 'accepted') {
 				return 'Incident accepted';
 			}
 			if (statusKey === 'declined') {
@@ -2586,10 +2586,10 @@
 		return $.Deferred().resolve().promise();
 	}
 
-	function loadClaimedIncidents(options) {
+	function loadAcceptedIncidents(options) {
 		var opts = options || {};
 		if ($('#rc-recent-incidents-table').length) {
-			return ajax('getincidents', {view: 'claimed'}, function (response) {
+			return ajax('getincidents', {view: 'accepted'}, function (response) {
 				renderIncidents('#rc-recent-incidents-table', response.incidents || [], false);
 			}, null, {silent: !!opts.silent});
 		}
@@ -2597,7 +2597,7 @@
 	}
 
 	function loadIncidents(options) {
-		return $.when(loadActiveIncidents(options), loadClaimedIncidents(options), loadSuppressedIncidents(options));
+		return $.when(loadActiveIncidents(options), loadAcceptedIncidents(options), loadSuppressedIncidents(options));
 	}
 
 	function loadSuppressedIncidents(options) {
@@ -2979,10 +2979,10 @@
 			});
 		});
 
-		$(document).off('click.repeatcaller', '.rc-claim-incident').on('click.repeatcaller', '.rc-claim-incident', function () {
+		$(document).off('click.repeatcaller', '.rc-accept-incident').on('click.repeatcaller', '.rc-accept-incident', function () {
 			var incidentId = $(this).closest('tr').data('incident-id');
 			beginAction();
-			ajax('claimincident', {incident_id: incidentId}, function (response) {
+			ajax('acceptincident', {incident_id: incidentId}, function (response) {
 				showMessage(response.message || 'Incident accepted.', 'success');
 				renderIncidents('#rc-active-incidents-table', response.activeIncidents || [], true);
 				renderIncidents('#rc-recent-incidents-table', response.recentIncidents || [], false);

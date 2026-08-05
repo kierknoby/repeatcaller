@@ -297,9 +297,9 @@ assert_true(strpos($readmeSource, 'Never disables automatic pruning.') !== false
 assert_true((bool) preg_match('/Available pruning schedule options are:\s+- Never\s+- Hourly\s+- Daily \(default\)\s+- Weekly\s+- Monthly\s+- Yearly/', $readmeSource), 'README should list the complete pruning schedule options in canonical order');
 assert_true(strpos($userGuideSource, 'Never disables automatic pruning.') !== false, 'USER_GUIDE.md should document that Never disables automatic pruning');
 assert_true((bool) preg_match('/Available pruning schedule options are:\s+- Never\s+- Hourly\s+- Daily \(default\)\s+- Weekly\s+- Monthly\s+- Yearly/', $userGuideSource), 'USER_GUIDE.md should list the complete pruning schedule options in canonical order');
-assert_true(strpos($readmeSource, 'Claimed By') === false, 'README must not use Claimed By terminology');
-assert_true(strpos($readmeSource, 'Accepted and claimed') === false, 'README must not use Accepted and claimed wording');
-assert_true(strpos($readmeSource, 'Press 1 to claim') === false, 'README must not use Press 1 to claim wording');
+assert_true(strpos($readmeSource, 'Accepted By') === false, 'README must not use Accepted By terminology');
+assert_true(strpos($readmeSource, 'Accepted and accepted') === false, 'README must not use Accepted and accepted wording');
+assert_true(strpos($readmeSource, 'Press 1 to accept') === false, 'README must not use Press 1 to accept wording');
 assert_true(strpos($userGuideSource, 'Snooze is not suppression.') !== false, 'USER_GUIDE.md should distinguish snooze from suppression');
 
 $testingSource = file_get_contents($root . '/TESTING.md');

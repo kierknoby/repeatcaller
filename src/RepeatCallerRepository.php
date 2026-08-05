@@ -209,7 +209,7 @@ final class RepeatCallerRepository {
 			   AND state IN (?, ?)
 			 ORDER BY subject_key ASC, created_at DESC, id DESC'
 		);
-		$params = array_merge($subjectKeys, ['active', 'claimed']);
+		$params = array_merge($subjectKeys, ['active', 'accepted']);
 		$stmt->execute($params);
 
 		$bySubject = [];
@@ -462,7 +462,7 @@ final class RepeatCallerRepository {
 			 WHERE rule_id = ?
 				AND state IN (?, ?)' 
 		);
-		$closeIncidents->execute(['closed', $now, $now, $ruleId, 'active', 'claimed']);
+		$closeIncidents->execute(['closed', $now, $now, $ruleId, 'active', 'accepted']);
 
 		$clearState = $this->pdo->prepare(
 			'UPDATE repeatcaller_rule_subject_state
@@ -506,16 +506,16 @@ final class RepeatCallerRepository {
 	public function loadIncidents(string $view = 'active', int $limit = 200): array {
 		if ($view === 'active') {
 			$states = ['active'];
-		} elseif ($view === 'claimed') {
-			$states = ['claimed'];
+		} elseif ($view === 'accepted') {
+			$states = ['accepted'];
 		} else {
-			$states = ['active', 'claimed', 'suppressed', 'expired', 'closed'];
+			$states = ['active', 'accepted', 'suppressed', 'expired', 'closed'];
 		}
 		$placeholders = $this->placeholders($states);
 		$stmt = $this->pdo->prepare(
 			'SELECT i.id, i.rule_id, i.subject_key, i.subject_label, i.caller_normalized, i.caller_display,
 				i.withheld_caller, i.mode, i.threshold_count, i.observation_window_minutes, i.first_matched_at, i.last_matched_at, i.matched_call_count,
-				i.state, i.claimed_by, i.claimed_at, i.claim_source, i.suppression_expires_at,
+				i.state, i.accepted_by, i.accepted_at, i.accept_source, i.suppression_expires_at,
 				i.cleared_at, i.created_at, i.updated_at,
 				r.name AS rule_name,
 				r.caller_mode, r.did_scope_mode
@@ -530,7 +530,7 @@ final class RepeatCallerRepository {
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
-	public function claimActiveIncident(int $incidentId, string $claimedBy, string $claimedAt, string $claimSource = 'gui'): bool {
+	public function acceptActiveIncident(int $incidentId, string $acceptedBy, string $acceptedAt, string $acceptSource = 'gui'): bool {
 		$select = $this->pdo->prepare('SELECT id, rule_id, subject_key FROM repeatcaller_incidents WHERE id = ? AND state = ? LIMIT 1');
 		$select->execute([$incidentId, 'active']);
 		$row = $select->fetch(PDO::FETCH_ASSOC);
@@ -540,19 +540,19 @@ final class RepeatCallerRepository {
 
 		$update = $this->pdo->prepare(
 			'UPDATE repeatcaller_incidents
-			 SET state = ?, claimed_by = ?, claimed_at = ?, claim_source = ?, updated_at = ?
+			 SET state = ?, accepted_by = ?, accepted_at = ?, accept_source = ?, updated_at = ?
 			 WHERE id = ? AND state = ?'
 		);
-		$update->execute(['claimed', $claimedBy, $claimedAt, $claimSource, $claimedAt, $incidentId, 'active']);
+		$update->execute(['accepted', $acceptedBy, $acceptedAt, $acceptSource, $acceptedAt, $incidentId, 'active']);
 		$verify = $this->pdo->prepare('SELECT state FROM repeatcaller_incidents WHERE id = ? LIMIT 1');
 		$verify->execute([$incidentId]);
-		if ((string)$verify->fetchColumn() !== 'claimed') {
+		if ((string)$verify->fetchColumn() !== 'accepted') {
 			return false;
 		}
 
 		$state = $this->loadSubjectState((int)$row['rule_id'], (string)$row['subject_key']) ?? [];
 		$state['active_incident_id'] = $incidentId;
-		$state['last_evaluated_at'] = $claimedAt;
+		$state['last_evaluated_at'] = $acceptedAt;
 		$this->saveSubjectState((int)$row['rule_id'], (string)$row['subject_key'], $state);
 
 		return true;
@@ -623,7 +623,7 @@ final class RepeatCallerRepository {
 
 	public function loadUiChangeTokens(): array {
 		$incidentActive = $this->aggregateStateSnapshot('repeatcaller_incidents', "state = 'active'");
-		$incidentClaimed = $this->aggregateStateSnapshot('repeatcaller_incidents', "state = 'claimed'");
+		$incidentAccepted = $this->aggregateStateSnapshot('repeatcaller_incidents', "state = 'accepted'");
 		$alertHistory = $this->aggregateStateSnapshot('repeatcaller_incident_alert_history', '1 = 1');
 		$suppressionHistory = $this->aggregateStateSnapshot('repeatcaller_incident_suppression_history', '1 = 1');
 
@@ -654,9 +654,9 @@ final class RepeatCallerRepository {
 			'v' => '1',
 			'active' => $incidentActive,
 		];
-		$claimedSnapshot = [
+		$acceptedSnapshot = [
 			'v' => '1',
-			'claimed' => $incidentClaimed,
+			'accepted' => $incidentAccepted,
 		];
 		$alertSnapshot = [
 			'v' => '1',
@@ -674,7 +674,7 @@ final class RepeatCallerRepository {
 
 		return [
 			'activeIncidents' => hash('sha256', json_encode($activeSnapshot)),
-			'claimedIncidents' => hash('sha256', json_encode($claimedSnapshot)),
+			'acceptedIncidents' => hash('sha256', json_encode($acceptedSnapshot)),
 			'alertHistory' => hash('sha256', json_encode($alertSnapshot)),
 			'suppressedIncidents' => hash('sha256', json_encode($suppressionSnapshot)),
 			'engineStatus' => hash('sha256', json_encode($engineSnapshot)),
@@ -1031,14 +1031,14 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadTrackedIncident(int $ruleId, string $subjectKey): ?array {
-		return $this->loadOpenIncident($ruleId, $subjectKey, ['active', 'claimed']);
+		return $this->loadOpenIncident($ruleId, $subjectKey, ['active', 'accepted']);
 	}
 
 	public function loadMostRecentIncidentForSubject(int $ruleId, string $subjectKey): ?array {
 		$stmt = $this->pdo->prepare(
 			'SELECT id, rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 				withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-				claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at
+				accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at
 			 FROM repeatcaller_incidents
 			 WHERE rule_id = ? AND subject_key = ?
 			 ORDER BY created_at DESC, id DESC
@@ -1055,7 +1055,7 @@ final class RepeatCallerRepository {
 		$stmt = $this->pdo->prepare(
 			'SELECT id, rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 				withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-				claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at
+				accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at
 			 FROM repeatcaller_incidents
 			 WHERE rule_id = ? AND subject_key = ? AND state IN (' . $placeholders . ')
 			 LIMIT 1'
@@ -1091,7 +1091,7 @@ final class RepeatCallerRepository {
 			'INSERT INTO repeatcaller_incidents
 				(rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 				 withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-				 claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at)
+				 accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at)
 			 VALUES
 				(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 		);
@@ -1110,9 +1110,9 @@ final class RepeatCallerRepository {
 			(string)$incident['last_matched_at'],
 			(int)($incident['matched_call_count'] ?? 0),
 			$state,
-			$this->nullableString($incident['claimed_by'] ?? null),
-			$this->nullableString($incident['claimed_at'] ?? null),
-			$this->nullableString($incident['claim_source'] ?? null),
+			$this->nullableString($incident['accepted_by'] ?? null),
+			$this->nullableString($incident['accepted_at'] ?? null),
+			$this->nullableString($incident['accept_source'] ?? null),
 			$this->nullableString($incident['suppression_expires_at'] ?? null),
 			$this->nullableString($incident['cleared_at'] ?? null),
 			(string)$incident['created_at'],
@@ -1166,7 +1166,7 @@ final class RepeatCallerRepository {
 				 updated_at = ?
 			 WHERE rule_id = ? AND subject_key = ? AND state IN (?, ?, ?, ?)' 
 		);
-		$stmt->execute(['closed', $clearedAt, $clearedAt, $ruleId, $subjectKey, 'active', 'claimed', 'suppressed', 'expired']);
+		$stmt->execute(['closed', $clearedAt, $clearedAt, $ruleId, $subjectKey, 'active', 'accepted', 'suppressed', 'expired']);
 	}
 
 	public function expireActiveIncidents(string $now): int {
@@ -1198,7 +1198,7 @@ final class RepeatCallerRepository {
 		$stmt = $this->pdo->prepare(
 			'SELECT i.id, i.rule_id, i.subject_key, i.subject_label, i.caller_normalized, i.caller_display,
 				i.withheld_caller, i.mode, i.first_matched_at, i.last_matched_at, i.matched_call_count,
-				i.state, i.claimed_by, i.claimed_at, i.claim_source, i.suppression_expires_at,
+				i.state, i.accepted_by, i.accepted_at, i.accept_source, i.suppression_expires_at,
 				r.name AS rule_name, r.enabled AS rule_enabled, ' . $emailEnabledExpr . ' AS email_enabled,
 				' . $emailRecipientsExpr . ' AS email_recipients,
 				' . $alertCallEnabledExpr . ' AS alert_call_enabled, ' . $alertCallDestinationsExpr . ' AS alert_call_destinations,
@@ -1222,7 +1222,7 @@ final class RepeatCallerRepository {
 			 ORDER BY i.first_matched_at ASC, i.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['active', 'claimed', $now, 'active', $now]);
+		$stmt->execute(['active', 'accepted', $now, 'active', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1512,7 +1512,7 @@ final class RepeatCallerRepository {
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['email', 'pending', 'failed', 'snoozed', $now, 'active', $now, 'claimed', $now]);
+		$stmt->execute(['email', 'pending', 'failed', 'snoozed', $now, 'active', $now, 'accepted', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1577,27 +1577,27 @@ final class RepeatCallerRepository {
 	public function recordAlertCallDtmfResponse(int $historyId, int $incidentId, string $response, string $recipient, string $digit, string $now): array {
 		$row = $this->loadAlertCallAttempt($historyId, $incidentId);
 		if ($row === null) {
-			return ['status' => false, 'claimed' => false, 'message' => 'alert call attempt not found'];
+			return ['status' => false, 'accepted' => false, 'message' => 'alert call attempt not found'];
 		}
 
 		$storedRecipient = trim((string)($row['recipient'] ?? ''));
 		if ($recipient !== '' && $storedRecipient !== '' && $recipient !== $storedRecipient) {
-			return ['status' => false, 'claimed' => false, 'message' => 'alert call recipient mismatch'];
+			return ['status' => false, 'accepted' => false, 'message' => 'alert call recipient mismatch'];
 		}
 
 		$response = strtolower(trim($response));
 		$digit = trim($digit);
-		$claimed = false;
+		$accepted = false;
 		$deliveryStatus = self::ALERT_CALL_OUTCOME_ANSWERED_NO_RESPONSE;
 		$successfulAt = null;
 		$failureDetail = null;
 
 		if ($response === self::ALERT_CALL_OUTCOME_ACCEPTED) {
-			$claimedBy = 'alert-call' . ($storedRecipient !== '' ? ':' . $storedRecipient : '');
-			$claimed = $this->claimActiveIncident($incidentId, $claimedBy, $now, 'alert_call');
+			$acceptedBy = 'alert-call' . ($storedRecipient !== '' ? ':' . $storedRecipient : '');
+			$accepted = $this->acceptActiveIncident($incidentId, $acceptedBy, $now, 'alert_call');
 			$deliveryStatus = self::ALERT_CALL_OUTCOME_ACCEPTED;
 			$successfulAt = $now;
-			$failureDetail = $claimed ? 'incident accepted' : 'accepted after incident was already accepted or no longer active';
+			$failureDetail = $accepted ? 'incident accepted' : 'accepted after incident was already accepted or no longer active';
 		} elseif ($response === self::ALERT_CALL_OUTCOME_DECLINED) {
 			$deliveryStatus = self::ALERT_CALL_OUTCOME_DECLINED;
 			$successfulAt = $now;
@@ -1612,11 +1612,11 @@ final class RepeatCallerRepository {
 
 		$updated = $this->updateAlertCallAttemptResult($historyId, $deliveryStatus, $successfulAt, $failureDetail, $now);
 		$reservedNextHistoryId = null;
-		if ($updated && !$claimed && $deliveryStatus !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
+		if ($updated && !$accepted && $deliveryStatus !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
 			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now);
 		}
 
-		return ['status' => $updated, 'claimed' => $claimed, 'delivery_status' => $deliveryStatus, 'next_history_id' => $reservedNextHistoryId];
+		return ['status' => $updated, 'accepted' => $accepted, 'delivery_status' => $deliveryStatus, 'next_history_id' => $reservedNextHistoryId];
 	}
 
 	public function recordAlertCallDialDisposition(int $historyId, int $incidentId, string $recipient, string $dialStatus, string $hangupCause, string $now): array {
@@ -1740,7 +1740,7 @@ final class RepeatCallerRepository {
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['alert_call', 'pending', 'snoozed', $now, 'active', $now, 'claimed', $now]);
+		$stmt->execute(['alert_call', 'pending', 'snoozed', $now, 'active', $now, 'accepted', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1775,7 +1775,7 @@ final class RepeatCallerRepository {
 				AND ' . $isDeletedExpr . ' = 0
 			 LIMIT 1'
 		);
-		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now, 'claimed', $now]);
+		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now, 'accepted', $now]);
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		return is_array($row) ? $row : null;
