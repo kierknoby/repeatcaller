@@ -284,6 +284,8 @@ Repeat alert emails now show one reminder line:
 
 - Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 
+Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from PBXSRV20-ONP. If the identifier is unavailable, the email uses a sensible fallback.
+
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country

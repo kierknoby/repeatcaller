@@ -109,6 +109,8 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 Repeat alert emails now show one reminder line:
 
 - Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
+
+Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from PBXSRV20-ONP. If the identifier is unavailable, the email uses a sensible fallback.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.

@@ -613,8 +613,9 @@ final class IncidentAlertProcessor {
 	}
 
 	private function buildEmailMessage(array $row, string $now): string {
+		$systemIdentifier = $this->getSystemIdentifier();
 		$lines = [];
-		$lines[] = 'Repeat Caller incident alert';
+		$lines[] = 'Repeat Caller incident alert from ' . $systemIdentifier;
 		$lines[] = '';
 		$lines[] = 'Rule: ' . (string)($row['rule_name'] ?? '-');
 		$lines[] = 'Subject: ' . (string)($row['subject_label'] ?? $row['subject_key'] ?? '-');
@@ -640,6 +641,18 @@ final class IncidentAlertProcessor {
 			'repeat' => 'Repeat',
 			'invert' => 'Invert',
 		], 'Unknown');
+	}
+
+	private function getSystemIdentifier(): string {
+		try {
+			$value = trim((string)\FreePBX::Config()->get('FREEPBX_SYSTEM_IDENT'));
+			if ($value !== '') {
+				return preg_replace('/\s+/', ' ', $value) ?? $value;
+			}
+		} catch (\Throwable $e) {
+		}
+
+		return 'unknown system';
 	}
 
 	private function formatRepeatModeLabel(string $mode): string {

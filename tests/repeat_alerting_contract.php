@@ -495,7 +495,7 @@ function settings(array $overrides = []): array {
 	], $overrides);
 }
 
-FreePBX::$config = [];
+FreePBX::$config = ['FREEPBX_SYSTEM_IDENT' => 'PBXSRV20-ONP'];
 FreePBX::$recordings = [
 	['id' => 41, 'displayname' => 'Intro', 'filename' => 'intro.wav', 'fcode_lang' => 'en_GB'],
 ];
@@ -509,6 +509,9 @@ assert_true(strpos($classSource, 'en_US') === false && strpos($classSource, 'en_
 assert_true(strpos($classSource, "'Account' => 'repeatcaller_alert_internal'") !== false, 'alert call originate should apply an internal account marker for module-originated call legs');
 assert_true(strpos($classSource, 'REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1') !== false, 'alert call originate variables should carry explicit internal-origin marker flags for module-owned legs');
 assert_true(strpos($classSource, 'if ($callerId !== \'\') {') !== false && strpos($classSource, '$params[\'CallerID\'] = $callerId;') !== false, 'originate should only include CallerID when Repeat Caller is explicitly setting a nonblank value');
+$alertProcessorSource = file_get_contents(__DIR__ . '/../src/IncidentAlertProcessor.php');
+assert_true($alertProcessorSource !== false, 'IncidentAlertProcessor.php should be readable for system identifier contract checks');
+assert_true(strpos($alertProcessorSource, "FreePBX::Config()->get('FREEPBX_SYSTEM_IDENT')") !== false, 'email output should source the system identifier from the supported FreePBX Config API');
 
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for language fallback contract checks');
@@ -546,6 +549,8 @@ assert_same(1, count_history($db, "incident_id = {$incidentB} AND action_type = 
 assert_same(1, count($sender->calls), 'email sender should run only for email-enabled incident');
 $initialEmailSubject = (string)$sender->calls[0]['subject'];
 assert_same('Repeat Caller: incident started [Email Rule] +441234500001', $initialEmailSubject, 'repeat-mode email subject should keep the stored subject label');
+$initialEmailSubjectBody = (string)$sender->calls[0]['message'];
+assert_true(strpos($initialEmailSubjectBody, 'Repeat Caller incident alert from PBXSRV20-ONP') !== false, 'email body should include the configured FreePBX System Identifier in the opening line');
 $emailMessage = (string)$sender->calls[0]['message'];
 assert_true(strpos($emailMessage, 'Mode: Repeat') !== false, 'email output should render repeat detection mode as Repeat');
 	assert_true(strpos($emailMessage, 'Alert Reminder: Never') !== false, 'email output should render the effective reminder mode as Alert Reminder');
@@ -587,6 +592,22 @@ $globalEmailMessage = (string)$senderGlobalEmail->calls[0]['message'];
 	assert_true(strpos($globalEmailMessage, 'Alert Reminder: Every 5 Minutes') !== false, 'email output should render the effective 5m repeat mode as Alert Reminder');
 	assert_true(strpos($globalEmailMessage, 'Rule Repeat Mode:') === false && strpos($globalEmailMessage, 'Effective Repeat Mode:') === false, 'email output should not expose duplicate repeat-mode labels in the alert email');
 assert_true(strpos($globalEmailMessage, 'Event: Initial') !== false, 'email output should render event type label as Initial');
+
+FreePBX::$config = [];
+$fallbackClock = new TestClock('2026-07-13 10:12:00');
+$fallbackSender = new FakeEmailSender();
+[$fallbackDb, $fallbackProcessor] = create_alert_environment($fallbackClock, $fallbackSender);
+$fallbackRule = insert_rule($fallbackDb, ['name' => 'Fallback Email Rule', 'email_enabled' => 1, 'repeat_mode_override' => 'never']);
+insert_incident($fallbackDb, [
+	'rule_id' => $fallbackRule,
+	'subject_key' => '+441234511111',
+	'subject_label' => '+441234511111',
+	'first_matched_at' => '2026-07-13 10:12:00',
+	'suppression_expires_at' => '2026-07-13 11:12:00',
+]);
+$fallbackProcessor->run(settings());
+assert_same(1, count($fallbackSender->calls), 'fallback identifier scenario should send one email');
+assert_true(strpos((string)$fallbackSender->calls[0]['message'], 'Repeat Caller incident alert from unknown system') !== false, 'email body should use a sensible fallback when the FreePBX System Identifier is unavailable');
 
 $summaryRerun = $processor->run(settings());
 assert_same(0, $summaryRerun['initial_events'], 're-run at same timestamp should not create duplicate initial stage');
