@@ -1053,6 +1053,101 @@ try {
 	assert_same(1, $thirdSuppressionRun['incidents_created'], 'manual clear should allow the subject to trigger again immediately');
 	assert_same(1, count($repository7->loadSuppressedIncidentHistory()), 'manual clear should preserve the audit row until a fresh refusal occurs');
 
+	$dbPath7AcceptedLifecycle = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPath7AcceptedLifecycle === false) {
+		throw new RuntimeException('Unable to create accepted suppression lifecycle runtime contract SQLite file');
+	}
+	[$db7AcceptedLifecycle, $repository7AcceptedLifecycle, $scanner7AcceptedLifecycle, $processor7AcceptedLifecycle] = create_runtime_environment($dbPath7AcceptedLifecycle, '2026-07-13 09:11:00');
+	insert_route($db7AcceptedLifecycle, '18005550001', '', 'Main');
+	$acceptedLifecycleRuleId = insert_rule($db7AcceptedLifecycle, [
+		'name' => 'Accepted Suppression Lifecycle Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 3,
+		'observation_window_minutes' => 30,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'suppression_minutes_override' => '',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL1', 'calldate' => '2026-07-13 09:00:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL2', 'calldate' => '2026-07-13 09:05:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL3', 'calldate' => '2026-07-13 09:10:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	$acceptedLifecycleFirstRun = $processor7AcceptedLifecycle->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $acceptedLifecycleFirstRun['incidents_created'], 'first threshold crossing should create one incident for accepted lifecycle scenario');
+	$acceptedLifecycleIncident = $db7AcceptedLifecycle->query('SELECT id, subject_key, state, matched_call_count, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $acceptedLifecycleRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($acceptedLifecycleIncident), 'accepted lifecycle scenario should create an incident row');
+	$acceptedLifecycleIncidentId = (int)$acceptedLifecycleIncident['id'];
+	$acceptedLifecycleSubjectKey = (string)$acceptedLifecycleIncident['subject_key'];
+	assert_same('active', (string)$acceptedLifecycleIncident['state'], 'initial accepted lifecycle incident should begin as active');
+	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleIncident['suppression_expires_at'], 'accepted lifecycle scenario should use the 24-hour default suppression window');
+	assert_true($repository7AcceptedLifecycle->claimActiveIncident($acceptedLifecycleIncidentId, 'tester', '2026-07-13 09:12:00', 'gui'), 'accepted lifecycle scenario should allow claiming the active incident');
+
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL4', 'calldate' => '2026-07-13 09:15:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL5', 'calldate' => '2026-07-13 09:20:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL6', 'calldate' => '2026-07-13 09:25:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	$acceptedLifecycleSecondProcessor = new BackgroundProcessor($db7AcceptedLifecycle, $repository7AcceptedLifecycle, $scanner7AcceptedLifecycle, static function (): string {
+		return '2026-07-13 09:26:00';
+	});
+	$acceptedLifecycleSecondRun = $acceptedLifecycleSecondProcessor->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $acceptedLifecycleSecondRun['incidents_created'], 'continued qualifying calls while accepted should not create a new incident');
+	assert_true($acceptedLifecycleSecondRun['incidents_updated'] > 0, 'continued qualifying calls while accepted should update the tracked incident');
+	assert_same(0, count($repository7AcceptedLifecycle->loadSuppressedIncidentHistory()), 'continued qualifying calls while accepted should not create suppression-history rows');
+	$acceptedLifecycleAfterUpdate = $db7AcceptedLifecycle->query('SELECT state, matched_call_count, last_matched_at FROM repeatcaller_incidents WHERE id = ' . $acceptedLifecycleIncidentId . ' LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_same('claimed', (string)$acceptedLifecycleAfterUpdate['state'], 'accepted lifecycle incident should remain claimed while threshold stays true');
+	assert_true((int)$acceptedLifecycleAfterUpdate['matched_call_count'] >= 6, 'accepted lifecycle incident should continue accumulating matching call count while claimed');
+
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL7', 'calldate' => '2026-07-13 09:56:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	$acceptedLifecycleClearProcessor = new BackgroundProcessor($db7AcceptedLifecycle, $repository7AcceptedLifecycle, $scanner7AcceptedLifecycle, static function (): string {
+		return '2026-07-13 09:57:00';
+	});
+	$acceptedLifecycleClearRun = $acceptedLifecycleClearProcessor->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $acceptedLifecycleClearRun['incidents_created'], 'clear-observation pass should not create a new incident');
+	assert_same(0, $acceptedLifecycleClearRun['incidents_updated'], 'clear-observation pass should close prior incident instead of updating it');
+	$acceptedLifecycleStateAfterClear = $repository7AcceptedLifecycle->loadSubjectState($acceptedLifecycleRuleId, $acceptedLifecycleSubjectKey);
+	assert_true(is_array($acceptedLifecycleStateAfterClear), 'accepted lifecycle scenario should retain subject state after clear observation');
+	assert_same(1, (int)$acceptedLifecycleStateAfterClear['clear_observed_since_trigger'], 'accepted lifecycle scenario should record clear_observed_since_trigger once threshold drops below 3 in 30 minutes');
+	assert_same(0, (int)$acceptedLifecycleStateAfterClear['threshold_met'], 'accepted lifecycle scenario should clear threshold_met after falling below threshold');
+	$acceptedLifecycleClosedIncident = $db7AcceptedLifecycle->query('SELECT state, suppression_expires_at, cleared_at FROM repeatcaller_incidents WHERE id = ' . $acceptedLifecycleIncidentId . ' LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_same('closed', (string)$acceptedLifecycleClosedIncident['state'], 'accepted lifecycle scenario should close the claimed incident once clear is observed');
+	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleClosedIncident['suppression_expires_at'], 'accepted lifecycle scenario should preserve suppression expiry on the closed incident');
+
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL8', 'calldate' => '2026-07-13 10:31:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL9', 'calldate' => '2026-07-13 10:35:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL10', 'calldate' => '2026-07-13 10:40:00', 'src' => '01234440000', 'clid' => '01234440000']);
+	$acceptedLifecycleSuppressedProcessor = new BackgroundProcessor($db7AcceptedLifecycle, $repository7AcceptedLifecycle, $scanner7AcceptedLifecycle, static function (): string {
+		return '2026-07-13 10:41:00';
+	});
+	$acceptedLifecycleSuppressedRun = $acceptedLifecycleSuppressedProcessor->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $acceptedLifecycleSuppressedRun['incidents_created'], 'fresh threshold before suppression expiry should be blocked from creating a new incident');
+	assert_same(0, $acceptedLifecycleSuppressedRun['incidents_updated'], 'fresh blocked threshold should not update any tracked incident when none is active or claimed');
+	$acceptedLifecycleSuppressedRows = $repository7AcceptedLifecycle->loadSuppressedIncidentHistory();
+	assert_same(1, count($acceptedLifecycleSuppressedRows), 'fresh threshold before suppression expiry should create exactly one suppression-history row');
+	assert_same($acceptedLifecycleIncidentId, (int)$acceptedLifecycleSuppressedRows[0]['related_incident_id'], 'suppression-history row should reference the previously accepted-and-closed incident');
+	assert_same('closed', (string)$acceptedLifecycleSuppressedRows[0]['related_incident_state'], 'suppression-history row should capture the state of the related prior incident');
+	assert_same(3, (int)$acceptedLifecycleSuppressedRows[0]['matched_call_count'], 'suppression-history row should capture the fresh qualifying threshold count');
+	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleSuppressedRows[0]['suppression_expires_at'], 'suppression-history row should preserve the active suppression expiry');
+	$acceptedLifecycleOperationalSuppressed = $repository7AcceptedLifecycle->loadActiveSuppressedIncidents('2026-07-13 10:41:00');
+	assert_same(1, count($acceptedLifecycleOperationalSuppressed), 'suppression-history row should be immediately visible in active suppressed incidents');
+	assert_same($acceptedLifecycleIncidentId, (int)$acceptedLifecycleOperationalSuppressed[0]['related_incident_id'], 'operational suppressed-incidents row should reference the prior accepted incident');
+
+	$acceptedLifecycleStateAfterSuppressed = $repository7AcceptedLifecycle->loadSubjectState($acceptedLifecycleRuleId, $acceptedLifecycleSubjectKey);
+	assert_true(is_array($acceptedLifecycleStateAfterSuppressed), 'accepted lifecycle scenario should retain subject state after blocked re-trigger');
+	assert_same(1, (int)$acceptedLifecycleStateAfterSuppressed['threshold_met'], 'blocked re-trigger should set threshold_met back to true');
+	assert_same(0, (int)$acceptedLifecycleStateAfterSuppressed['clear_observed_since_trigger'], 'blocked re-trigger should reset clear_observed_since_trigger after recording suppression history');
+
 	$dbPath4 = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath4 === false) {
 		throw new RuntimeException('Unable to create fourth runtime contract SQLite file');

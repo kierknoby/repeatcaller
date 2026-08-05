@@ -221,6 +221,22 @@ Rule-level Suppression values behave as follows:
 Suppression controls how long Repeat Caller keeps an incident active before it
 may expire or re-arm.
 
+Suppression lifecycle timing:
+
+- Accepting an incident starts or maintains suppression for that rule and
+	subject, but acceptance itself does not create a Suppressed Incidents row.
+- While the original threshold condition remains continuously true, further
+	matching calls update the accepted incident and do not create
+	suppression-history rows.
+- The rolling threshold condition must first clear (drop below threshold in
+	the configured window).
+- The monitor must observe that clear state and re-arm the threshold latch.
+- If the same caller reaches threshold again before suppression expires,
+	Repeat Caller blocks that fresh incident attempt and records it immediately
+	in Suppressed Incidents.
+- This threshold latch is intentional and prevents duplicate suppression rows
+	while one unbroken qualifying condition is still in progress.
+
 Comparison:
 
 - Suppression: incident lifecycle timing
@@ -313,6 +329,10 @@ While suppression remains active for that rule and subject, accepted incidents
 do not reserve or send further reminders, emails, or Alert Calls. After the
 suppression expires, genuinely new qualifying activity can make the accepted
 incident alert-eligible again.
+
+Accepted incidents appear in Suppressed Incidents only when a fresh qualifying
+attempt is blocked during still-active suppression after the monitor has first
+observed a clear in the previous threshold condition.
 
 ## Receiving Email Alerts
 

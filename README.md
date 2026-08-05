@@ -364,6 +364,22 @@ Repeat Caller blocks that incident creation and writes a suppression audit row.
 Suppression rows are not future placeholders; they represent prevented,
 qualifying attempts.
 
+Suppression lifecycle timing:
+
+- Accepting an incident starts or maintains suppression for that rule and
+  subject, but acceptance itself does not create a Suppressed Incidents row.
+- While the original threshold condition remains continuously true, further
+  matching calls update the accepted incident and do not create
+  suppression-history rows.
+- The rolling threshold condition must first clear (drop below threshold in
+  the configured window).
+- The monitor must observe that clear state and re-arm the threshold latch.
+- If the same caller reaches threshold again before suppression expires,
+  Repeat Caller blocks that fresh incident attempt and records it immediately
+  in Suppressed Incidents.
+- The threshold latch is intentional and prevents duplicate suppression rows
+  while one unbroken qualifying condition is still in progress.
+
 Suppressed Incidents view shows audit rows including matching count, threshold
 window context, suppression expiry, and related incident.
 
