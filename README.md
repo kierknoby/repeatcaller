@@ -61,17 +61,26 @@ fwconsole ma installlocal repeatcaller
 ```
 
 Use `fwconsole ma install repeatcaller` with one of the methods below.
+For each method, ensure module files are present at
+`/var/www/html/admin/modules/repeatcaller/` before running the fwconsole
+commands. The fwconsole commands intentionally run from a neutral directory
+(`cd ~`).
 
-Option 1: Install from an unpacked module directory
+Option 1: Install from pre-staged module files
+
+Place the module files in `/var/www/html/admin/modules/repeatcaller/`, then:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
 ```
 
 Option 2: Install from GitHub
+
+Git commands require the modules/repository directory context. After cloning,
+switch back to a neutral directory before running fwconsole commands.
 
 FreePBX 16 / PBXact 16 (CentOS 7)
 
@@ -107,7 +116,7 @@ Then run the following commands as root:
 ```sh
 cd /var/www/html/admin/modules
 git clone https://github.com/kierknoby/repeatcaller.git repeatcaller
-cd repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -116,10 +125,11 @@ fwconsole reload
 Option 3: Install from a local copy
 
 Copy or symlink a local `repeatcaller` directory into
-`/var/www/html/admin/modules/`, then:
+`/var/www/html/admin/modules/repeatcaller/`, then run the fwconsole commands
+from a neutral directory:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -140,12 +150,13 @@ fwconsole ma list | grep -i repeatcaller
 grep "<version>" /var/www/html/admin/modules/repeatcaller/module.xml
 ```
 
-Option 1: Update from an unpacked module directory
+Option 1: Update from pre-staged module files
 
-Replace the module files in `/var/www/html/admin/modules/repeatcaller/`, then:
+Replace the module files in `/var/www/html/admin/modules/repeatcaller/`, then
+run the fwconsole commands from a neutral directory:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -153,10 +164,15 @@ fwconsole reload
 
 Option 2: Update from GitHub
 
+Git commands require the module repository directory context. After fetching
+and resetting, switch back to a neutral directory before running fwconsole
+commands.
+
 ```sh
 cd /var/www/html/admin/modules/repeatcaller
 git fetch origin main
 git reset --hard FETCH_HEAD
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -164,10 +180,12 @@ fwconsole reload
 
 Option 3: Update from a local copy
 
-Re-copy or re-link your local `repeatcaller` directory, then:
+Re-copy or re-link your local `repeatcaller` directory into
+`/var/www/html/admin/modules/repeatcaller/`, then run the fwconsole commands
+from a neutral directory:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -691,7 +709,8 @@ tail -f /var/log/asterisk/full | grep -i repeatcaller
 
 Uninstall removes Repeat Caller job registration, Repeat Caller tables, managed
 dialplan include/fragment, and the deployed AGI callback script. Back up first
-if you need existing rules/history.
+if you need existing rules/history. These commands run from a neutral
+directory, and the module path removal uses an absolute path.
 
 ```sh
 cd ~

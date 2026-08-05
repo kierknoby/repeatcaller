@@ -252,8 +252,11 @@ assert_true(strpos($readmeSource, 'current public ' . 'release candidate') === f
 assert_true(strpos($readmeSource, 'stage cadence') === false, 'README must not expose internal stage cadence terminology');
 assert_true(strpos($readmeSource, 'email escalation') === false, 'README must not use the old email escalation wording');
 assert_true(strpos($readmeSource, 'Enable monitoring in Global Settings') === false, 'README must not refer to removed Global Settings monitoring enablement');
-assert_true(strpos($readmeSource, "cd /var/www/html/admin/modules/repeatcaller\nfwconsole ma install repeatcaller") !== false, 'README should show the unpacked-directory install command sequence');
-assert_true(strpos($readmeSource, "git clone https://github.com/kierknoby/repeatcaller.git repeatcaller\ncd repeatcaller\nfwconsole ma install repeatcaller") !== false, 'README should show the GitHub install command sequence');
+assert_true(strpos($readmeSource, "Option 1: Install from pre-staged module files") !== false, 'README should describe pre-staged module file installation');
+assert_true(strpos($readmeSource, "cd ~\nfwconsole ma install repeatcaller") !== false, 'README should run fwconsole install commands from a neutral directory');
+assert_true(strpos($readmeSource, "git clone https://github.com/kierknoby/repeatcaller.git repeatcaller\ncd ~\nfwconsole ma install repeatcaller") !== false, 'README should show the GitHub install sequence with neutral-directory fwconsole execution');
+assert_true(strpos($readmeSource, 'Git commands require the modules/repository directory context.') !== false, 'README should explain why Git runs from repository/module paths');
+assert_true(strpos($readmeSource, 'switch back to a neutral directory before running fwconsole commands.') !== false, 'README should explain that fwconsole intentionally runs from a neutral directory after Git operations');
 assert_true(strpos($readmeSource, 'Option 3: Install from a local copy') !== false, 'README should document local-copy installation path');
 assert_true(strpos($readmeSource, 'Option 3: Update from a local copy') !== false, 'README should document local-copy update path');
 assert_true(strpos($readmeSource, 'Release Status') === false, 'README must not include release status section');
