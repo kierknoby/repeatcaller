@@ -105,6 +105,10 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Alert Call Destinations: accepts one or more internal extensions and/or external telephone numbers separated by commas. External numbers should normally be entered in the same national dialling format an administrator would use from a FreePBX extension. The example/placeholder follows the configured Default Country Code.
 - Alert Call destination safeguard: adding an Alert Call destination behaves the same whether you use Add or Enter. It automatically adds the same value to Ignore these callers and shows a one-time warning. Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.
 - Alert Call Caller ID safeguard: when Alert Call is enabled and Caller ID managed elsewhere is off, Repeat Caller may also add the configured Alert Call Caller ID to Ignore these callers as an additional safeguard for external return paths. Administrators can remove the Ignore entry if it is not appropriate.
+
+Repeat alert emails now show one reminder line:
+
+- Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.

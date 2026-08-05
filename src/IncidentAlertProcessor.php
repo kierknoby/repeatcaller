@@ -624,8 +624,7 @@ final class IncidentAlertProcessor {
 		], '-');
 		$lines[] = 'Stage: ' . (int)($row['stage_n'] ?? 0);
 		$lines[] = 'Mode: ' . $this->formatIncidentModeLabel((string)($row['mode'] ?? ''));
-		$lines[] = 'Rule Repeat Mode: ' . $this->formatRuleRepeatModeLabel(isset($row['rule_repeat_mode_override']) ? (string)$row['rule_repeat_mode_override'] : '');
-		$lines[] = 'Effective Repeat Mode: ' . $this->formatRepeatModeLabel((string)($row['repeat_mode'] ?? ''));
+		$lines[] = 'Alert Reminder: ' . $this->formatRepeatModeLabel((string)($row['repeat_mode'] ?? ''));
 		$lines[] = 'Matched Calls: ' . (int)($row['matched_call_count'] ?? 0);
 		$lines[] = 'First Matched: ' . (string)($row['first_matched_at'] ?? '-');
 		$lines[] = 'Last Matched: ' . (string)($row['last_matched_at'] ?? '-');
@@ -641,15 +640,6 @@ final class IncidentAlertProcessor {
 			'repeat' => 'Repeat',
 			'invert' => 'Invert',
 		], 'Unknown');
-	}
-
-	private function formatRuleRepeatModeLabel(string $repeatModeOverride): string {
-		$raw = trim($repeatModeOverride);
-		if ($raw === '') {
-			return 'Never';
-		}
-
-		return $this->formatRepeatModeLabel($raw);
 	}
 
 	private function formatRepeatModeLabel(string $mode): string {

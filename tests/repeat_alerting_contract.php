@@ -548,10 +548,9 @@ $initialEmailSubject = (string)$sender->calls[0]['subject'];
 assert_same('Repeat Caller: incident started [Email Rule] +441234500001', $initialEmailSubject, 'repeat-mode email subject should keep the stored subject label');
 $emailMessage = (string)$sender->calls[0]['message'];
 assert_true(strpos($emailMessage, 'Mode: Repeat') !== false, 'email output should render repeat detection mode as Repeat');
-assert_true(strpos($emailMessage, 'Rule Repeat Mode: Never') !== false, 'email output should render explicit never repeat override as Never');
-assert_true(strpos($emailMessage, 'Effective Repeat Mode: Never') !== false, 'email output should render effective repeat mode as Never');
+	assert_true(strpos($emailMessage, 'Alert Reminder: Never') !== false, 'email output should render the effective reminder mode as Alert Reminder');
 assert_true(strpos($emailMessage, 'Mode: repeat') === false && strpos($emailMessage, 'Mode: invert') === false, 'email output should not expose lowercase detection mode codes');
-assert_true(strpos($emailMessage, 'Rule Repeat Mode: never') === false && strpos($emailMessage, 'Effective Repeat Mode: never') === false, 'email output should not expose lowercase repeat-mode codes where labels exist');
+assert_true(strpos($emailMessage, 'Rule Repeat Mode:') === false && strpos($emailMessage, 'Effective Repeat Mode:') === false, 'email output should not expose duplicate repeat-mode labels');
 assert_true(strpos($emailMessage, 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.') !== false, 'email output should include customer-facing unaccepted notification wording');
 assert_true(strpos($emailMessage, 'Alert Call follows the same normal stage cadence as GUI and email when enabled for the rule.') === false, 'email output should not expose internal stage-cadence implementation wording');
 
@@ -585,9 +584,8 @@ $incidentGlobalEmail = insert_incident($dbGlobalEmail, [
 $processorGlobalEmail->run(settings());
 assert_same(1, count($senderGlobalEmail->calls), 'rule repeat-mode email scenario should send one email');
 $globalEmailMessage = (string)$senderGlobalEmail->calls[0]['message'];
-assert_true(strpos($globalEmailMessage, 'Rule Repeat Mode: Every 5 Minutes') !== false, 'email output should render explicit 5m rule repeat override as Every 5 Minutes');
-assert_true(strpos($globalEmailMessage, 'Effective Repeat Mode: Every 5 Minutes') !== false, 'email output should render effective 5m repeat mode as Every 5 Minutes');
-assert_true(strpos($globalEmailMessage, 'Effective Repeat Mode: 5m') === false, 'email output should not expose 5m canonical code when label exists');
+	assert_true(strpos($globalEmailMessage, 'Alert Reminder: Every 5 Minutes') !== false, 'email output should render the effective 5m repeat mode as Alert Reminder');
+	assert_true(strpos($globalEmailMessage, 'Rule Repeat Mode:') === false && strpos($globalEmailMessage, 'Effective Repeat Mode:') === false, 'email output should not expose duplicate repeat-mode labels in the alert email');
 assert_true(strpos($globalEmailMessage, 'Event: Initial') !== false, 'email output should render event type label as Initial');
 
 $summaryRerun = $processor->run(settings());
@@ -1861,6 +1859,6 @@ assert_same(0, count_history($dbN, "incident_id = {$incidentN} AND action_type =
 $alertSource = file_get_contents(__DIR__ . '/../src/IncidentAlertProcessor.php');
 assert_true($alertSource !== false, 'IncidentAlertProcessor source should be readable for formatter path checks');
 assert_true(strpos($alertSource, 'private function formatAlertTextLabel(string $value, array $labels, string $defaultLabel): string {') !== false, 'email mode and repeat labels should share one central formatter helper');
-assert_true((bool)preg_match('/private function buildEmailMessage\(array \$row, string \$now\): string \{[\s\S]*formatIncidentModeLabel\([\s\S]*formatRuleRepeatModeLabel\([\s\S]*formatRepeatModeLabel\(/', $alertSource), 'email builder should route mode and repeat labels through one central formatting path');
+assert_true(strpos($alertSource, 'Alert Reminder: ') !== false && strpos($alertSource, '$this->formatRepeatModeLabel(') !== false, 'email builder should render a single customer-facing Alert Reminder line using the effective repeat mode');
 
 echo "repeat alerting contract tests passed\n";

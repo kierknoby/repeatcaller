@@ -280,6 +280,10 @@ Caller may also add the configured Alert Call Caller ID to Ignore these
 callers as an additional self-trigger safeguard for external return paths.
 Administrators can remove the Ignore entry if it is not appropriate.
 
+Repeat alert emails now show one reminder line:
+
+- Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
+
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country
