@@ -694,6 +694,7 @@ dialplan include/fragment, and the deployed AGI callback script. Back up first
 if you need existing rules/history.
 
 ```sh
+cd ~
 fwconsole ma uninstall repeatcaller --force
 rm -rf /var/www/html/admin/modules/repeatcaller
 fwconsole chown
