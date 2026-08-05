@@ -46,6 +46,7 @@ class Repeatcaller implements \BMO {
 	private $settingsDefaults = [
 		'enabled' => '0',
 		'default_country_code' => '',
+		'initial_processing_boundary_at' => '',
 		'engine_last_success_at' => '',
 		'engine_last_summary_json' => '',
 		'global_snoozed_until' => '',

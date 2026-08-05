@@ -1203,6 +1203,148 @@ try {
 	]);
 	assert_same(1, $rearmSummary['incidents_created'], 'the same caller should retrigger only after the condition clears and then crosses again');
 
+	$dbPathFirstInstall = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathFirstInstall === false) {
+		throw new RuntimeException('Unable to create first-install boundary contract SQLite file');
+	}
+	[$dbFirstInstall, $repositoryFirstInstall, $scannerFirstInstall, $processorFirstInstall] = create_runtime_environment($dbPathFirstInstall, '2026-07-13 10:00:00');
+	insert_route($dbFirstInstall, '18005550001', '', 'Main');
+	insert_rule($dbFirstInstall, [
+		'name' => 'First Install Boundary Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 120,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbFirstInstall, ['linkedid' => 'FI-HIST-1', 'calldate' => '2026-07-13 09:10:00']);
+	insert_cdr($dbFirstInstall, ['linkedid' => 'FI-HIST-2', 'calldate' => '2026-07-13 09:20:00']);
+	$firstInstallBoundarySettings = [
+		'enabled' => '1',
+		'default_country_code' => '44',
+		'initial_processing_boundary_at' => '2026-07-13 09:30:00',
+	];
+	$firstInstallHistoricalRun = $processorFirstInstall->run($firstInstallBoundarySettings);
+	assert_same(0, $firstInstallHistoricalRun['new_journeys'], 'historical CDR rows before first-install boundary must not be reserved as new journeys');
+	assert_same(0, (int)$dbFirstInstall->query('SELECT COUNT(*) FROM repeatcaller_seen_calls')->fetchColumn(), 'historical CDR rows before first-install boundary must not be inserted into repeatcaller_seen_calls');
+	assert_same(0, $firstInstallHistoricalRun['incidents_created'], 'historical CDR rows before first-install boundary must not create incidents');
+	assert_same(0, (int)$dbFirstInstall->query('SELECT COUNT(*) FROM repeatcaller_incidents')->fetchColumn(), 'historical CDR rows before first-install boundary must not create incident records');
+	assert_same(0, (int)$dbFirstInstall->query('SELECT COUNT(*) FROM repeatcaller_incident_alert_state')->fetchColumn(), 'historical CDR rows before first-install boundary must not create incident alert state records');
+	assert_same(0, (int)$dbFirstInstall->query('SELECT COUNT(*) FROM repeatcaller_incident_alert_history')->fetchColumn(), 'historical CDR rows before first-install boundary must not create incident alert history records');
+	assert_same(0, (int)$dbFirstInstall->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history')->fetchColumn(), 'historical CDR rows before first-install boundary must not create suppression history rows');
+
+	$dbPathBoundaryEquality = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathBoundaryEquality === false) {
+		throw new RuntimeException('Unable to create boundary-equality contract SQLite file');
+	}
+	[$dbBoundaryEquality, $repositoryBoundaryEquality, $scannerBoundaryEquality, $processorBoundaryEquality] = create_runtime_environment($dbPathBoundaryEquality, '2026-07-13 10:00:00');
+	insert_route($dbBoundaryEquality, '18005550001', '', 'Main');
+	insert_rule($dbBoundaryEquality, [
+		'name' => 'Boundary Equality Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 120,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbBoundaryEquality, ['linkedid' => 'BE-HIST', 'calldate' => '2026-07-13 09:29:59']);
+	insert_cdr($dbBoundaryEquality, ['linkedid' => 'BE-EQ', 'calldate' => '2026-07-13 09:30:00']);
+	$boundaryEqualityRun = $processorBoundaryEquality->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+		'initial_processing_boundary_at' => '2026-07-13 09:30:00',
+	]);
+	assert_same(1, $boundaryEqualityRun['new_journeys'], 'call_completed_at exactly equal to initial_processing_boundary_at must be included');
+	assert_same(1, $boundaryEqualityRun['incidents_created'], 'boundary-equality inclusion should still trigger incident creation when threshold is met');
+	assert_same(1, (int)$dbBoundaryEquality->query("SELECT COUNT(*) FROM repeatcaller_seen_calls WHERE call_identity = 'BE-EQ'")->fetchColumn(), 'boundary-equality call should be reserved as seen');
+	assert_same(0, (int)$dbBoundaryEquality->query("SELECT COUNT(*) FROM repeatcaller_seen_calls WHERE call_identity = 'BE-HIST'")->fetchColumn(), 'pre-boundary historical call should remain excluded from seen-call reservations');
+
+	insert_cdr($dbFirstInstall, ['linkedid' => 'FI-NEW-1', 'calldate' => '2026-07-13 09:40:00']);
+	insert_cdr($dbFirstInstall, ['linkedid' => 'FI-NEW-2', 'calldate' => '2026-07-13 09:50:00']);
+	$firstInstallLiveRun = $processorFirstInstall->run($firstInstallBoundarySettings);
+	assert_same(2, $firstInstallLiveRun['new_journeys'], 'calls completed after first-install boundary must be processed normally');
+	assert_same(1, $firstInstallLiveRun['incidents_created'], 'post-install calls must still trigger incidents when threshold is met');
+
+	insert_cdr($dbFirstInstall, ['linkedid' => 'FI-LATE-HIST', 'calldate' => '2026-07-13 09:25:00']);
+	$firstInstallRestartHistoricalRun = $processorFirstInstall->run($firstInstallBoundarySettings);
+	assert_same(0, $firstInstallRestartHistoricalRun['new_journeys'], 'restarting the background job must not move boundary backwards to include historical calls');
+
+	$dbPathReinstallA = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathReinstallA === false) {
+		throw new RuntimeException('Unable to create reinstall boundary baseline SQLite file');
+	}
+	[$dbReinstallA, $repositoryReinstallA, $scannerReinstallA, $processorReinstallA] = create_runtime_environment($dbPathReinstallA, '2026-07-13 10:00:00');
+	insert_route($dbReinstallA, '18005550001', '', 'Main');
+	insert_rule($dbReinstallA, [
+		'name' => 'Reinstall Boundary Baseline Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 120,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbReinstallA, ['linkedid' => 'RE-A-HIST', 'calldate' => '2026-07-13 09:20:00']);
+	$reinstallBaselineRun = $processorReinstallA->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+		'initial_processing_boundary_at' => '2026-07-13 09:30:00',
+	]);
+	assert_same(0, $reinstallBaselineRun['new_journeys'], 'baseline install boundary should ignore pre-boundary history');
+
+	$dbPathReinstallB = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathReinstallB === false) {
+		throw new RuntimeException('Unable to create reinstall boundary replacement SQLite file');
+	}
+	[$dbReinstallB, $repositoryReinstallB, $scannerReinstallB, $processorReinstallB] = create_runtime_environment($dbPathReinstallB, '2026-07-13 10:30:00');
+	insert_route($dbReinstallB, '18005550001', '', 'Main');
+	insert_rule($dbReinstallB, [
+		'name' => 'Reinstall Boundary Replacement Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 120,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbReinstallB, ['linkedid' => 'RE-B-HIST', 'calldate' => '2026-07-13 10:10:00']);
+	insert_cdr($dbReinstallB, ['linkedid' => 'RE-B-NEW', 'calldate' => '2026-07-13 10:20:00']);
+	$reinstallReplacementRun = $processorReinstallB->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+		'initial_processing_boundary_at' => '2026-07-13 10:15:00',
+	]);
+	assert_same(1, $reinstallReplacementRun['new_journeys'], 'a fresh reinstall boundary should be re-established and only process post-reinstall calls');
+	assert_same(1, $reinstallReplacementRun['incidents_created'], 'post-reinstall calls should still create incidents as normal');
+
+	$dbPathUpgradeContinuity = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathUpgradeContinuity === false) {
+		throw new RuntimeException('Unable to create upgrade continuity SQLite file');
+	}
+	[$dbUpgradeContinuity, $repositoryUpgradeContinuity, $scannerUpgradeContinuity, $processorUpgradeContinuity] = create_runtime_environment($dbPathUpgradeContinuity, '2026-07-13 10:30:00');
+	insert_route($dbUpgradeContinuity, '18005550001', '', 'Main');
+	insert_rule($dbUpgradeContinuity, [
+		'name' => 'Upgrade Continuity Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 120,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	$dbUpgradeContinuity->prepare('INSERT INTO repeatcaller_seen_calls (call_identity, identity_type, fingerprint, linkedid, uniqueid, caller_raw, caller_normalized, inbound_route_key, did_value, call_started_at, call_completed_at, disposition, source_context, processed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['UPG-SEEN-1', 'linkedid', hash('sha256', 'UPG-SEEN-1'), 'UPG-SEEN-1', 'UPG-SEEN-1', '01234567890', '+441234567890', '18005550001|', '18005550001', '2026-07-13 10:05:00', '2026-07-13 10:05:00', 'ANSWERED', 'from-trunk', '2026-07-13 10:05:00']);
+	insert_cdr($dbUpgradeContinuity, ['linkedid' => 'UPG-SEEN-1', 'uniqueid' => 'UPG-SEEN-1', 'calldate' => '2026-07-13 10:05:00']);
+	insert_cdr($dbUpgradeContinuity, ['linkedid' => 'UPG-NEW-1', 'uniqueid' => 'UPG-NEW-1', 'calldate' => '2026-07-13 10:20:00']);
+	$upgradeContinuityRun = $processorUpgradeContinuity->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $upgradeContinuityRun['new_journeys'], 'existing upgraded installs without a boundary setting should retain continuity and process legitimate new calls');
+	assert_same(1, $upgradeContinuityRun['incidents_created'], 'existing upgraded installs should continue creating incidents for new qualifying calls');
+
 	$dbPath5 = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath5 === false) {
 		throw new RuntimeException('Unable to create fifth runtime contract SQLite file');
@@ -1357,6 +1499,9 @@ try {
 	assert_true(strpos($runtimeSource, 'Repeat Caller runtime scan:') === false, 'runtime processor must not emit the removed routine runtime summary string');
 	assert_true(strpos($runtimeSource, 'private $logger;') === false, 'runtime processor should not keep an unused logger property');
 	assert_true(strpos($runtimeSource, 'private function log(') === false, 'runtime processor should not keep an unused logger helper');
+	assert_true(strpos($runtimeSource, 'strtotime($boundary)') !== false, 'initial_processing_boundary_at should be evaluated using strtotime in the same server timezone context as call timestamps');
+	assert_true(strpos($runtimeSource, 'strtotime($completedAt)') !== false, 'call_completed_at should be evaluated using strtotime in the same server timezone context as initial_processing_boundary_at');
+	assert_true(strpos($runtimeSource, '$completedTs < $boundaryTs') !== false, 'boundary comparison should remain strictly less-than so equality is intentionally included');
 	$alertSource = file_get_contents(__DIR__ . '/../src/IncidentAlertProcessor.php');
 	assert_true($alertSource !== false, 'src/IncidentAlertProcessor.php should be readable');
 	assert_true(strpos($alertSource, 'Repeat Caller incident alert pass:') === false, 'alert processor must not emit the removed routine alert summary string');
@@ -1411,7 +1556,7 @@ try {
 
 	echo "repeat runtime contract tests passed\n";
 } finally {
-	foreach (['dbPath', 'dbPathRouteNoActive', 'dbPathRoute', 'dbPath2', 'dbPath3', 'dbPath4', 'dbPath5', 'dbPath6'] as $pathVar) {
+	foreach (['dbPath', 'dbPathRouteNoActive', 'dbPathRoute', 'dbPath2', 'dbPath3', 'dbPath4', 'dbPath5', 'dbPath6', 'dbPathFirstInstall', 'dbPathBoundaryEquality', 'dbPathReinstallA', 'dbPathReinstallB', 'dbPathUpgradeContinuity'] as $pathVar) {
 		if (isset($$pathVar) && is_string($$pathVar) && file_exists($$pathVar)) {
 			unlink($$pathVar);
 		}

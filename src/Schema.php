@@ -50,6 +50,7 @@ final class Schema {
 	 */
 	public static function install(PDO $pdo): void {
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$isFreshInstall = !self::tableExists($pdo, 'repeatcaller_settings');
 
 		foreach (self::createTableStatements() as $statement) {
 			$pdo->exec($statement);
@@ -68,6 +69,9 @@ final class Schema {
 		}
 
 		self::seedDefaultSettings($pdo);
+		if ($isFreshInstall) {
+			self::seedFreshInstallBoundary($pdo);
+		}
 		self::applyGuardedMigrations($pdo);
 	}
 
@@ -100,6 +104,16 @@ final class Schema {
 		foreach (self::DEFAULT_SETTINGS as $key => $value) {
 			$stmt->execute([':setting_key' => $key, ':setting_value' => $value, ':updated_at' => $now]);
 		}
+	}
+
+	private static function seedFreshInstallBoundary(PDO $pdo): void {
+		$stmt = $pdo->prepare(
+			"INSERT IGNORE INTO repeatcaller_settings
+				(setting_key, setting_value, updated_at)
+			 VALUES
+				('initial_processing_boundary_at', NOW(), NOW())"
+		);
+		$stmt->execute();
 	}
 
 	private static function applyGuardedMigrations(PDO $pdo): void {

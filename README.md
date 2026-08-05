@@ -246,6 +246,12 @@ Canonical Repeat Caller tables:
 Repeat Caller evaluates inbound journeys collapsed from CDR rows and matches
 them against enabled rules.
 
+Fresh installation boundary: a new Repeat Caller installation starts
+processing calls from the time it is installed. Calls already present in CDR
+data before that time do not retrospectively create incidents, alerts, or
+suppression history. Existing installations and normal upgrades retain their
+current processing continuity.
+
 - Repeat mode: creates an incident when matching call count reaches threshold
   within the configured window.
 - Invert mode: creates an incident when a full configured window completes

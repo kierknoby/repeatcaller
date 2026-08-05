@@ -161,7 +161,9 @@ function indexesExceedingKeyLimit(string $createStatement, int $bytesPerChar, in
 	return $exceeding;
 }
 
-final class SchemaUpgradePDO extends PDO {
+class SchemaUpgradePDO extends PDO {
+	private string $fixedNow = '2030-01-02 03:04:05';
+
 	public function __construct() {
 		parent::__construct('sqlite::memory:');
 		$this->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -169,10 +171,17 @@ final class SchemaUpgradePDO extends PDO {
 			$this->sqliteCreateFunction('DATABASE', static function (): string {
 				return 'main';
 			}, 0);
+			$this->sqliteCreateFunction('NOW', function (): string {
+				return $this->fixedNow;
+			}, 0);
 		}
 		parent::exec("ATTACH DATABASE ':memory:' AS information_schema");
 		parent::exec('CREATE TABLE information_schema.TABLES (TABLE_SCHEMA TEXT NOT NULL, TABLE_NAME TEXT NOT NULL)');
 		parent::exec('CREATE TABLE information_schema.COLUMNS (TABLE_SCHEMA TEXT NOT NULL, TABLE_NAME TEXT NOT NULL, COLUMN_NAME TEXT NOT NULL, COLUMN_TYPE TEXT NOT NULL)');
+	}
+
+	public function fixedNow(): string {
+		return $this->fixedNow;
 	}
 
 	public function prepare(string $query, array $options = []): PDOStatement|false {
@@ -218,6 +227,23 @@ final class SchemaUpgradePDO extends PDO {
 				$insertColumn->execute(['main', $tableName, (string)($column['name'] ?? ''), (string)($column['type'] ?? '')]);
 			}
 		}
+	}
+}
+
+final class SchemaInstallPathPDO extends SchemaUpgradePDO {
+	private bool $schemaCreated = false;
+
+	public function exec(string $statement): int|false {
+		$trimmed = ltrim($statement);
+		if (stripos($trimmed, 'CREATE TABLE IF NOT EXISTS ') === 0) {
+			if (!$this->schemaCreated) {
+				schemaUpgradeCreateLegacyTables($this);
+				$this->schemaCreated = true;
+			}
+			return 0;
+		}
+
+		return parent::exec($statement);
 	}
 }
 
@@ -427,6 +453,8 @@ assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'alert_call_keep_trying\'') !== false, 'guarded migrations must add alert_call_keep_trying for existing installs');
 assert_true(strpos($schemaSource, "alert_call_strategy VARCHAR(20) NOT NULL DEFAULT 'ringall'") !== false, 'fresh schema must default alert_call_strategy to ringall');
 assert_true(strpos($schemaSource, 'alert_call_keep_trying TINYINT(1) NOT NULL DEFAULT 1') !== false, 'fresh schema must default alert_call_keep_trying to enabled');
+assert_true(strpos($schemaSource, "'initial_processing_boundary_at', NOW(), NOW()") !== false, 'fresh install boundary seed must be sourced atomically from the database clock');
+assert_true(strpos($schemaSource, 'databaseNow(') === false, 'schema install should not include a PHP-time boundary fallback helper');
 assert_true(strpos($schemaSource, "'alert_recipients' => ''") === false, 'fresh schema must not define removed global email destinations');
 assert_true(strpos($schemaSource, 'email_recipients TEXT NULL') !== false, 'fresh schema must provide rule-level email recipients');
 assert_true(strpos($schemaSource, 'cleared_at DATETIME NULL') !== false, 'fresh suppression schema must include cleared_at for incident and suppression-history tables');
@@ -505,6 +533,31 @@ assert_same(null, $legacySuppression['cleared_at'], 'new suppression-history cle
 $upgradeModule->install();
 assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_incidents')->fetchColumn(), 'running the schema migration twice must not duplicate existing incident rows');
 assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history')->fetchColumn(), 'running the schema migration twice must not duplicate suppression-history rows');
+
+$freshInstallDb = new SchemaInstallPathPDO();
+Schema::install($freshInstallDb);
+$freshBoundaryRows = $freshInstallDb->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'initial_processing_boundary_at'")->fetchAll(PDO::FETCH_COLUMN);
+assert_same(1, count($freshBoundaryRows), 'fresh install must persist exactly one initial_processing_boundary_at setting row');
+$freshBoundaryValue = trim((string)$freshBoundaryRows[0]);
+assert_true($freshBoundaryValue !== '', 'fresh install initial_processing_boundary_at must be non-empty');
+assert_true((bool)preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $freshBoundaryValue), 'fresh install initial_processing_boundary_at must be persisted as a datetime string');
+assert_true(strtotime($freshBoundaryValue) !== false, 'fresh install initial_processing_boundary_at must be parseable as a valid datetime');
+assert_same($freshInstallDb->fixedNow(), $freshBoundaryValue, 'fresh install initial_processing_boundary_at must be seeded from the database clock source (NOW)');
+
+Schema::install($freshInstallDb);
+$freshBoundaryRowsAfterRerun = $freshInstallDb->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'initial_processing_boundary_at'")->fetchAll(PDO::FETCH_COLUMN);
+assert_same(1, count($freshBoundaryRowsAfterRerun), 're-running install must preserve a single initial_processing_boundary_at row');
+assert_same($freshBoundaryValue, trim((string)$freshBoundaryRowsAfterRerun[0]), 're-running install must not alter initial_processing_boundary_at once seeded');
+
+$upgradeContinuityDb = new SchemaUpgradePDO();
+schemaUpgradeCreateLegacyTables($upgradeContinuityDb);
+$upgradeContinuityDb->prepare('INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute(['enabled', '1', '2026-07-13 09:00:00']);
+Schema::install($upgradeContinuityDb);
+assert_same(0, (int)$upgradeContinuityDb->query("SELECT COUNT(*) FROM repeatcaller_settings WHERE setting_key = 'initial_processing_boundary_at'")->fetchColumn(), 'existing installs without initial_processing_boundary_at must not be backfilled during upgrade install continuity path');
+
+$controllerSource = file_get_contents($root . '/Repeatcaller.class.php');
+assert_true($controllerSource !== false, 'Repeatcaller.class.php should be readable');
+assert_true(strpos($controllerSource, "setSetting('initial_processing_boundary_at'") === false, 'ordinary settings saves must not persist the internal initial_processing_boundary_at key');
 
 assert_true(strpos($installSource, '$astetc . \'/repeatcaller_alert.conf\'') !== false, 'alert-call dialplan must be generated as a module-owned fragment, not by editing a FreePBX-generated file directly');
 assert_true(strpos($installSource, '$astetc . \'/extensions_custom.conf\'') !== false, 'install hook may only add the module-owned include to extensions_custom.conf');

@@ -52,7 +52,11 @@ final class BackgroundProcessor {
 
 		$lookbackMinutes = $this->lookbackMinutes($rules);
 		$scan = $this->scanner->scanRecentInboundJourneys($lookbackMinutes);
-		$newJourneys = $this->reserveNewJourneys($scan['journeys'], (string)($settings['default_country_code'] ?? ''));
+		$eligibleJourneys = $this->filterJourneysByInitialBoundary(
+			$scan['journeys'],
+			trim((string)($settings['initial_processing_boundary_at'] ?? ''))
+		);
+		$newJourneys = $this->reserveNewJourneys($eligibleJourneys, (string)($settings['default_country_code'] ?? ''));
 
 		$summary = [
 			'scanned_rows' => $scan['raw_rows'],
@@ -73,6 +77,32 @@ final class BackgroundProcessor {
 		}
 
 		return $summary;
+	}
+
+	private function filterJourneysByInitialBoundary(array $journeys, string $boundary): array {
+		if ($boundary === '') {
+			return $journeys;
+		}
+
+		$boundaryTs = strtotime($boundary);
+		if ($boundaryTs === false) {
+			return $journeys;
+		}
+
+		$filtered = [];
+		foreach ($journeys as $journey) {
+			$completedAt = trim((string)($journey['call_completed_at'] ?? ($journey['completed_at'] ?? '')));
+			if ($completedAt === '') {
+				continue;
+			}
+			$completedTs = strtotime($completedAt);
+			if ($completedTs === false || $completedTs < $boundaryTs) {
+				continue;
+			}
+			$filtered[] = $journey;
+		}
+
+		return $filtered;
 	}
 
 	private function processRepeatRule(array $rule, array $newJourneys, array &$summary, string $defaultCountryCode): void {
