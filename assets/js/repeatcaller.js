@@ -46,6 +46,7 @@
 	var ruleStatusTimers = {};
 	var didRouteActionMode = '';
 	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
+	var alertCallCallerIdSelfTriggerWarning = 'Alert Call Caller IDs are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 	var alertCallSelfTriggerWarningDurationSeconds = 6;
 	var alertCallSelfTriggerWarningTimeoutMs = 6000;
 	var alertCallSelfTriggerWarningHideTimerId = null;
@@ -408,11 +409,12 @@
 		}
 	}
 
-	function showAlertCallSelfTriggerWarning() {
+	function showAlertCallSelfTriggerWarning(messageText) {
+		var warningText = $.trim(String(messageText || '')) || alertCallSelfTriggerWarning;
 		clearAlertCallSelfTriggerWarningTimer();
 		if (window && window.notie && typeof window.notie.alert === 'function') {
 			try {
-				window.notie.alert(2, alertCallSelfTriggerWarning, alertCallSelfTriggerWarningDurationSeconds);
+				window.notie.alert(2, warningText, alertCallSelfTriggerWarningDurationSeconds);
 				$('#rc-message').hide();
 				return;
 			} catch (e1) {
@@ -420,7 +422,7 @@
 		}
 
 		var $msg = $('#rc-message');
-		$msg.removeClass('alert-success alert-danger alert-info alert-warning').addClass('alert-warning').text(alertCallSelfTriggerWarning).show();
+		$msg.removeClass('alert-success alert-danger alert-info alert-warning').addClass('alert-warning').text(warningText).show();
 		alertCallSelfTriggerWarningHideTimerId = window.setTimeout(function () {
 			$msg.hide();
 			alertCallSelfTriggerWarningHideTimerId = null;
@@ -2006,7 +2008,7 @@
 
 		if (ensureCallerExcludeDestination(callerId)) {
 			if (options.showWarning !== false) {
-				showAlertCallSelfTriggerWarning();
+				showAlertCallSelfTriggerWarning(alertCallCallerIdSelfTriggerWarning);
 			}
 			return { added: true, conflict: false };
 		}

@@ -1621,6 +1621,7 @@ function resetAlertDestinationFlow(destination) {
 }
 
 const warningText = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
+const callerIdWarningText = 'Alert Call Caller IDs are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 
 // 1) Click Add with new destination: adds destination + Ignore entry + warns.
 const warningCountBeforeClickAdd = warningNotieAlerts.length;
@@ -1714,8 +1715,8 @@ const callerIdWarningCountBefore = warningNotieAlerts.length;
 const callerIdSafeguardAdd = hooks.applyAlertCallCallerIdSelfTriggerSafeguard({ showWarning: true, showConflictMessage: true });
 assert(callerIdSafeguardAdd && callerIdSafeguardAdd.added === true && callerIdSafeguardAdd.conflict === false, 'Caller ID safeguard should add Ignore callers entry when Alert Call is enabled and managed elsewhere is disabled');
 assert($('#rc-rule-caller-exclude').val() === '+441111111111', 'Caller ID safeguard should append Caller ID to Ignore callers');
-assert(warningNotieAlerts.length === callerIdWarningCountBefore + 1, 'Caller ID safeguard should reuse the self-trigger warning when adding a new Ignore callers entry');
-assert(warningNotieAlerts[warningNotieAlerts.length - 1].message === warningText, 'Caller ID safeguard should reuse the same self-trigger warning text');
+assert(warningNotieAlerts.length === callerIdWarningCountBefore + 1, 'Caller ID safeguard should emit a self-trigger warning when adding a new Ignore callers entry');
+assert(warningNotieAlerts[warningNotieAlerts.length - 1].message === callerIdWarningText, 'Caller ID safeguard should use the Caller ID self-trigger warning text');
 
 // 6c) Existing Ignore entries are not duplicated and do not warn again.
 const callerIdWarningCountBeforeDuplicate = warningNotieAlerts.length;
@@ -1838,7 +1839,8 @@ assert_true(strpos($jsSource, "var rawInput = $('#rc-rule-alert-call-destination
 assert_true(strpos($jsSource, "$('#rc-rule-alert-call-destination-list li')") !== false, 'Add button state helper should inspect the existing destination list');
 assert_true(strpos($jsSource, "var disabled = !alertCallEnabled || !hasAddableDestination;") !== false, 'Add button state helper should disable only when alert call is off or no addable destination exists');
 assert_true(strpos($jsSource, "if (!destinationExists || !callerExcludePresent) {") !== false, 'Add button state helper should allow re-adding an existing destination when Ignore callers is missing that value');
-assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarning = ') !== false && strpos($jsSource, 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.') !== false, 'rule editor should define the one-time Alert Call self-trigger warning text');
+assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarning = ') !== false && strpos($jsSource, 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.') !== false, 'rule editor should define the one-time Alert Call destination self-trigger warning text');
+assert_true(strpos($jsSource, 'var alertCallCallerIdSelfTriggerWarning = ') !== false && strpos($jsSource, 'Alert Call Caller IDs are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.') !== false, 'rule editor should define the Alert Call Caller ID self-trigger warning text');
 assert_true(strpos($jsSource, 'function callerExcludeValues() {') !== false, 'rule editor should define a helper to read Ignore these callers values from the textarea');
 assert_true(strpos($jsSource, 'function ensureCallerExcludeDestination(rawValue) {') !== false, 'rule editor should define a helper that conditionally appends Alert Call destinations to Ignore these callers');
 assert_true(strpos($jsSource, 'function applyAlertCallCallerIdSelfTriggerSafeguard(options) {') !== false, 'rule editor should define a helper that applies Alert Call Caller ID self-trigger safeguards through existing Ignore callers handling');
@@ -1848,10 +1850,11 @@ assert_true(strpos($jsSource, "Alert Call Caller ID matches an Only monitor thes
 assert_true(strpos($jsSource, 'addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);') !== false, 'Add action should still attempt to add Alert Call destination while preserving de-duplication');
 assert_true(strpos($jsSource, "if (ensureCallerExcludeDestination(destinationRow.destination)) {") !== false, 'Add action should ensure Ignore callers contains the destination even when the destination already exists');
 assert_true(strpos($jsSource, "if (autoAddedIgnoreEntries > 0) {") !== false && strpos($jsSource, 'showAlertCallSelfTriggerWarning();') !== false, 'adding one or more new Alert Call destinations should show a one-time warning when Ignore callers entries are auto-added');
+assert_true(strpos($jsSource, 'showAlertCallSelfTriggerWarning(alertCallCallerIdSelfTriggerWarning);') !== false, 'Caller ID safeguard should show the dedicated Caller ID self-trigger warning text');
 assert_true(strpos($jsSource, 'var callerIdSafeguard = applyAlertCallCallerIdSelfTriggerSafeguardForSave({') !== false, 'save path should apply Caller ID self-trigger safeguard only through the save trigger gate');
 assert_true(strpos($jsSource, 'if (callerIdSafeguard.conflict) {') !== false, 'save path should block contradictory include-list conflicts for Caller ID safeguard');
 assert_true(strpos($jsSource, 'var alertCallSelfTriggerWarningDurationSeconds = 6;') !== false && strpos($jsSource, 'var alertCallSelfTriggerWarningTimeoutMs = 6000;') !== false, 'self-trigger warning should define explicit 6-second duration constants for toast and local fallback paths');
-assert_true(strpos($jsSource, 'window.notie.alert(2, alertCallSelfTriggerWarning, alertCallSelfTriggerWarningDurationSeconds);') !== false, 'self-trigger warning should use notie alert type 2 with explicit 6-second duration when available');
+assert_true(strpos($jsSource, 'window.notie.alert(2, warningText, alertCallSelfTriggerWarningDurationSeconds);') !== false, 'self-trigger warning should use notie alert type 2 with explicit 6-second duration when available');
 assert_true(strpos($jsSource, "window.fpbxToast(alertCallSelfTriggerWarning, '', 'warning', alertCallSelfTriggerWarningTimeoutMs);") === false, 'self-trigger warning should not call fpbxToast with an unsupported per-message timeout argument');
 assert_true(strpos($jsSource, 'toastr.options') === false, 'self-trigger warning changes should not mutate global toast settings');
 assert_true(strpos($jsSource, 'function triggerAlertCallDestinationAdd(event) {') !== false && strpos($jsSource, 'return addAlertCallDestinationsFromInput();') !== false, 'click and Enter should share one add trigger that delegates to the same add function');
