@@ -631,7 +631,7 @@ final class IncidentAlertProcessor {
 		$lines[] = 'Last Matched: ' . (string)($row['last_matched_at'] ?? '-');
 		$lines[] = 'Generated At: ' . $now;
 		$lines[] = '';
-		$lines[] = 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.';
+		$lines[] = 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.';
 
 		return implode("\n", $lines);
 	}

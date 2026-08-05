@@ -556,7 +556,7 @@ assert_true(strpos($emailMessage, 'Mode: Repeat') !== false, 'email output shoul
 	assert_true(strpos($emailMessage, 'Alert Reminder: Never') !== false, 'email output should render the effective reminder mode as Alert Reminder');
 assert_true(strpos($emailMessage, 'Mode: repeat') === false && strpos($emailMessage, 'Mode: invert') === false, 'email output should not expose lowercase detection mode codes');
 assert_true(strpos($emailMessage, 'Rule Repeat Mode:') === false && strpos($emailMessage, 'Effective Repeat Mode:') === false, 'email output should not expose duplicate repeat-mode labels');
-assert_true(strpos($emailMessage, 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.') !== false, 'email output should include customer-facing unaccepted notification wording');
+assert_true(strpos($emailMessage, 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.') !== false, 'email output should include customer-facing accepted-capability wording without implying post-accept notifications');
 assert_true(strpos($emailMessage, 'Alert Call follows the same normal stage cadence as GUI and email when enabled for the rule.') === false, 'email output should not expose internal stage-cadence implementation wording');
 
 $invertEmailClock = new TestClock('2026-07-13 10:05:00');

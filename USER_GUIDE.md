@@ -327,7 +327,7 @@ Email notifications include practical context such as:
 
 Customer-facing notice included in alerts:
 
-This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.
+This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.
 
 A successful handoff to the PBX mailer does not guarantee external delivery.
 

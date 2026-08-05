@@ -275,7 +275,7 @@ assert_true(strpos($userGuideSource, 'Clear Suppression affects current suppress
 assert_true((bool) preg_match('/Repeat Caller automatically removes old internal detection records during\s+pruning to prevent unnecessary database growth\./', $userGuideSource), 'USER_GUIDE.md should document automatic internal detection-record cleanup during pruning');
 assert_true(strpos($userGuideSource, 'All DIDs with optional Excluded Routes') !== false, 'USER_GUIDE.md should document All DIDs as an exclusions-only route model');
 assert_true(strpos($userGuideSource, 'Selected DIDs only via Included Routes') !== false, 'USER_GUIDE.md should document Selected DIDs as an inclusions-only route model');
-assert_true(strpos($userGuideSource, 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing unaccepted notification wording');
+assert_true(strpos($userGuideSource, 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing accepted-capability wording');
 assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md should link back to README.md');
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');
 assert_true(strpos($userGuideSource, 'Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.') !== false, 'USER_GUIDE.md should clarify trusted administrator-controlled Alert Call destination and caller ID settings');
