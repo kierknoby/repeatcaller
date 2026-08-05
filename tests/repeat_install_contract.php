@@ -451,8 +451,10 @@ assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_incid
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_incident_suppression_history\', \'cleared_at\'') !== false, 'guarded migrations must add cleared_at for existing suppression-history rows');
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'alert_call_strategy\'') !== false, 'guarded migrations must add alert_call_strategy for existing installs');
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'alert_call_keep_trying\'') !== false, 'guarded migrations must add alert_call_keep_trying for existing installs');
+assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'enabled_at\'') !== false, 'guarded migrations must add enabled_at for existing installs');
 assert_true(strpos($schemaSource, "alert_call_strategy VARCHAR(20) NOT NULL DEFAULT 'ringall'") !== false, 'fresh schema must default alert_call_strategy to ringall');
 assert_true(strpos($schemaSource, 'alert_call_keep_trying TINYINT(1) NOT NULL DEFAULT 1') !== false, 'fresh schema must default alert_call_keep_trying to enabled');
+assert_true(strpos($schemaSource, 'enabled_at DATETIME NULL') !== false, 'fresh schema must include an enabled_at activation-boundary column for rules');
 assert_true(strpos($schemaSource, "'initial_processing_boundary_at', NOW(), NOW()") !== false, 'fresh install boundary seed must be sourced atomically from the database clock');
 assert_true(strpos($schemaSource, 'databaseNow(') === false, 'schema install should not include a PHP-time boundary fallback helper');
 assert_true(strpos($schemaSource, "'alert_recipients' => ''") === false, 'fresh schema must not define removed global email destinations');
@@ -519,6 +521,8 @@ $incidentColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_
 assert_true(in_array('cleared_at', $incidentColumnsAfterUpgrade, true), 'upgrade migration must add cleared_at to repeatcaller_incidents');
 $suppressionColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_incident_suppression_history');
 assert_true(in_array('cleared_at', $suppressionColumnsAfterUpgrade, true), 'upgrade migration must add cleared_at to repeatcaller_incident_suppression_history');
+$rulesColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_rules');
+assert_true(in_array('enabled_at', $rulesColumnsAfterUpgrade, true), 'upgrade migration must add enabled_at to repeatcaller_rules');
 
 $legacyIncident = $legacyDb->query('SELECT subject_label, suppression_expires_at, cleared_at FROM repeatcaller_incidents WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
 assert_same('Legacy Incident', (string)$legacyIncident['subject_label'], 'existing incident rows must be preserved during schema upgrade');

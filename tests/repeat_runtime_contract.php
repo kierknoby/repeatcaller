@@ -69,6 +69,7 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
+			enabled_at TEXT,
 			email_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_destinations TEXT,
@@ -261,10 +262,13 @@ function insert_route(PDO $db, string $did, string $cid = '', string $descriptio
 }
 
 function insert_rule(PDO $db, array $rule): int {
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			$rule['name'],
 			$rule['enabled'] ?? 1,
+			array_key_exists('enabled_at', $rule)
+				? $rule['enabled_at']
+				: (!empty($rule['enabled'] ?? 1) ? ($rule['created_at'] ?? '2026-07-13 09:00:00') : null),
 			$rule['email_enabled'] ?? 0,
 			$rule['alert_call_enabled'] ?? 0,
 			$rule['alert_call_destinations'] ?? null,
@@ -864,8 +868,8 @@ try {
 		throw new RuntimeException('Unable to create continuous-schedule invert runtime contract SQLite file');
 	}
 	[$db3Continuous, $repository3Continuous, $scanner3Continuous, $processor3Continuous] = create_runtime_environment($dbPath3Continuous, '2026-07-13 10:30:00');
-	$db3Continuous->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Invert Continuous Schedule Rule', 1, 0, 0, null, null, 'invert', 3, 60, 'any', 0, 'all', null, null, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db3Continuous->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Invert Continuous Schedule Rule', 1, '2026-07-13 09:00:00', 0, 0, null, null, 'invert', 3, 60, 'any', 0, 'all', null, null, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$continuousRuleId = (int)$db3Continuous->lastInsertId();
 	$db3Continuous->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')
 		->execute([$continuousRuleId, -1, '09:00:00', '24:00:00', '2026-07-13 09:00:00']);
@@ -882,6 +886,315 @@ try {
 	assert_true(is_array($continuousIncident), 'invert mode should create an incident for a completed continuous schedule window');
 	assert_same('invert', (string)$continuousIncident['mode'], 'continuous schedule invert incident should persist with invert mode');
 	assert_same(0, (int)$continuousIncident['matched_call_count'], 'continuous schedule invert incident should record zero calls when threshold is unmet');
+
+	$dbPath3Direct = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPath3Direct === false) {
+		throw new RuntimeException('Unable to create direct-invert-repro runtime contract SQLite file');
+	}
+	[$db3Direct, $repository3Direct, $scanner3Direct, $processor3Direct] = create_runtime_environment($dbPath3Direct, '2026-08-05 15:47:00');
+	insert_route($db3Direct, '18005550001', '', 'Main');
+	$directInvertRuleId = insert_rule($db3Direct, [
+		'name' => 'Invert Direct Repro Rule',
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-08-05 15:47:00',
+		'updated_at' => '2026-08-05 15:47:00',
+		'enabled_at' => '2026-08-05 15:47:00',
+	]);
+	$directFirstRun = $processor3Direct->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $directFirstRun['incidents_created'], 'a newly enabled invert rule must not create an immediate historical incident on first monitor run');
+	assert_same(0, (int)$db3Direct->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $directInvertRuleId)->fetchColumn(), 'first run should not create an invert incident for the new rule');
+	assert_same(0, (int)$db3Direct->query('SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE rule_id = ' . $directInvertRuleId)->fetchColumn(), 'first run should not reserve or send alerts when no incident exists');
+	$directSubject = '__invert_rule__' . $directInvertRuleId;
+	$directState = $repository3Direct->loadSubjectState($directInvertRuleId, $directSubject);
+	assert_true(is_array($directState), 'first run should persist invert subject state for the new rule');
+	assert_same('2026-08-05 15:47:00', (string)$directState['current_window_started_at'], 'first run should anchor the invert window start at enabled_at for new enabled rules');
+	assert_same('2026-08-05 16:47:00', (string)$directState['current_window_ends_at'], 'first run should set first invert window end one full observation window after enabled_at');
+
+	$directNowProvider = function (): string {
+		return '2026-08-05 16:48:00';
+	};
+	$processor3DirectFollowup = new BackgroundProcessor(
+		$db3Direct,
+		$repository3Direct,
+		new CdrScanner($db3Direct, $directNowProvider),
+		$directNowProvider
+	);
+	$directSecondRun = $processor3DirectFollowup->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $directSecondRun['incidents_created'], 'the first invert incident should be created only after the first full post-activation window completes');
+	$directIncident = $db3Direct->query('SELECT first_matched_at, last_matched_at, matched_call_count FROM repeatcaller_incidents WHERE rule_id = ' . $directInvertRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($directIncident), 'follow-up run should create one invert incident for the new rule');
+	assert_same('2026-08-05 16:47:00', (string)$directIncident['first_matched_at'], 'new-rule invert incident first_matched_at should be the first completed post-activation window end');
+	assert_same('2026-08-05 16:47:00', (string)$directIncident['last_matched_at'], 'new-rule invert incident last_matched_at should be the first completed post-activation window end');
+
+	$dbPath3ModeTransition = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPath3ModeTransition === false) {
+		throw new RuntimeException('Unable to create mode-transition invert runtime contract SQLite file');
+	}
+	[$db3ModeTransition, $repository3ModeTransition, $scanner3ModeTransition, $processor3ModeTransition] = create_runtime_environment($dbPath3ModeTransition, '2026-08-05 15:47:00');
+	insert_route($db3ModeTransition, '18005550001', '', 'Main');
+	$modeTransitionRuleId = insert_rule($db3ModeTransition, [
+		'name' => 'Repeat To Invert Runtime Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-08-05 09:00:00',
+		'updated_at' => '2026-08-05 09:00:00',
+		'enabled_at' => '2026-08-05 09:00:00',
+	]);
+	$repository3ModeTransition->saveRule([
+		'id' => $modeTransitionRuleId,
+		'name' => 'Repeat To Invert Runtime Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'alert_call_handle_callerid_upstream' => 0,
+		'alert_call_callerid' => '',
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-08-05 15:47:00');
+	$modeTransitionRule = $repository3ModeTransition->loadRule($modeTransitionRuleId);
+	assert_same('2026-08-05 15:47:00', (string)$modeTransitionRule['enabled_at'], 'repeat-to-invert transition for an enabled rule should re-anchor enabled_at to transition time');
+	$modeTransitionFirstRun = $processor3ModeTransition->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $modeTransitionFirstRun['incidents_created'], 'repeat-to-invert transition should not create a retrospective incident in the same monitor run');
+	$modeTransitionSubject = '__invert_rule__' . $modeTransitionRuleId;
+	$modeTransitionState = $repository3ModeTransition->loadSubjectState($modeTransitionRuleId, $modeTransitionSubject);
+	assert_true(is_array($modeTransitionState), 'repeat-to-invert transition should seed a fresh invert subject window state');
+	assert_same('2026-08-05 15:47:00', (string)$modeTransitionState['current_window_started_at'], 'repeat-to-invert transition should start the first invert window at transition time');
+
+	$modeTransitionNowProvider = function (): string {
+		return '2026-08-05 16:48:00';
+	};
+	$processor3ModeTransitionFollowup = new BackgroundProcessor(
+		$db3ModeTransition,
+		$repository3ModeTransition,
+		new CdrScanner($db3ModeTransition, $modeTransitionNowProvider),
+		$modeTransitionNowProvider
+	);
+	$modeTransitionSecondRun = $processor3ModeTransitionFollowup->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $modeTransitionSecondRun['incidents_created'], 'repeat-to-invert transition should create first invert incident only after the first full post-transition window');
+	$modeTransitionIncident = $db3ModeTransition->query('SELECT first_matched_at, last_matched_at FROM repeatcaller_incidents WHERE rule_id = ' . $modeTransitionRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($modeTransitionIncident), 'repeat-to-invert follow-up run should create a single invert incident');
+	assert_same('2026-08-05 16:47:00', (string)$modeTransitionIncident['first_matched_at'], 'repeat-to-invert incident first_matched_at should use post-transition window boundary');
+	assert_same('2026-08-05 16:47:00', (string)$modeTransitionIncident['last_matched_at'], 'repeat-to-invert incident last_matched_at should use post-transition window boundary');
+
+	$dbPath3ReenableLinked = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPath3ReenableLinked === false) {
+		throw new RuntimeException('Unable to create invert re-enable linked-state runtime contract SQLite file');
+	}
+	[$db3ReenableLinked, $repository3ReenableLinked, $scanner3ReenableLinked, $processor3ReenableLinked] = create_runtime_environment($dbPath3ReenableLinked, '2026-08-05 15:47:00');
+	insert_route($db3ReenableLinked, '18005550001', '', 'Main');
+	$reenableLinkedRuleId = insert_rule($db3ReenableLinked, [
+		'name' => 'Invert Re-enable Linked State Rule',
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-08-05 09:00:00',
+		'updated_at' => '2026-08-05 09:00:00',
+		'enabled_at' => '2026-08-05 09:00:00',
+	]);
+	$reenableLinkedSubject = '__invert_rule__' . $reenableLinkedRuleId;
+	$db3ReenableLinked->prepare('INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display, withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state, accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute([
+			$reenableLinkedRuleId,
+			$reenableLinkedSubject,
+			null,
+			'Any caller',
+			null,
+			'Any caller',
+			0,
+			'invert',
+			1,
+			60,
+			'2026-08-05 10:00:00',
+			'2026-08-05 10:00:00',
+			0,
+			'accepted',
+			'admin',
+			'2026-08-05 10:05:00',
+			'gui',
+			'2026-08-05 17:00:00',
+			null,
+			'2026-08-05 10:00:00',
+			'2026-08-05 10:05:00',
+		]);
+	$reenableLinkedIncidentId = (int)$db3ReenableLinked->lastInsertId();
+	$repository3ReenableLinked->saveSubjectState($reenableLinkedRuleId, $reenableLinkedSubject, [
+		'current_window_started_at' => '2026-08-05 14:00:00',
+		'current_window_ends_at' => '2026-08-05 15:00:00',
+		'current_window_call_count' => 0,
+		'threshold_met' => 1,
+		'clear_observed_since_trigger' => 1,
+		'active_incident_id' => $reenableLinkedIncidentId,
+		'suppression_expires_at' => '2026-08-05 17:00:00',
+		'last_call_at' => null,
+		'last_evaluated_at' => '2026-08-05 15:00:00',
+		'created_at' => '2026-08-05 10:00:00',
+		'updated_at' => '2026-08-05 15:00:00',
+	]);
+	$repository3ReenableLinked->setRuleEnabled($reenableLinkedRuleId, false, '2026-08-05 15:46:00');
+	$repository3ReenableLinked->setRuleEnabled($reenableLinkedRuleId, true, '2026-08-05 15:47:00');
+	$reenableRule = $repository3ReenableLinked->loadRule($reenableLinkedRuleId);
+	assert_same('2026-08-05 15:47:00', (string)$reenableRule['enabled_at'], 'invert disable-to-enable transition should stamp a fresh enabled_at activation boundary');
+
+	$reenableImmediate = $processor3ReenableLinked->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $reenableImmediate['incidents_created'], 're-enabled invert rule with linked incident state should not create an immediate duplicate incident');
+	assert_same(1, (int)$db3ReenableLinked->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $reenableLinkedRuleId)->fetchColumn(), 're-enabled invert rule should keep exactly one linked incident row on immediate run');
+	assert_same(0, (int)$db3ReenableLinked->query('SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE rule_id = ' . $reenableLinkedRuleId)->fetchColumn(), 're-enabled invert rule immediate run should not create alert history without new incident creation');
+	$reenableStateImmediate = $repository3ReenableLinked->loadSubjectState($reenableLinkedRuleId, $reenableLinkedSubject);
+	assert_true(is_array($reenableStateImmediate), 're-enabled invert rule should preserve a subject-state row');
+	assert_same($reenableLinkedIncidentId, (int)$reenableStateImmediate['active_incident_id'], 're-enabled invert rule should keep existing incident linkage consistent after first run');
+	assert_same('2026-08-05 17:00:00', (string)$reenableStateImmediate['suppression_expires_at'], 're-enabled invert rule should keep existing suppression linkage state after first run');
+
+	$reenableNowProvider = function (): string {
+		return '2026-08-05 16:48:00';
+	};
+	$processor3ReenableLinkedFollowup = new BackgroundProcessor(
+		$db3ReenableLinked,
+		$repository3ReenableLinked,
+		new CdrScanner($db3ReenableLinked, $reenableNowProvider),
+		$reenableNowProvider
+	);
+	$reenableAfterWindow = $processor3ReenableLinkedFollowup->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $reenableAfterWindow['incidents_created'], 'after the first full post-enable window, linked invert incident state should not create a duplicate incident');
+	assert_same(1, (int)$db3ReenableLinked->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $reenableLinkedRuleId)->fetchColumn(), 'after post-enable window processing, linked invert lifecycle should still have exactly one incident row');
+	assert_same(0, (int)$db3ReenableLinked->query('SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE rule_id = ' . $reenableLinkedRuleId)->fetchColumn(), 'post-enable window processing should not bypass suppression/linked state to create alerts from duplicate incidents');
+	assert_same(1, (int)$db3ReenableLinked->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $reenableLinkedRuleId . ' AND state IN (\'active\', \'accepted\')')->fetchColumn(), 'post-enable window processing should not create a second open incident when one is already linked');
+
+	$dbPath3LegacyUpgrade = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPath3LegacyUpgrade === false) {
+		throw new RuntimeException('Unable to create legacy-upgrade invert runtime contract SQLite file');
+	}
+	[$db3LegacyUpgrade, $repository3LegacyUpgrade, $scanner3LegacyUpgrade, $processor3LegacyUpgrade] = create_runtime_environment($dbPath3LegacyUpgrade, '2026-07-13 15:47:00');
+	insert_route($db3LegacyUpgrade, '18005550001', '', 'Main');
+	$legacyUpgradeRuleId = insert_rule($db3LegacyUpgrade, [
+		'name' => 'Invert Legacy Upgrade Rule',
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '00:00', 'end' => '23:59']],
+		'created_at' => '2026-07-10 00:00:00',
+		'updated_at' => '2026-07-10 00:00:00',
+		'enabled_at' => null,
+	]);
+	$legacyInitFirst = $processor3LegacyUpgrade->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $legacyInitFirst['incidents_created'], 'legacy upgrade invert rules without enabled_at or window state should not replay historical completed windows on first run');
+	assert_same(0, (int)$db3LegacyUpgrade->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $legacyUpgradeRuleId)->fetchColumn(), 'legacy upgrade invert first run should not create an immediate incident');
+	$legacyInitSubject = '__invert_rule__' . $legacyUpgradeRuleId;
+	$legacyInitState = $repository3LegacyUpgrade->loadSubjectState($legacyUpgradeRuleId, $legacyInitSubject);
+	assert_true(is_array($legacyInitState), 'legacy upgrade invert first run should persist subject window state for continuity');
+	assert_same('2026-07-13 15:47:00', (string)$legacyInitState['current_window_started_at'], 'legacy upgrade invert first run should anchor the initial window at current monitor time when enabled_at is unavailable');
+	assert_same('2026-07-13 16:47:00', (string)$legacyInitState['current_window_ends_at'], 'legacy upgrade invert first run should persist the first full-window end from the anchored boundary');
+
+	$legacyUpgradeNowProvider = function (): string {
+		return '2026-07-13 16:48:00';
+	};
+	$processor3LegacyUpgradeFollowup = new BackgroundProcessor(
+		$db3LegacyUpgrade,
+		$repository3LegacyUpgrade,
+		new CdrScanner($db3LegacyUpgrade, $legacyUpgradeNowProvider),
+		$legacyUpgradeNowProvider
+	);
+	$legacyInitSecond = $processor3LegacyUpgradeFollowup->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(1, $legacyInitSecond['incidents_created'], 'legacy upgrade invert rules should create the first incident only after the first full post-boundary window elapses');
+	$legacyIncident = $db3LegacyUpgrade->query('SELECT first_matched_at, last_matched_at, matched_call_count FROM repeatcaller_incidents WHERE rule_id = ' . $legacyUpgradeRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($legacyIncident), 'legacy upgrade invert follow-up run should create one incident row');
+	assert_same('2026-07-13 16:47:00', (string)$legacyIncident['first_matched_at'], 'legacy upgrade invert incident first_matched_at should align to the first completed post-boundary window end');
+	assert_same('2026-07-13 16:47:00', (string)$legacyIncident['last_matched_at'], 'legacy upgrade invert incident last_matched_at should align to the first completed post-boundary window end');
+	assert_same(0, (int)$legacyIncident['matched_call_count'], 'legacy upgrade invert incident should preserve zero-call semantics when threshold is unmet');
+
+	$dbPath3LegacyState = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPath3LegacyState === false) {
+		throw new RuntimeException('Unable to create legacy-state-preservation invert runtime contract SQLite file');
+	}
+	[$db3LegacyState, $repository3LegacyState, $scanner3LegacyState, $processor3LegacyState] = create_runtime_environment($dbPath3LegacyState, '2026-07-13 14:30:00');
+	insert_route($db3LegacyState, '18005550001', '', 'Main');
+	$legacyStateRuleId = insert_rule($db3LegacyState, [
+		'name' => 'Invert Legacy State Rule',
+		'mode' => 'invert',
+		'threshold_count' => 3,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => 1, 'start' => '00:00', 'end' => '23:59']],
+		'created_at' => '2026-07-10 00:00:00',
+		'updated_at' => '2026-07-10 00:00:00',
+		'enabled_at' => null,
+	]);
+	$legacyStateSubject = '__invert_rule__' . $legacyStateRuleId;
+	$db3LegacyState->prepare('INSERT INTO repeatcaller_rule_subject_state (rule_id, subject_key, current_window_started_at, current_window_ends_at, current_window_call_count, threshold_met, clear_observed_since_trigger, active_incident_id, suppression_expires_at, last_call_at, last_evaluated_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute([
+			$legacyStateRuleId,
+			$legacyStateSubject,
+			'2026-07-13 14:00:00',
+			'2026-07-13 15:00:00',
+			0,
+			0,
+			0,
+			null,
+			null,
+			null,
+			'2026-07-13 14:00:00',
+			'2026-07-13 14:00:00',
+			'2026-07-13 14:00:00',
+		]);
+	$legacyStateRun = $processor3LegacyState->run([
+		'enabled' => '1',
+		'default_country_code' => '44',
+	]);
+	assert_same(0, $legacyStateRun['incidents_created'], 'legacy invert rules with persisted window state should not be reinitialized during upgrade continuity');
+	$legacyStatePersisted = $repository3LegacyState->loadSubjectState($legacyStateRuleId, $legacyStateSubject);
+	assert_true(is_array($legacyStatePersisted), 'legacy persisted state should remain available after monitor run');
+	assert_same('2026-07-13 14:00:00', (string)$legacyStatePersisted['current_window_started_at'], 'legacy persisted current_window_started_at should be preserved when no full window has elapsed');
 
 	$dbPath3Call = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath3Call === false) {
@@ -956,8 +1269,8 @@ try {
 	}
 	[$db7Default, $repository7Default, $scanner7Default, $processor7Default] = create_runtime_environment($dbPath7Default, '2026-07-13 09:20:00');
 	insert_route($db7Default, '18005550001', '', 'Main');
-	$db7Default->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Default Suppression Rule', 1, 0, 0, null, null, 'repeat', 2, 60, 'any', 0, 'all', null, null, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db7Default->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Default Suppression Rule', 1, '2026-07-13 09:00:00', 0, 0, null, null, 'repeat', 2, 60, 'any', 0, 'all', null, null, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$defaultSuppressionRuleId = (int)$db7Default->lastInsertId();
 	$db7Default->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')
 		->execute([$defaultSuppressionRuleId, 1, '09:00:00', '17:00:00', '2026-07-13 09:00:00']);
@@ -978,8 +1291,8 @@ try {
 	}
 	[$db7Disabled, $repository7Disabled, $scanner7Disabled, $processor7Disabled] = create_runtime_environment($dbPath7Disabled, '2026-07-13 09:20:00');
 	insert_route($db7Disabled, '18005550001', '', 'Main');
-	$db7Disabled->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Disabled Suppression Rule', 1, 0, 0, null, null, 'repeat', 2, 60, 'any', 0, 'all', null, 0, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db7Disabled->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Disabled Suppression Rule', 1, '2026-07-13 09:00:00', 0, 0, null, null, 'repeat', 2, 60, 'any', 0, 'all', null, 0, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$disabledSuppressionRuleId = (int)$db7Disabled->lastInsertId();
 	$db7Disabled->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')
 		->execute([$disabledSuppressionRuleId, 1, '09:00:00', '17:00:00', '2026-07-13 09:00:00']);

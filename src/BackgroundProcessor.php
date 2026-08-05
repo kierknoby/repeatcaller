@@ -262,7 +262,11 @@ final class BackgroundProcessor {
 		$suppressionMinutes = $this->ruleSuppressionMinutes($rule);
 		foreach ($subjects as $subject) {
 			$state = $this->repository->loadSubjectState((int)$rule['id'], $subject) ?? [];
-			$currentWindowStart = $state['current_window_started_at'] ?? $this->latestScheduleAnchor($rule['schedules'], $now);
+			$currentWindowStart = trim((string)($state['current_window_started_at'] ?? ''));
+			if ($currentWindowStart === '') {
+				$activationBoundary = $this->invertActivationBoundary($rule, $now);
+				$currentWindowStart = $this->initialInvertWindowStart($rule['schedules'], $activationBoundary);
+			}
 			if ($currentWindowStart === null) {
 				continue;
 			}
@@ -323,6 +327,72 @@ final class BackgroundProcessor {
 			$state['last_evaluated_at'] = $now;
 			$this->repository->saveSubjectState((int)$rule['id'], $subject, $state);
 		}
+	}
+
+	private function invertActivationBoundary(array $rule, string $now): string {
+		$enabledAt = trim((string)($rule['enabled_at'] ?? ''));
+		if ($enabledAt !== '' && strtotime($enabledAt) !== false) {
+			return $enabledAt;
+		}
+
+		return $now;
+	}
+
+	private function initialInvertWindowStart(array $schedules, string $activationBoundary): ?string {
+		if (strtotime($activationBoundary) === false) {
+			return null;
+		}
+
+		if (DetectionEngine::callInActiveSchedule($activationBoundary, $schedules)) {
+			return $activationBoundary;
+		}
+
+		return $this->nextScheduleAnchorOnOrAfter($schedules, $activationBoundary);
+	}
+
+	private function nextScheduleAnchorOnOrAfter(array $schedules, string $boundary): ?string {
+		$boundaryTs = strtotime($boundary);
+		if ($boundaryTs === false || !$schedules) {
+			return null;
+		}
+
+		$boundaryDayStartTs = strtotime(date('Y-m-d', $boundaryTs) . ' 00:00:00');
+		if ($boundaryDayStartTs === false) {
+			return null;
+		}
+
+		$earliest = null;
+		for ($offset = 0; $offset <= 7; $offset++) {
+			$dayTs = strtotime('+' . $offset . ' day', $boundaryDayStartTs);
+			$day = (int)date('w', $dayTs);
+			foreach ($schedules as $period) {
+				$periodDay = isset($period['day']) ? (int)$period['day'] : (isset($period['day_of_week']) ? (int)$period['day_of_week'] : null);
+				if ($periodDay === null) {
+					continue;
+				}
+				if ($periodDay !== -1 && $periodDay !== $day) {
+					continue;
+				}
+
+				$startRaw = isset($period['start']) ? (string)$period['start'] : (isset($period['start_time']) ? (string)$period['start_time'] : '');
+				$start = substr(trim($startRaw), 0, 5);
+				if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $start)) {
+					continue;
+				}
+
+				$candidate = date('Y-m-d', $dayTs) . ' ' . $start . ':00';
+				$candidateTs = strtotime($candidate);
+				if ($candidateTs === false || $candidateTs < $boundaryTs) {
+					continue;
+				}
+
+				if ($earliest === null || $candidateTs < strtotime($earliest)) {
+					$earliest = $candidate;
+				}
+			}
+		}
+
+		return $earliest;
 	}
 
 	private function hydrateRules(array $rules): array {

@@ -26,6 +26,7 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadEnabledRules(): array {
+		$enabledAtExpr = $this->columnExpr('repeatcaller_rules', 'enabled_at', 'NULL');
 		$emailEnabledExpr = $this->columnExpr('repeatcaller_rules', 'email_enabled', '0');
 		$emailRecipientsExpr = $this->columnExpr('repeatcaller_rules', 'email_recipients', 'NULL');
 		$alertCallExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_enabled', '0');
@@ -38,7 +39,7 @@ final class RepeatCallerRepository {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->query(
-			'SELECT id, name, enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
+			'SELECT id, name, enabled, ' . $enabledAtExpr . ' AS enabled_at, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
 					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
@@ -56,6 +57,7 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadRulesSummary(): array {
+		$enabledAtExpr = $this->columnExpr('repeatcaller_rules', 'enabled_at', 'NULL');
 		$emailEnabledExpr = $this->columnExpr('repeatcaller_rules', 'email_enabled', '0');
 		$emailRecipientsExpr = $this->columnExpr('repeatcaller_rules', 'email_recipients', 'NULL');
 		$alertCallExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_enabled', '0');
@@ -68,7 +70,7 @@ final class RepeatCallerRepository {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->query(
-			'SELECT r.id, r.name, r.enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
+			'SELECT r.id, r.name, r.enabled, ' . $enabledAtExpr . ' AS enabled_at, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
 					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
@@ -225,6 +227,7 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadRule(int $ruleId): ?array {
+		$enabledAtExpr = $this->columnExpr('repeatcaller_rules', 'enabled_at', 'NULL');
 		$emailEnabledExpr = $this->columnExpr('repeatcaller_rules', 'email_enabled', '0');
 		$emailRecipientsExpr = $this->columnExpr('repeatcaller_rules', 'email_recipients', 'NULL');
 		$alertCallExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_enabled', '0');
@@ -237,7 +240,7 @@ final class RepeatCallerRepository {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$deletedAtExpr = $this->columnExpr('repeatcaller_rules', 'deleted_at', 'NULL');
 		$stmt = $this->pdo->prepare(
-			'SELECT id, name, enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
+			'SELECT id, name, enabled, ' . $enabledAtExpr . ' AS enabled_at, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
 					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
@@ -265,6 +268,18 @@ final class RepeatCallerRepository {
 
 	public function saveRule(array $payload, string $now): int {
 		$ruleId = isset($payload['id']) && (int)$payload['id'] > 0 ? (int)$payload['id'] : 0;
+		$hasEnabledAt = $this->hasColumn('repeatcaller_rules', 'enabled_at');
+		$existingRule = $ruleId > 0 ? $this->loadRule($ruleId) : null;
+		$wasEnabled = is_array($existingRule) ? !empty($existingRule['enabled']) : false;
+		$wasMode = is_array($existingRule) ? (string)($existingRule['mode'] ?? 'repeat') : 'repeat';
+		$isEnableTransition = !$wasEnabled && !empty($payload['enabled']);
+		$isModeTransitionToInvert = $ruleId > 0 && $wasMode !== 'invert' && (string)$payload['mode'] === 'invert' && !empty($payload['enabled']);
+		$isEnabledInvertWindowConfigChange = $ruleId > 0
+			&& $wasEnabled
+			&& !empty($payload['enabled'])
+			&& $wasMode === 'invert'
+			&& (string)$payload['mode'] === 'invert'
+			&& $this->invertWindowConfigChanged($existingRule, $payload);
 		$hasEmailEnabled = $this->hasColumn('repeatcaller_rules', 'email_enabled');
 		$hasEmailRecipients = $this->hasColumn('repeatcaller_rules', 'email_recipients');
 		$hasAlertCall = $this->hasColumn('repeatcaller_rules', 'alert_call_enabled');
@@ -341,6 +356,10 @@ final class RepeatCallerRepository {
 				$set[] = 'alert_call_callerid = ?';
 				$params[] = $this->nullableString($payload['alert_call_callerid'] ?? null);
 			}
+			if ($hasEnabledAt && ($isEnableTransition || $isModeTransitionToInvert || $isEnabledInvertWindowConfigChange)) {
+				$set[] = 'enabled_at = ?';
+				$params[] = $now;
+			}
 			if ($hasIsDeleted) {
 				$set[] = 'is_deleted = 0';
 			}
@@ -350,6 +369,10 @@ final class RepeatCallerRepository {
 			$params[] = $ruleId;
 			$stmt = $this->pdo->prepare('UPDATE repeatcaller_rules SET ' . implode(', ', $set) . ' WHERE id = ?');
 			$stmt->execute($params);
+
+			if (($isEnableTransition && (string)$payload['mode'] === 'invert') || $isModeTransitionToInvert || $isEnabledInvertWindowConfigChange) {
+				$this->resetInvertObservationWindowState($ruleId, $now);
+			}
 		} else {
 			$columns = [
 				'name', 'enabled', 'mode', 'threshold_count', 'observation_window_minutes',
@@ -370,6 +393,10 @@ final class RepeatCallerRepository {
 				$now,
 				$now,
 			];
+			if ($hasEnabledAt) {
+				$columns[] = 'enabled_at';
+				$values[] = !empty($payload['enabled']) ? $now : null;
+			}
 			if ($hasEmailEnabled) {
 				$columns[] = 'email_enabled';
 				$values[] = !empty($payload['email_enabled']) ? 1 : 0;
@@ -433,8 +460,70 @@ final class RepeatCallerRepository {
 
 	public function setRuleEnabled(int $ruleId, bool $enabled, string $now): void {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
-		$stmt = $this->pdo->prepare('UPDATE repeatcaller_rules SET enabled = ?, updated_at = ? WHERE id = ? AND ' . $isDeletedExpr . ' = 0');
-		$stmt->execute([$enabled ? 1 : 0, $now, $ruleId]);
+		$hasEnabledAt = $this->hasColumn('repeatcaller_rules', 'enabled_at');
+
+		$selectColumns = ['enabled', 'mode'];
+		if ($hasEnabledAt) {
+			$selectColumns[] = 'enabled_at';
+		}
+		$select = $this->pdo->prepare(
+			'SELECT ' . implode(', ', $selectColumns) . '
+			 FROM repeatcaller_rules
+			 WHERE id = ? AND ' . $isDeletedExpr . ' = 0
+			 LIMIT 1'
+		);
+		$select->execute([$ruleId]);
+		$row = $select->fetch(PDO::FETCH_ASSOC);
+		if (!is_array($row)) {
+			return;
+		}
+
+		$wasEnabled = !empty($row['enabled']);
+		$isInvertRule = (string)($row['mode'] ?? 'repeat') === 'invert';
+		$isEnableTransition = $enabled && !$wasEnabled;
+
+		$set = ['enabled = ?', 'updated_at = ?'];
+		$params = [$enabled ? 1 : 0, $now];
+		if ($hasEnabledAt && $isEnableTransition) {
+			$set[] = 'enabled_at = ?';
+			$params[] = $now;
+		}
+		$params[] = $ruleId;
+
+		$update = $this->pdo->prepare('UPDATE repeatcaller_rules SET ' . implode(', ', $set) . ' WHERE id = ? AND ' . $isDeletedExpr . ' = 0');
+		$update->execute($params);
+
+		if ($isEnableTransition && $isInvertRule) {
+			$this->resetInvertObservationWindowState($ruleId, $now);
+		}
+	}
+
+	private function resetInvertObservationWindowState(int $ruleId, string $now): void {
+		$stmt = $this->pdo->prepare(
+			'UPDATE repeatcaller_rule_subject_state
+			 SET current_window_started_at = NULL,
+				 current_window_ends_at = NULL,
+				 current_window_call_count = 0,
+				 threshold_met = 0,
+				 clear_observed_since_trigger = 0,
+				 last_call_at = NULL,
+				 last_evaluated_at = NULL,
+				 updated_at = ?
+			 WHERE rule_id = ?'
+		);
+		$stmt->execute([$now, $ruleId]);
+	}
+
+	private function invertWindowConfigChanged(array $existingRule, array $payload): bool {
+		$existingWindow = (int)($existingRule['observation_window_minutes'] ?? 0);
+		$newWindow = (int)($payload['observation_window_minutes'] ?? 0);
+		if ($existingWindow !== $newWindow) {
+			return true;
+		}
+
+		$existingSchedules = self::normalizeSchedules($existingRule['schedules'] ?? []);
+		$newSchedules = self::normalizeSchedules($payload['schedules'] ?? []);
+		return $existingSchedules !== $newSchedules;
 	}
 
 	public function softDeleteRule(int $ruleId, string $now): void {

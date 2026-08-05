@@ -25,6 +25,7 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
+			enabled_at TEXT,
 			email_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_destinations TEXT,
@@ -211,11 +212,11 @@ try {
 	$db = new PDO('sqlite:' . $dbPath);
 	$repo = create_repository($db);
 
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Rule A', 1, 1, 1, '100,101', 'ordered', 1, 55, 0, '5551234', 'repeat', 2, 60, 'any', 0, 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Rule A', 1, '2026-07-13 09:00:00', 1, 1, '100,101', 'ordered', 1, 55, 0, '5551234', 'repeat', 2, 60, 'any', 0, 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$ruleId = (int)$db->lastInsertId();
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Rule Disabled', 0, 0, 0, null, 'ringall', 1, null, 0, null, 'repeat', 2, 60, 'any', 0, 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Rule Disabled', 0, null, 0, 0, null, 'ringall', 1, null, 0, null, 'repeat', 2, 60, 'any', 0, 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 
 	$db->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ruleId, 1, '09:00:00', '12:00:00', '2026-07-13 09:00:00']);
 	$db->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ruleId, 1, '14:00:00', '18:00:00', '2026-07-13 09:00:00']);
@@ -227,7 +228,202 @@ try {
 	$enabledRules = $repo->loadEnabledRules();
 	assert_same(1, count($enabledRules), 'only enabled rules should be loaded');
 	assert_same('Rule A', $enabledRules[0]['name'], 'enabled rule should round-trip');
+	assert_same('2026-07-13 09:00:00', (string)($enabledRules[0]['enabled_at'] ?? ''), 'enabled rules should expose enabled_at when available');
 	assert_same(0, (int)($enabledRules[0]['alert_call_handle_callerid_upstream'] ?? 0), 'existing stored rules should preserve legacy upstream-caller-id handling default as disabled');
+
+	$enabledAtEditRuleId = $repo->saveRule([
+		'name' => 'EnabledAt Edit Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:40:00');
+	$enabledAtCreatedRule = $repo->loadRule($enabledAtEditRuleId);
+	assert_same('2026-07-13 09:40:00', (string)$enabledAtCreatedRule['enabled_at'], 'new enabled rules should persist enabled_at at creation time');
+
+	$repo->saveRule([
+		'id' => $enabledAtEditRuleId,
+		'name' => 'EnabledAt Edit Rule Updated',
+		'enabled' => 1,
+		'email_enabled' => 1,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 3,
+		'observation_window_minutes' => 90,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:45:00');
+	$editedRule = $repo->loadRule($enabledAtEditRuleId);
+	assert_same('2026-07-13 09:40:00', (string)$editedRule['enabled_at'], 'ordinary rule edits should not alter enabled_at');
+
+	$invertDisabledRuleId = $repo->saveRule([
+		'name' => 'Invert Disabled Rule',
+		'enabled' => 0,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'invert',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:30:00');
+	$invertDisabledSubject = '__invert_rule__' . $invertDisabledRuleId;
+	$repo->saveSubjectState($invertDisabledRuleId, $invertDisabledSubject, [
+		'current_window_started_at' => '2026-07-13 09:00:00',
+		'current_window_ends_at' => '2026-07-13 10:00:00',
+		'current_window_call_count' => 0,
+		'threshold_met' => 1,
+		'clear_observed_since_trigger' => 1,
+		'active_incident_id' => 44,
+		'suppression_expires_at' => '2026-07-13 11:00:00',
+		'last_call_at' => null,
+		'last_evaluated_at' => '2026-07-13 09:30:00',
+		'created_at' => '2026-07-13 09:30:00',
+		'updated_at' => '2026-07-13 09:30:00',
+	]);
+
+	$invertBeforeEnable = $repo->loadRule($invertDisabledRuleId);
+	assert_same(null, $invertBeforeEnable['enabled_at'], 'disabled invert rules should not receive enabled_at at creation');
+	assert_true(is_array($repo->loadSubjectState($invertDisabledRuleId, $invertDisabledSubject)), 'invert subject state precondition should exist before re-enable');
+
+	$repo->setRuleEnabled($invertDisabledRuleId, true, '2026-07-13 10:00:00');
+	$invertAfterEnable = $repo->loadRule($invertDisabledRuleId);
+	assert_same('2026-07-13 10:00:00', (string)$invertAfterEnable['enabled_at'], 'enabling a disabled invert rule should stamp enabled_at with the transition time');
+	$invertStateAfterEnable = $repo->loadSubjectState($invertDisabledRuleId, $invertDisabledSubject);
+	assert_true(is_array($invertStateAfterEnable), 'enabling a disabled invert rule should preserve subject-state rows while resetting only observation-window fields');
+	assert_same(null, $invertStateAfterEnable['current_window_started_at'], 'enable transition should reset current_window_started_at for invert re-anchoring');
+	assert_same(null, $invertStateAfterEnable['current_window_ends_at'], 'enable transition should reset current_window_ends_at for invert re-anchoring');
+	assert_same(0, (int)$invertStateAfterEnable['current_window_call_count'], 'enable transition should reset current_window_call_count for invert re-anchoring');
+	assert_same(0, (int)$invertStateAfterEnable['threshold_met'], 'enable transition should reset threshold latch state for invert re-anchoring');
+	assert_same(0, (int)$invertStateAfterEnable['clear_observed_since_trigger'], 'enable transition should reset clear-observed latch for invert re-anchoring');
+	assert_same(44, (int)$invertStateAfterEnable['active_incident_id'], 'enable transition should preserve active_incident_id linkage');
+	assert_same('2026-07-13 11:00:00', (string)$invertStateAfterEnable['suppression_expires_at'], 'enable transition should preserve suppression expiry state');
+
+	$repeatToInvertRuleId = $repo->saveRule([
+		'name' => 'Repeat To Invert Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:10:00');
+	$repeatToInvertSubject = '__invert_rule__' . $repeatToInvertRuleId;
+	$repo->saveSubjectState($repeatToInvertRuleId, $repeatToInvertSubject, [
+		'current_window_started_at' => '2026-07-13 09:00:00',
+		'current_window_ends_at' => '2026-07-13 10:00:00',
+		'current_window_call_count' => 2,
+		'threshold_met' => 1,
+		'clear_observed_since_trigger' => 1,
+		'active_incident_id' => 77,
+		'suppression_expires_at' => '2026-07-13 12:00:00',
+		'last_call_at' => '2026-07-13 09:05:00',
+		'last_evaluated_at' => '2026-07-13 09:05:00',
+		'created_at' => '2026-07-13 09:10:00',
+		'updated_at' => '2026-07-13 09:10:00',
+	]);
+	$repo->saveRule([
+		'id' => $repeatToInvertRuleId,
+		'name' => 'Repeat To Invert Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 10:15:00');
+	$repeatToInvertRule = $repo->loadRule($repeatToInvertRuleId);
+	assert_same('2026-07-13 10:15:00', (string)$repeatToInvertRule['enabled_at'], 'editing an enabled rule from repeat to invert should re-anchor enabled_at to transition time');
+	$repeatToInvertState = $repo->loadSubjectState($repeatToInvertRuleId, $repeatToInvertSubject);
+	assert_true(is_array($repeatToInvertState), 'repeat-to-invert transition should preserve subject-state rows');
+	assert_same(null, $repeatToInvertState['current_window_started_at'], 'repeat-to-invert transition should reset current_window_started_at for invert re-anchoring');
+	assert_same(null, $repeatToInvertState['current_window_ends_at'], 'repeat-to-invert transition should reset current_window_ends_at for invert re-anchoring');
+	assert_same(0, (int)$repeatToInvertState['current_window_call_count'], 'repeat-to-invert transition should reset current_window_call_count for invert re-anchoring');
+	assert_same(77, (int)$repeatToInvertState['active_incident_id'], 'repeat-to-invert transition should preserve active incident linkage');
+	assert_same('2026-07-13 12:00:00', (string)$repeatToInvertState['suppression_expires_at'], 'repeat-to-invert transition should preserve suppression expiry linkage');
+
+	$repo->saveRule([
+		'id' => $repeatToInvertRuleId,
+		'name' => 'Repeat To Invert Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 30,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'repeat_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '10:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 10:45:00');
+	$invertConfigChangeRule = $repo->loadRule($repeatToInvertRuleId);
+	assert_same('2026-07-13 10:45:00', (string)$invertConfigChangeRule['enabled_at'], 'editing observation window or schedule on an enabled invert rule should re-anchor enabled_at to edit time');
 
 	$invertRuleId = $repo->saveRule([
 		'name' => 'Invert Recording Rule',

@@ -117,6 +117,7 @@ final class Schema {
 	}
 
 	private static function applyGuardedMigrations(PDO $pdo): void {
+		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'enabled_at', 'DATETIME NULL');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'email_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'email_recipients', 'TEXT NULL');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
@@ -182,6 +183,7 @@ final class Schema {
 				id INT UNSIGNED NOT NULL AUTO_INCREMENT,
 				name VARCHAR(255) NOT NULL,
 				enabled TINYINT(1) NOT NULL DEFAULT 1,
+				enabled_at DATETIME NULL,
 				email_enabled TINYINT(1) NOT NULL DEFAULT 0,
 				email_recipients TEXT NULL,
 				alert_call_enabled TINYINT(1) NOT NULL DEFAULT 0,

@@ -257,6 +257,19 @@ current processing continuity.
 - Invert mode: creates an incident when a full configured window completes
   without reaching threshold.
 
+Invert activation timing:
+
+- A newly created enabled Invert rule starts its first observation window from
+  when it becomes active, subject to its configured schedule.
+- It does not retrospectively evaluate completed windows from before creation
+  or activation.
+- Re-enabling an Invert rule establishes a new activation boundary.
+- Changing an enabled rule from Repeat to Invert, or changing an enabled
+  Invert rule's observation window or schedule, re-anchors the Invert
+  observation window from the change time.
+- Existing persisted Invert window state is preserved across ordinary monitor
+  runs and upgrades.
+
 Matching can include:
 
 - caller scope (any, withheld-only, specific caller lists). Caller lists accept spaces, commas or new lines as separators and save back as comma-separated values.
@@ -679,6 +692,19 @@ Recordings, and administrator-controlled routing.
 
 - Documentation and focused admin coverage were updated to reflect final 1.0.1
   behavior.
+
+#### Invert activation timing
+
+- Newly created enabled Invert rules begin their first observation window from
+  activation time, subject to schedule.
+- Completed windows from before creation or activation are not retrospectively
+  evaluated.
+- Re-enabling an Invert rule creates a new activation boundary.
+- Changing an enabled rule from Repeat to Invert, or changing an enabled
+  Invert rule's schedule or observation window, re-anchors the Invert
+  observation window from the time of change.
+- Persisted Invert observation state is retained across normal monitor runs
+  and upgrades.
 
 ## Validation
 
