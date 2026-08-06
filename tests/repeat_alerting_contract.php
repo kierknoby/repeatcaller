@@ -126,7 +126,7 @@ assert_true(strpos($installSource, '/var/lib/asterisk/sounds') === false && strp
 
 $agiSource = file_get_contents(__DIR__ . '/../agi/repeatcaller_alert_response.php');
 assert_true($agiSource !== false, 'AGI interactive handler should be readable');
-assert_true(strpos($agiSource, 'STREAM FILE') !== false, 'interactive AGI must stream recordings and prompts through STREAM FILE with escape digits');
+assert_true(strpos($agiSource, 'STREAM FILE') !== false || strpos($agiSource, 'CONTROL STREAM FILE') !== false, 'interactive AGI must stream recordings and prompts through an interruptible AGI playback primitive with escape digits');
 assert_true(strpos($agiSource, 'SAY NUMBER') !== false, 'interactive AGI must speak numeric counts and windows through SAY NUMBER with escape digits');
 assert_true(strpos($agiSource, 'SAY DIGITS') !== false, 'interactive AGI must speak caller and DID details through SAY DIGITS with escape digits');
 $agiSessionSource = file_get_contents(__DIR__ . '/../src/AlertCallAgiSession.php');
@@ -134,6 +134,7 @@ assert_true($agiSessionSource !== false, 'AlertCallAgiSession.php should be read
 assert_true(strpos($agiSource, 'WAIT FOR DIGIT ') !== false, 'interactive AGI transport must issue WAIT FOR DIGIT commands');
 assert_true(strpos($agiSessionSource, 'waitForDigit(1)') !== false, 'interactive AGI session must poll immediately after answer so a buffered early digit is retained and acted on');
 assert_true(strpos($agiSessionSource, 'waitForDigit(10000)') !== false, 'interactive AGI session must preserve the 10-second response wait after spoken prompts');
+assert_true(strpos($agiSessionSource, 'incoming-call-no-longer-avail') !== false, 'interactive AGI session must play the accepted-elsewhere prompt before thank-you and goodbye');
 
 $viewSource = file_get_contents(__DIR__ . '/../views/main.php');
 assert_true($viewSource !== false, 'views/main.php should be readable for alert-call UI contract checks');
@@ -286,6 +287,9 @@ $remoteAcceptedResult = $agiSession->run([
 });
 assert_same('remote_accepted', (string)$remoteAcceptedResult['response'], 'remote acceptance must terminate the interactive AGI session cleanly');
 assert_same('1', (string)($remoteAcceptedTransport->variables['REPEATCALLER_ALERT_COMPLETED'] ?? ''), 'remote acceptance must mark the answered call complete before exit audio');
+$remotePromptFiles = array_values(array_filter(array_column($remoteAcceptedTransport->calls, 'file'), static function ($file): bool { return is_string($file) && $file !== ''; }));
+assert_true(in_array('incoming-call-no-longer-avail', $remotePromptFiles, true), 'remote acceptance must play the incoming-call-no-longer-avail prompt before closing prompts');
+assert_true(array_search('incoming-call-no-longer-avail', $remotePromptFiles, true) < array_search('auth-thankyou', $remotePromptFiles, true), 'incoming-call-no-longer-avail must be played before auth-thankyou');
 
 $redirectDecisionDb = new PDO('sqlite::memory:');
 $redirectDecisionDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);

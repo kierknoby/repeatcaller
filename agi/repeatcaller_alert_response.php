@@ -284,7 +284,7 @@ function repeatcallerAgiCreateTransport(): \FreePBX\modules\Repeatcaller\AlertCa
 			if (trim($file) === '') {
 				return '';
 			}
-			$response = repeatcallerAgiSendCommand('STREAM FILE ' . $file . ' "' . $escapeDigits . '"');
+			$response = repeatcallerAgiSendCommand('CONTROL STREAM FILE ' . $file . ' "' . $escapeDigits . '"');
 			return repeatcallerAgiResultDigit($response);
 		}
 

@@ -271,6 +271,7 @@ final class AlertCallAgiSession {
 
 	private function terminalRemoteAccepted(AlertCallAgiTransport $transport): array {
 		$transport->setVariable('REPEATCALLER_ALERT_COMPLETED', '1');
+		$transport->streamFile('incoming-call-no-longer-avail', '');
 		$transport->streamFile('auth-thankyou', '');
 		$transport->streamFile('goodbye', '');
 
