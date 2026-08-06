@@ -616,8 +616,7 @@
 		'5m': 'Every 5 Minutes',
 		hourly: 'Hourly',
 		daily: 'Daily',
-		escalating: 'Escalating',
-		fibonacci: 'Escalating'
+		escalating: 'Escalating'
 	};
 
 	var statusLabels = {
@@ -1210,7 +1209,7 @@
 		if (rawRepeat === 'daily') {
 			return 'repeating daily';
 		}
-		if (rawRepeat === 'escalating' || rawRepeat === 'fibonacci') {
+		if (rawRepeat === 'escalating') {
 			return 'using escalating reminders';
 		}
 		return 'using ' + repeatModeLabel(rawRepeat).toLowerCase() + ' reminders';

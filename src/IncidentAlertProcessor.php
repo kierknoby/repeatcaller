@@ -10,7 +10,6 @@ final class IncidentAlertProcessor {
 	private const REPEAT_MODE_HOURLY = 'hourly';
 	private const REPEAT_MODE_DAILY = 'daily';
 	private const REPEAT_MODE_ESCALATING = 'escalating';
-	private const REPEAT_MODE_FIBONACCI = 'fibonacci';
 	private const REPEAT_ESCALATING_BASE_SECONDS = 300;
 	private const REPEAT_ESCALATING_CEILING_SECONDS = 86400;
 
@@ -742,7 +741,6 @@ final class IncidentAlertProcessor {
 			'hourly' => 'Hourly',
 			'daily' => 'Daily',
 			'escalating' => 'Escalating',
-			'fibonacci' => 'Escalating',
 		], 'Never');
 	}
 
@@ -769,9 +767,6 @@ final class IncidentAlertProcessor {
 
 	private function normaliseAlertReminderMode(string $mode): string {
 		$mode = strtolower(trim($mode));
-		if ($mode === self::REPEAT_MODE_FIBONACCI) {
-			return self::REPEAT_MODE_ESCALATING;
-		}
 		if (in_array($mode, [self::REPEAT_MODE_NEVER, self::REPEAT_MODE_FIVE_MINUTES, self::REPEAT_MODE_HOURLY, self::REPEAT_MODE_DAILY, self::REPEAT_MODE_ESCALATING], true)) {
 			return $mode;
 		}

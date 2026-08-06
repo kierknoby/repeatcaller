@@ -20,7 +20,6 @@ class Repeatcaller implements \BMO {
 	const REPEAT_MODE_HOURLY = 'hourly';
 	const REPEAT_MODE_DAILY = 'daily';
 	const REPEAT_MODE_ESCALATING = 'escalating';
-	const REPEAT_MODE_FIBONACCI = 'fibonacci';
 	const AJAX_COMMANDS = [
 		'getenginestatus',
 		'runmonitor',
@@ -1489,9 +1488,6 @@ class Repeatcaller implements \BMO {
 
 	private function normaliseAlertReminderMode(?string $mode): string {
 		$mode = strtolower(trim((string)$mode));
-		if ($mode === self::REPEAT_MODE_FIBONACCI) {
-			return self::REPEAT_MODE_ESCALATING;
-		}
 		return in_array($mode, [self::REPEAT_MODE_NEVER, self::REPEAT_MODE_FIVE_MINUTES, self::REPEAT_MODE_HOURLY, self::REPEAT_MODE_DAILY, self::REPEAT_MODE_ESCALATING], true)
 			? $mode
 			: self::REPEAT_MODE_NEVER;

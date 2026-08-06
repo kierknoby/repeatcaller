@@ -2370,7 +2370,8 @@ assert_true((bool)preg_match('/if \(mode === \'invert\'\) \{[\s\S]*return \'Inve
 assert_true((bool)preg_match('/var repeatModeLabels = \{[\s\S]*\};/', $jsSource), 'Rules table should define repeat-mode display labels in one shared mapping');
 assert_true(substr_count($jsSource, 'var repeatModeLabels = {') === 1, 'repeat-mode display mapping should not be duplicated');
 assert_true(strpos($jsSource, "'5m': 'Every 5 Minutes'") !== false, 'repeat-mode mapping should render 5m as Every 5 Minutes');
-assert_true(strpos($jsSource, "fibonacci: 'Escalating'") !== false, 'repeat-mode mapping should present legacy fibonacci values as Escalating');
+assert_true(strpos($jsSource, "fibonacci: 'Escalating'") === false, 'repeat-mode mapping should not retain the removed fibonacci alias');
+assert_true(strpos($jsSource, "escalating: 'Escalating'") !== false, 'repeat-mode mapping should keep the canonical escalating label');
 assert_true(strpos($jsSource, "function repeatModeLabel(rawRepeatMode) {") !== false, 'Rules table should use dedicated repeat mode label helper');
 assert_true(strpos($jsSource, 'var modeLabel = detectionModeLabel(rule.mode || \'repeat\');') !== false, 'Rules table mode should be rendered through the shared detection mode formatter');
 assert_true(strpos($jsSource, "var repeatLabel = repeatModeLabel(rule.alert_reminder_mode_override || 'never');") !== false, 'Rules table repeat mode should be rendered through repeatModeLabel helper');

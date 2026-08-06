@@ -2436,7 +2436,7 @@ assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND act
 assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'email' AND event_type = 'reminder_1' AND stage_n = 0"), 'reminder stage should reserve email history from the same shared scheduler');
 assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'alert_call' AND event_type = 'reminder_1' AND stage_n = 0"), 'reminder stage should reserve alert_call history from the same shared scheduler');
 
-// 11c: legacy fibonacci override must remain equivalent to escalating
+// 11c: obsolete fibonacci alias should not be treated as a supported reminder mode
 $clockFib = new TestClock('2026-07-13 17:00:00');
 [$dbFib, $processorFib] = create_alert_environment($clockFib, new FakeEmailSender(), new FakeCallSender());
 $ruleFib = insert_rule($dbFib, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'fibonacci']);
@@ -2449,12 +2449,12 @@ $incidentFib = insert_incident($dbFib, [
 $processorFib->run(settings());
 $clockFib->now = '2026-07-13 17:04:59';
 $processorFib->run(settings());
-assert_same(0, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'legacy fibonacci mode should not alert before first 5m interval');
+assert_same(0, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'obsolete fibonacci alias should not trigger reminders before the first due interval');
 $clockFib->now = '2026-07-13 17:05:00';
 $processorFib->run(settings());
 $clockFib->now = '2026-07-13 17:10:00';
 $processorFib->run(settings());
-assert_same(2, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'legacy fibonacci mode should follow escalating cadence (5m then 5m)');
+assert_same(0, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'obsolete fibonacci alias should not trigger reminder cycles');
 
 // 12 and 13: per-rule override vs default never fallback
 $clockG = new TestClock('2026-07-13 09:00:00');
