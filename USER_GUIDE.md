@@ -87,7 +87,7 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Threshold: number of matching calls required for rule evaluation.
 - Window: observation period in minutes.
 - Suppression: controls incident lifecycle hold period before expiry/re-arm logic.
-	Leave blank to use the default 24hrs (1440 minutes). Enter 0 to disable
+	Leave blank to use the default 24 hours (1440 minutes). Enter 0 to disable
 	automatic suppression for that rule.
 - Repeat Alerts: reminder timing for active incidents.
 - Caller Scope: Any caller, withheld-only, or specific callers.
@@ -203,39 +203,74 @@ Schedules control when calls count for a rule.
 - Calls outside schedule do not count for that rule.
 - Overnight ranges are not supported in this release and should be split or avoided.
 
+## Threshold Evaluation in Repeat Mode
+
+Repeat mode uses a rolling observation window. The monitor evaluates each
+new call within the most recent N minutes, where N is the configured
+observation window. Each call creates a fresh window evaluation looking back
+N minutes from that call's time.
+
+Example: a 30-minute window rule at 09:11 looks back to 08:41 and sees 3
+matching calls (threshold met). At 09:26, the same caller triggers a fresh
+evaluation: the window looks back to 08:56 and may see more recent calls. At
+09:57, the window looks back to 09:27 and may see fewer calls in that recent
+window.
+
+The threshold latch prevents re-triggering until the rolling call count falls
+below the threshold, the monitor observes that clear state, and new qualifying
+calls occur after the clear is recorded.
+
 ## Suppression
 
 Suppression is an incident-lifecycle control.
 
-Repeat Caller uses a default 24hrs (1440 minutes) suppression period when no
+Repeat Caller uses a default 24 hours (1440 minutes) suppression period when no
 rule override is set.
 
 Rule-level Suppression override replaces that default for the rule.
 
 Rule-level Suppression values behave as follows:
 
-- blank: use the default 24hrs (1440 minutes) suppression period
+- blank: use the default 24 hours (1440 minutes) suppression period
 - numeric value: override the default for the rule
 - 0: disable automatic suppression for that rule
 
-Suppression controls how long Repeat Caller keeps an incident active before it
-may expire or re-arm.
+Suppression determines how long a new qualifying episode for the same rule
+and subject is blocked after the current condition has cleared and the latch
+has re-armed.
 
 Suppression lifecycle timing:
 
-- Accepting an incident starts or maintains suppression for that rule and
-	subject, but acceptance itself does not create a Suppressed Incidents row.
-- While the original threshold condition remains continuously true, further
-	matching calls update the accepted incident and do not create
-	suppression-history rows.
-- The rolling threshold condition must first clear (drop below threshold in
-	the configured window).
+- Suppression starts when an incident is created. The suppression period is
+	calculated from the moment of incident creation and stored immediately on
+	the incident row.
+- Accepting an incident records responsibility and controls further alerts for
+	the existing incident. Acceptance does not start, extend, or reset the
+	suppression period.
+- While the qualifying condition remains true (rolling call count for Repeat,
+	or continuing failed windows for Invert), further matching activity updates
+	the accepted incident and does not create suppression-history rows.
+- The qualifying condition must first clear: the rolling call count must fall
+	below the configured threshold (Repeat), or a window must meet or exceed
+	the threshold (Invert).
 - The monitor must observe that clear state and re-arm the threshold latch.
-- If the same caller reaches threshold again before suppression expires,
-	Repeat Caller blocks that fresh incident attempt and records it immediately
-	in Suppressed Incidents.
-- This threshold latch is intentional and prevents duplicate suppression rows
-	while one unbroken qualifying condition is still in progress.
+- If a new qualifying episode for the same rule and subject occurs after the
+	condition has cleared and the latch has re-armed, but before suppression
+	expires, Repeat Caller blocks that new episode and records it in Suppressed
+	Incidents.
+- The threshold latch is intentional and prevents duplicate suppression rows
+	while one unbroken qualifying condition is still in progress. After clear
+	is observed, new qualifying thresholds can trigger again.
+
+Suppression examples:
+
+- Repeat: a rule triggers at 10:05 with 30-minute suppression. Any new
+	qualifying call sequence between 10:05 and 10:35 (after the rolling count
+	drops and the latch re-arms) is blocked and recorded in Suppressed Incidents.
+- Invert: a rule's first failing window closes at 10:00 with 60-minute
+	suppression. Any new failing window between 10:00 and 11:00 (after a passing
+	window clears the incident and the latch re-arms) is blocked and recorded in
+	Suppressed Incidents.
 
 Comparison:
 
@@ -333,10 +368,14 @@ needs, and troubleshooting expectations.
 
 Accepting records responsibility. First acceptance wins. Accepted incidents remain visible in history, and later matching calls may continue updating the same incident while its condition remains active.
 
-While suppression remains active for that rule and subject, accepted incidents
-do not reserve or send further reminders, emails, or Alert Calls. After the
-suppression expires, genuinely new qualifying activity can make the accepted
-incident alert-eligible again.
+Acceptance does not start, extend, or reset suppression. Suppression is set
+when the incident is created and scoped to the same rule and subject.
+While the qualifying condition remains active, matching activity continues to
+update the accepted incident and no additional alerts or reminders are sent.
+Once the condition clears and the latch re-arms, any new qualifying episode is
+a separate event: if suppression has not yet expired it is blocked and recorded
+in Suppressed Incidents; if suppression has already expired the new episode
+creates a new incident and follows the normal alert process.
 
 Accepted incidents appear in Suppressed Incidents only when a fresh qualifying
 attempt is blocked during still-active suppression after the monitor has first

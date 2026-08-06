@@ -1,6 +1,6 @@
 # Repeat Caller 1.0.1 for FreePBX 16 and 17
 
-**Release date:** 5 August 2026
+**Release date:** 6 August 2026
 
 ## Introduction
 
@@ -257,6 +257,40 @@ current processing continuity.
 - Invert mode: creates an incident when a full configured window completes
   without reaching threshold.
 
+Repeat mode threshold window:
+
+- Repeat mode uses a rolling observation window: the "most recent N minutes"
+  where N is the configured observation window in minutes.
+- Each call evaluated creates a fresh rolling window from that call's time,
+  going back N minutes.
+- Later matching calls do not extend the previous window. Each call gets its
+  own rolling window evaluation.
+- Example rule: Repeat mode, 3 matching calls within 30 minutes, with 24-hour
+  suppression.
+  - Calls at 09:00, 09:05, and 09:10 meet the rule and create an incident.
+  - The incident is accepted.
+  - Further calls at 09:20, 09:25, and 09:30 remain part of the same
+    continuous qualifying episode because there are still at least 3 matching
+    calls in the latest rolling 30-minute window.
+  - Those calls update the accepted incident and do not create additional
+    suppression-history rows.
+  - Once the rolling 30-minute count falls below 3 and the monitor observes
+    that clear state, the rule is re-armed.
+  - If the caller later reaches 3 matching calls within 30 minutes again
+    while the 24-hour suppression period is still active, that new qualifying
+    episode is blocked and recorded in Suppressed Incidents.
+- Calls or observation windows that belong to the same continuous qualifying
+  episode do not create repeated Suppressed Incident rows. Suppression records
+  a later, genuinely new qualifying episode after the original condition has
+  cleared and re-armed.
+
+Invert mode window evaluation:
+
+- Invert mode evaluates fixed, non-rolling observation windows that advance
+  in configured chunks (e.g., 30-minute blocks).
+- When a completed window contains fewer than the configured threshold number
+  of matching calls, the condition is triggered.
+
 Invert activation timing:
 
 - A newly created enabled Invert rule starts its first observation window from
@@ -429,19 +463,26 @@ qualifying attempts.
 
 Suppression lifecycle timing:
 
-- Accepting an incident starts or maintains suppression for that rule and
-  subject, but acceptance itself does not create a Suppressed Incidents row.
-- While the original threshold condition remains continuously true, further
-  matching calls update the accepted incident and do not create
-  suppression-history rows.
-- The rolling threshold condition must first clear (drop below threshold in
-  the configured window).
+- Suppression starts when an incident is created. The suppression period is
+  calculated from the moment of incident creation and stored immediately on
+  the incident row.
+- Accepting an incident records responsibility and controls further alerts for
+  the existing incident. Acceptance does not start, extend, or reset the
+  suppression period.
+- While the qualifying condition remains true (rolling call count for Repeat,
+  or continuing failed windows for Invert), further matching activity updates
+  the accepted incident and does not create suppression-history rows.
+- The qualifying condition must first clear: the rolling call count must fall
+  below the configured threshold (Repeat), or a window must meet or exceed
+  the threshold (Invert).
 - The monitor must observe that clear state and re-arm the threshold latch.
-- If the same caller reaches threshold again before suppression expires,
-  Repeat Caller blocks that fresh incident attempt and records it immediately
-  in Suppressed Incidents.
+- If a new qualifying episode for the same rule and subject occurs after the
+  condition has cleared and the latch has re-armed, but before suppression
+  expires, Repeat Caller blocks that new episode and records it in Suppressed
+  Incidents.
 - The threshold latch is intentional and prevents duplicate suppression rows
-  while one unbroken qualifying condition is still in progress.
+  while one unbroken qualifying condition is still in progress. After clear
+  is observed, new qualifying thresholds can trigger again.
 
 Suppressed Incidents view shows audit rows including matching count, threshold
 window context, suppression expiry, and related incident.
@@ -507,7 +548,7 @@ Reports > Repeat Caller includes these main sections:
 - Rules: summary table plus Add Rule editor for mode/threshold/window, caller
   and route scope, schedules, repeat mode, suppression setting, rule-level
   email recipients, and alert actions. Blank suppression uses the default
-  24hrs (1440 minutes) period; 0 disables automatic suppression for that rule.
+  24 hours (1440 minutes) period; 0 disables automatic suppression for that rule.
   The Start as control is used only when creating a new rule to choose whether
   it starts enabled or disabled.
   The actions checklist order is GUI, Alert Call, then Email, and the email
@@ -582,12 +623,14 @@ configuration choice that a PBX administrator may intentionally apply.
 
 ### Incident Acceptance Behaviour
 
-Accepting an incident stops ordinary future reminder stages for the current
-incident state while rule-and-subject suppression remains active. Later
-matching calls can still update the accepted incident internally during that
-suppression window, but no reminder stages or notifications are reserved or
-sent until suppression expires. After expiry, genuinely new qualifying
-activity can make the accepted incident alert-eligible again.
+Accepting an incident records responsibility and controls alert delivery for
+that incident. It does not start, extend, or reset the suppression period.
+While the qualifying condition remains active, matching activity continues to
+update the accepted incident and no additional alerts or reminders are sent.
+Once the condition clears and the latch re-arms, any new qualifying episode is
+a separate event: if suppression has not yet expired it is blocked and recorded
+in Suppressed Incidents; if suppression has already expired the new episode
+creates a new incident and follows the normal alert process.
 
 ### Compatibility and Development Notes
 
@@ -634,7 +677,7 @@ Recordings, and administrator-controlled routing.
 
 ## Release History
 
-### 1.0.1, patch release, 5 August 2026
+### 1.0.1, patch release, 6 August 2026
 
 - Rule explanation-row styling is now consistent across enabled, disabled,
   temporary Status, and editing states.

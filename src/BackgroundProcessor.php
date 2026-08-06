@@ -284,41 +284,89 @@ final class BackgroundProcessor {
 				$conditionMet = $currentCount >= (int)$rule['threshold_count'];
 
 				if ($conditionMet) {
-					$state['threshold_met'] = 1;
-					$state['clear_observed_since_trigger'] = 1;
+					$state['threshold_met'] = 0;
+					$state['clear_observed_since_trigger'] = 0;
 					$state['active_incident_id'] = null;
 					$this->repository->markConditionCleared((int)$rule['id'], $subject, $currentWindowEnd);
 				} else {
 					$activeIncident = $this->repository->loadTrackedIncident((int)$rule['id'], $subject);
-					if (!is_array($activeIncident) && (empty($state['threshold_met']) || !empty($state['clear_observed_since_trigger']))) {
-						$suppressionExpiresAt = $suppressionMinutes > 0
-							? date('Y-m-d H:i:s', strtotime($currentWindowEnd) + ($suppressionMinutes * 60))
-							: null;
-						$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
-						$incidentId = $this->repository->createIncident([
-							'rule_id' => (int)$rule['id'],
-							'subject_key' => $subject,
-							'subject_label' => $subjectLabel,
-							'threshold_count' => (int)$rule['threshold_count'],
-							'observation_window_minutes' => (int)$rule['observation_window_minutes'],
-							'caller_normalized' => $subject === 'withheld' || $subject === $this->invertAggregateSubject((int)$rule['id']) ? null : $subject,
-							'caller_display' => $subjectLabel,
-							'withheld_caller' => $subject === 'withheld' ? 1 : 0,
-							'mode' => 'invert',
-							'first_matched_at' => $currentWindowEnd,
-							'last_matched_at' => $currentWindowEnd,
-							'matched_call_count' => $currentCount,
-							'state' => 'active',
-							'suppression_expires_at' => $suppressionExpiresAt,
-							'created_at' => $currentWindowEnd,
-							'updated_at' => $currentWindowEnd,
-						]);
-						$state['active_incident_id'] = $incidentId;
-						$state['suppression_expires_at'] = $suppressionExpiresAt;
-						$summary['incidents_created']++;
+					if (is_array($activeIncident)) {
+						// Consecutive failed window within the same episode: update the open incident.
+						$this->repository->updateIncidentWithCall(
+							(int)$activeIncident['id'],
+							$currentWindowEnd,
+							$currentCount
+						);
+						$state['threshold_met'] = 1;
+						$state['clear_observed_since_trigger'] = 0;
+						$state['active_incident_id'] = (int)$activeIncident['id'];
+						$state['suppression_expires_at'] = (string)($activeIncident['suppression_expires_at'] ?? '');
+						$summary['incidents_updated']++;
+					} elseif (empty($state['threshold_met']) || !empty($state['clear_observed_since_trigger'])) {
+						// New qualifying episode: condition has cleared and the latch has re-armed.
+						$suppressionExpiresAtForState = trim((string)($state['suppression_expires_at'] ?? ''));
+						if ($suppressionExpiresAtForState !== '' && strtotime($currentWindowEnd) < strtotime($suppressionExpiresAtForState)) {
+							$referenceIncident = $this->repository->loadMostRecentIncidentForSubject((int)$rule['id'], $subject);
+							if (is_array($referenceIncident) && !empty($referenceIncident['id'])) {
+								$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
+								$this->repository->reserveSuppressedIncidentHistory([
+									'related_incident_id' => (int)$referenceIncident['id'],
+									'rule_id' => (int)$rule['id'],
+									'rule_name' => (string)($rule['name'] ?? ''),
+									'mode' => 'invert',
+									'subject_key' => $subject,
+									'subject_label' => $subjectLabel,
+									'caller_normalized' => $subject === 'withheld' || $subject === $this->invertAggregateSubject((int)$rule['id']) ? null : $subject,
+									'caller_display' => $subjectLabel,
+									'inbound_route_key' => null,
+									'inbound_route_label' => '',
+									'did_value' => null,
+									'matched_call_count' => $currentCount,
+									'threshold_count' => (int)$rule['threshold_count'],
+									'observation_window_minutes' => (int)$rule['observation_window_minutes'],
+									'suppression_source' => isset($rule['suppression_minutes_override']) && $rule['suppression_minutes_override'] !== null && $rule['suppression_minutes_override'] !== '' ? 'rule_override' : 'global_default',
+									'suppression_minutes' => $suppressionMinutes,
+									'suppression_started_at' => (string)($referenceIncident['created_at'] ?? $referenceIncident['first_matched_at'] ?? $currentWindowEnd),
+									'suppression_expires_at' => $suppressionExpiresAtForState,
+									'cleared_at' => null,
+									'related_incident_state' => (string)($referenceIncident['state'] ?? 'active'),
+									'detected_at' => $currentWindowEnd,
+									'created_at' => $currentWindowEnd,
+									'updated_at' => $currentWindowEnd,
+								]);
+							}
+						} else {
+							$suppressionExpiresAt = $suppressionMinutes > 0
+								? date('Y-m-d H:i:s', strtotime($currentWindowEnd) + ($suppressionMinutes * 60))
+								: null;
+							$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
+							$incidentId = $this->repository->createIncident([
+								'rule_id' => (int)$rule['id'],
+								'subject_key' => $subject,
+								'subject_label' => $subjectLabel,
+								'threshold_count' => (int)$rule['threshold_count'],
+								'observation_window_minutes' => (int)$rule['observation_window_minutes'],
+								'caller_normalized' => $subject === 'withheld' || $subject === $this->invertAggregateSubject((int)$rule['id']) ? null : $subject,
+								'caller_display' => $subjectLabel,
+								'withheld_caller' => $subject === 'withheld' ? 1 : 0,
+								'mode' => 'invert',
+								'first_matched_at' => $currentWindowEnd,
+								'last_matched_at' => $currentWindowEnd,
+								'matched_call_count' => $currentCount,
+								'state' => 'active',
+								'suppression_expires_at' => $suppressionExpiresAt,
+								'created_at' => $currentWindowEnd,
+								'updated_at' => $currentWindowEnd,
+							]);
+							$state['active_incident_id'] = $incidentId;
+							$state['suppression_expires_at'] = $suppressionExpiresAt;
+							$summary['incidents_created']++;
+						}
+						$state['threshold_met'] = 1;
+						$state['clear_observed_since_trigger'] = 0;
 					}
-					$state['threshold_met'] = 0;
-					$state['clear_observed_since_trigger'] = 0;
+					// else: threshold_met=1, clear_observed=0, no tracked incident —
+					// consecutive episode without a prior passing window, nothing to do.
 				}
 
 				$currentWindowStart = $currentWindowEnd;

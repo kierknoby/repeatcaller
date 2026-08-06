@@ -382,6 +382,12 @@ final class FakeCallSender {
 	}
 }
 
+/** Mutable clock usable as a callable; allows one processor/scanner pair to span multiple simulated times. */
+final class InvertTestClock {
+	public function __construct(public string $now) {}
+	public function __invoke(): string { return $this->now; }
+}
+
 $dbPath = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 if ($dbPath === false) {
 	throw new RuntimeException('Unable to create runtime contract SQLite file');
@@ -805,7 +811,7 @@ try {
 	if ($dbPath3 === false) {
 		throw new RuntimeException('Unable to create third runtime contract SQLite file');
 	}
-	[$db3, $repository3, $scanner3, $processor3] = create_runtime_environment($dbPath3, '2026-07-13 11:30:00');
+	[$db3, $repository3, $scanner3, $processor3] = create_runtime_environment($dbPath3, '2026-07-13 10:30:00');
 	insert_route($db3, '18005550001', '', 'Main');
 	insert_rule($db3, [
 		'name' => 'Invert Rule',
@@ -1213,6 +1219,375 @@ try {
 	assert_true(is_array($legacyStatePersisted), 'legacy persisted state should remain available after monitor run');
 	assert_same('2026-07-13 14:00:00', (string)$legacyStatePersisted['current_window_started_at'], 'legacy persisted current_window_started_at should be preserved when no full window has elapsed');
 
+	// --- Invert Suppression Blocking Regression Tests ---
+	$dbPathInvertSuppress = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathInvertSuppress === false) {
+		throw new RuntimeException('Unable to create invert suppression blocking runtime contract SQLite file');
+	}
+	[$dbInvertSuppress, $repositoryInvertSuppress, $scannerInvertSuppress, $processorInvertSuppress] = create_runtime_environment($dbPathInvertSuppress, '2026-07-13 09:00:00');
+	insert_route($dbInvertSuppress, '18005550001', '', 'Main');
+	$invertSuppressRuleId = insert_rule($dbInvertSuppress, [
+		'name' => 'Invert Suppression Blocking Rule',
+		'mode' => 'invert',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 30,
+		'suppression_minutes_override' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-07-13 09:00:00',
+		'updated_at' => '2026-07-13 09:00:00',
+		'enabled_at' => '2026-07-13 09:00:00',
+	]);
+	$invertSuppressSubject = '__invert_rule__' . $invertSuppressRuleId;
+
+	// First run at 09:00: no windows complete yet, no incidents
+	$invertSuppressRun1 = $processorInvertSuppress->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertSuppressRun1['incidents_created'], 'invert first monitor run should not create incident before window completion');
+
+	// Second run at 09:31: first window (09:00-09:30) completed with zero calls, incident created
+	$processorInvertSuppressFollowup1 = new BackgroundProcessor(
+		$dbInvertSuppress,
+		new RepeatCallerRepository($dbInvertSuppress),
+		new CdrScanner($dbInvertSuppress, function (): string { return '2026-07-13 09:31:00'; }),
+		function (): string { return '2026-07-13 09:31:00'; }
+	);
+	$invertSuppressRun2 = $processorInvertSuppressFollowup1->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertSuppressRun2['incidents_created'], 'first failing invert window should create an incident');
+	$invertSuppressIncident1 = $dbInvertSuppress->query('SELECT id, state, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertSuppressRuleId)->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($invertSuppressIncident1), 'first invert window should create an incident row');
+	$invertSuppressIncident1Id = (int)$invertSuppressIncident1['id'];
+	$invertSuppressExpiresAt = (string)$invertSuppressIncident1['suppression_expires_at'];
+	assert_same('2026-07-13 10:30:00', $invertSuppressExpiresAt, 'first invert incident should set suppression_expires_at to 60 minutes after window end (09:30 + 60 min)');
+
+	// Accept the incident; suppression_expires_at must remain unchanged
+	$dbInvertSuppress->prepare('UPDATE repeatcaller_incidents SET state = ?, accepted_by = ?, accepted_at = ? WHERE id = ?')
+		->execute(['accepted', 'testuser', '2026-07-13 09:31:00', $invertSuppressIncident1Id]);
+	$afterAcceptInvert = $dbInvertSuppress->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $invertSuppressIncident1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_same('2026-07-13 10:30:00', (string)$afterAcceptInvert['suppression_expires_at'], 'acceptance must not modify suppression_expires_at on an Invert incident');
+	$dbInvertSuppress->prepare('DELETE FROM repeatcaller_incident_alert_history WHERE incident_id = ?')->execute([$invertSuppressIncident1Id]);
+
+	// Third run at 10:00: second window (09:30-10:00) passes with 3 calls, clearing the incident
+	insert_cdr($dbInvertSuppress, ['linkedid' => 'IS1', 'calldate' => '2026-07-13 09:35:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertSuppress, ['linkedid' => 'IS2', 'calldate' => '2026-07-13 09:40:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertSuppress, ['linkedid' => 'IS3', 'calldate' => '2026-07-13 09:45:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	$processorInvertSuppressFollowup2 = new BackgroundProcessor(
+		$dbInvertSuppress,
+		new RepeatCallerRepository($dbInvertSuppress),
+		new CdrScanner($dbInvertSuppress, function (): string { return '2026-07-13 10:00:00'; }),
+		function (): string { return '2026-07-13 10:00:00'; }
+	);
+	$invertSuppressRun3 = $processorInvertSuppressFollowup2->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertSuppressRun3['incidents_created'], 'passing invert window (>= threshold) clears incident instead of creating new one');
+	$invertSuppressState2 = $repositoryInvertSuppress->loadSubjectState($invertSuppressRuleId, $invertSuppressSubject);
+	assert_true(is_array($invertSuppressState2), 'subject state should exist after second run');
+	assert_same('0', (string)$invertSuppressState2['threshold_met'], 'passing window should reset threshold_met flag');
+	$invertSuppressIncidentCount = (int)$dbInvertSuppress->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $invertSuppressRuleId . ' AND state = "active"')->fetchColumn();
+	assert_same(0, $invertSuppressIncidentCount, 'passing window should clear the active incident');
+
+	// Fourth run at 10:31: third window (10:00-10:30) completed with zero calls
+	// After incident was cleared by passing window, new failing window should create new incident
+	$processorInvertSuppressFollowup3 = new BackgroundProcessor(
+		$dbInvertSuppress,
+		new RepeatCallerRepository($dbInvertSuppress),
+		new CdrScanner($dbInvertSuppress, function (): string { return '2026-07-13 10:31:00'; }),
+		function (): string { return '2026-07-13 10:31:00'; }
+	);
+	$invertSuppressRun4 = $processorInvertSuppressFollowup3->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertSuppressRun4['incidents_created'], 'after incident cleared, new failing invert window should create new incident');
+	$invertSuppressIncident2 = $dbInvertSuppress->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertSuppressRuleId . ' AND id != ' . $invertSuppressIncident1Id . ' AND state = "active"')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($invertSuppressIncident2), 'post-clear failing window should create a new active incident row');
+	// Window 3 ends at 10:30; suppression = 60 min → 10:30 + 60 = 11:30
+	assert_same('2026-07-13 11:30:00', (string)$invertSuppressIncident2['suppression_expires_at'], 'fresh invert incident after clear should start a new suppression period from its window end time');
+
+	// Test suppression override 0 (disabled)
+	$dbPathInvertNoSuppress = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathInvertNoSuppress === false) {
+		throw new RuntimeException('Unable to create invert no-suppression runtime contract SQLite file');
+	}
+	[$dbInvertNoSuppress, $repositoryInvertNoSuppress, $scannerInvertNoSuppress, $processorInvertNoSuppress] = create_runtime_environment($dbPathInvertNoSuppress, '2026-07-13 09:00:00');
+	insert_route($dbInvertNoSuppress, '18005550001', '', 'Main');
+	$invertNoSuppressRuleId = insert_rule($dbInvertNoSuppress, [
+		'name' => 'Invert No Suppression Rule',
+		'mode' => 'invert',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 30,
+		'suppression_minutes_override' => 0,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-07-13 09:00:00',
+		'updated_at' => '2026-07-13 09:00:00',
+		'enabled_at' => '2026-07-13 09:00:00',
+	]);
+
+	// First run at 09:00: no windows complete yet, no incidents
+	$invertNoSuppressRun1 = $processorInvertNoSuppress->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertNoSuppressRun1['incidents_created'], 'invert first monitor run should not create incident before window completion');
+
+	// Second run at 09:31: first window completed with zero calls, incident created
+	$processorInvertNoSuppressFollowup1 = new BackgroundProcessor(
+		$dbInvertNoSuppress,
+		new RepeatCallerRepository($dbInvertNoSuppress),
+		new CdrScanner($dbInvertNoSuppress, function (): string { return '2026-07-13 09:31:00'; }),
+		function (): string { return '2026-07-13 09:31:00'; }
+	);
+	$invertNoSuppressRun2 = $processorInvertNoSuppressFollowup1->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertNoSuppressRun2['incidents_created'], 'invert with suppression disabled should create first incident');
+	$invertNoSuppressIncident1 = $dbInvertNoSuppress->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertNoSuppressRuleId)->fetch(PDO::FETCH_ASSOC);
+	$invertNoSuppressIncident1Id = (int)$invertNoSuppressIncident1['id'];
+	assert_same('', (string)$invertNoSuppressIncident1['suppression_expires_at'], 'invert with suppression_minutes_override=0 must create an incident with no suppression period');
+	$dbInvertNoSuppress->prepare('UPDATE repeatcaller_incidents SET state = ?, accepted_by = ?, accepted_at = ? WHERE id = ?')
+		->execute(['accepted', 'testuser', '2026-07-13 09:31:00', $invertNoSuppressIncident1Id]);
+	$afterAcceptNoSuppress = $dbInvertNoSuppress->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $invertNoSuppressIncident1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_same('', (string)$afterAcceptNoSuppress['suppression_expires_at'], 'acceptance must not add suppression_expires_at when the rule override is 0');
+	$dbInvertNoSuppress->prepare('DELETE FROM repeatcaller_incident_alert_history WHERE incident_id = ?')->execute([$invertNoSuppressIncident1Id]);
+
+	// Third run at 10:00: second window completed with 3 calls
+	// Passing window should clear the incident
+	insert_cdr($dbInvertNoSuppress, ['linkedid' => 'INS1', 'calldate' => '2026-07-13 09:35:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertNoSuppress, ['linkedid' => 'INS2', 'calldate' => '2026-07-13 09:40:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertNoSuppress, ['linkedid' => 'INS3', 'calldate' => '2026-07-13 09:45:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	$processorInvertNoSuppressFollowup2 = new BackgroundProcessor(
+		$dbInvertNoSuppress,
+		new RepeatCallerRepository($dbInvertNoSuppress),
+		new CdrScanner($dbInvertNoSuppress, function (): string { return '2026-07-13 10:00:00'; }),
+		function (): string { return '2026-07-13 10:00:00'; }
+	);
+	$invertNoSuppressRun3 = $processorInvertNoSuppressFollowup2->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertNoSuppressRun3['incidents_created'], 'passing invert window clears incident instead of creating new one');
+	$invertNoSuppressIncidentCount = (int)$dbInvertNoSuppress->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $invertNoSuppressRuleId . ' AND state = "active"')->fetchColumn();
+	assert_same(0, $invertNoSuppressIncidentCount, 'passing window should clear the active incident');
+	$invertNoSuppressSuppressedCount = (int)$dbInvertNoSuppress->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history WHERE rule_id = ' . $invertNoSuppressRuleId)->fetchColumn();
+	assert_same(0, $invertNoSuppressSuppressedCount, 'with suppression disabled (0), no suppression-history rows should be created');
+
+	// Fourth run at 10:31: third window completed with zero calls
+	// After incident cleared by passing window, new failing window should create new incident
+	$processorInvertNoSuppressFollowup3 = new BackgroundProcessor(
+		$dbInvertNoSuppress,
+		new RepeatCallerRepository($dbInvertNoSuppress),
+		new CdrScanner($dbInvertNoSuppress, function (): string { return '2026-07-13 10:31:00'; }),
+		function (): string { return '2026-07-13 10:31:00'; }
+	);
+	$invertNoSuppressRun4 = $processorInvertNoSuppressFollowup3->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertNoSuppressRun4['incidents_created'], 'after incident cleared, new failing invert window should create new incident');
+	$invertNoSuppressIncident2 = $dbInvertNoSuppress->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertNoSuppressRuleId . ' AND id != ' . $invertNoSuppressIncident1Id . ' AND state = "active"')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($invertNoSuppressIncident2), 'new failing window should create new active incident row');
+	assert_same('', (string)$invertNoSuppressIncident2['suppression_expires_at'], 'second invert incident with suppression override 0 must also have no suppression period');
+
+	// --- Invert consecutive-failure lifecycle ---
+	// Proves: consecutive failed windows update the same incident rather than creating
+	// suppression-history rows; the incident survives acceptance across multiple windows;
+	// suppression only blocks a new episode that occurs after a prior passing window.
+	$dbPathInvertConsecutive = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathInvertConsecutive === false) {
+		throw new RuntimeException('Unable to create invert consecutive-failure runtime SQLite file');
+	}
+	[$dbIC, $repoIC] = create_runtime_environment($dbPathInvertConsecutive, '2026-07-13 09:00:00');
+	insert_route($dbIC, '18005550001', '', 'Main');
+	$icRuleId = insert_rule($dbIC, [
+		'name' => 'Invert Consecutive Failure Rule',
+		'mode' => 'invert',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 30,
+		'suppression_minutes_override' => 180,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-07-13 09:00:00',
+		'updated_at' => '2026-07-13 09:00:00',
+		'enabled_at' => '2026-07-13 09:00:00',
+	]);
+	$icSubject = '__invert_rule__' . $icRuleId;
+	$icClock = new InvertTestClock('2026-07-13 09:00:00');
+	$icProc = new BackgroundProcessor($dbIC, $repoIC, new CdrScanner($dbIC, $icClock), $icClock);
+
+	// Run 1: W1 has not yet elapsed
+	$icRun1 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $icRun1['incidents_created'], 'invert consecutive: no incident before first window ends');
+
+	// Run 2: W1 (09:00-09:30, 0 calls) elapses; I1 created (suppression = 09:30+180 = 12:30)
+	$icClock->now = '2026-07-13 09:31:00';
+	$icRun2 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $icRun2['incidents_created'], 'invert consecutive: first failing window creates I1');
+	$icI1 = $dbIC->query('SELECT id, state, matched_call_count, last_matched_at, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $icRuleId)->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($icI1), 'invert consecutive: I1 row must exist');
+	$icI1Id = (int)$icI1['id'];
+	assert_same('active', (string)$icI1['state'], 'invert consecutive: I1 starts active');
+	assert_same(0, (int)$icI1['matched_call_count'], 'invert consecutive: I1 records zero calls from W1');
+	assert_same('2026-07-13 09:30:00', (string)$icI1['last_matched_at'], 'invert consecutive: I1 last_matched_at is the W1 window end');
+	assert_same('2026-07-13 12:30:00', (string)$icI1['suppression_expires_at'], 'invert consecutive: I1 suppression = W1 end + 180 min');
+	assert_same(0, (int)$dbIC->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history WHERE rule_id = ' . $icRuleId)->fetchColumn(), 'invert consecutive: no suppression-history row after I1 is created');
+
+	// Run 3: W2 (09:30-10:00, 1 call at 09:45) elapses; I1 is updated, not replaced
+	insert_cdr($dbIC, ['linkedid' => 'IC1', 'calldate' => '2026-07-13 09:45:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	$icClock->now = '2026-07-13 10:01:00';
+	$icRun3 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $icRun3['incidents_created'], 'invert consecutive: second failing window must not create a second incident');
+	assert_true(($icRun3['incidents_updated'] ?? 0) >= 1, 'invert consecutive: second failing window must update the existing incident');
+	assert_same(1, (int)$dbIC->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = ' . $icRuleId)->fetchColumn(), 'invert consecutive: exactly one incident after two consecutive failing windows');
+	assert_same(0, (int)$dbIC->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history WHERE rule_id = ' . $icRuleId)->fetchColumn(), 'invert consecutive: no suppression-history row after two consecutive failing windows');
+	$icI1AfterW2 = $dbIC->query('SELECT state, matched_call_count, last_matched_at FROM repeatcaller_incidents WHERE id = ' . $icI1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_same('active', (string)$icI1AfterW2['state'], 'invert consecutive: I1 remains active after W2 update');
+	assert_same(1, (int)$icI1AfterW2['matched_call_count'], 'invert consecutive: I1 count updated to W2 call count');
+	assert_same('2026-07-13 10:00:00', (string)$icI1AfterW2['last_matched_at'], 'invert consecutive: I1 last_matched_at advances to W2 window end');
+
+	// Accept I1; verify acceptance does not change suppression_expires_at
+	assert_true($repoIC->acceptActiveIncident($icI1Id, 'operator', '2026-07-13 10:02:00', 'gui'), 'invert consecutive: I1 should be acceptable');
+	$icI1AfterAccept = $dbIC->query('SELECT state, suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $icI1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_same('accepted', (string)$icI1AfterAccept['state'], 'invert consecutive: I1 transitions to accepted');
+	assert_same('2026-07-13 12:30:00', (string)$icI1AfterAccept['suppression_expires_at'], 'invert consecutive: acceptance must not change suppression_expires_at');
+
+	// Run 4: W3 (10:00-10:30, 0 calls) elapses; accepted I1 is updated, accepted state preserved
+	$icClock->now = '2026-07-13 10:31:00';
+	$icRun4 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $icRun4['incidents_created'], 'invert consecutive: third failing window must not create a new incident while I1 is accepted');
+	assert_same(0, (int)$dbIC->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history WHERE rule_id = ' . $icRuleId)->fetchColumn(), 'invert consecutive: no suppression-history row while I1 is the tracked accepted incident');
+	$icI1AfterW3 = $dbIC->query('SELECT state, matched_call_count FROM repeatcaller_incidents WHERE id = ' . $icI1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_same('accepted', (string)$icI1AfterW3['state'], 'invert consecutive: accepted state must be preserved across consecutive failing windows');
+	assert_same(0, (int)$icI1AfterW3['matched_call_count'], 'invert consecutive: I1 count updated to W3 call count');
+
+	// Run 5: W4 (10:30-11:00, 3 calls) elapses; passing window closes I1 and re-arms latch
+	insert_cdr($dbIC, ['linkedid' => 'IC2', 'calldate' => '2026-07-13 10:35:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbIC, ['linkedid' => 'IC3', 'calldate' => '2026-07-13 10:45:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbIC, ['linkedid' => 'IC4', 'calldate' => '2026-07-13 10:55:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	$icClock->now = '2026-07-13 11:01:00';
+	$icRun5 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $icRun5['incidents_created'], 'invert consecutive: passing window closes I1 without creating a new incident');
+	$icI1Closed = $dbIC->query('SELECT state FROM repeatcaller_incidents WHERE id = ' . $icI1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_same('closed', (string)$icI1Closed['state'], 'invert consecutive: passing window closes the accepted incident');
+
+	// Run 6: W5 (11:00-11:30, 0 calls) elapses; I1 suppression is still active (11:30 < 12:30),
+	// so the new qualifying episode is blocked and a suppression-history row is created.
+	$icClock->now = '2026-07-13 11:31:00';
+	$icRun6 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $icRun6['incidents_created'], 'invert consecutive: new qualifying episode blocked by active suppression after re-arm');
+	$icSuppressedRows = $repoIC->loadSuppressedIncidentHistory();
+	assert_same(1, count($icSuppressedRows), 'invert consecutive: blocked new episode creates exactly one suppression-history row');
+	assert_same($icI1Id, (int)$icSuppressedRows[0]['related_incident_id'], 'invert consecutive: suppression-history row references I1');
+	assert_same('2026-07-13 12:30:00', (string)$icSuppressedRows[0]['suppression_expires_at'], 'invert consecutive: suppression-history row records I1 expiry');
+
+	// Clear suppression; next failing window creates I2 with a fresh suppression period.
+	assert_true($repoIC->clearSuppressedIncidentHistory((int)$icSuppressedRows[0]['id'], '2026-07-13 11:32:00'), 'invert consecutive: suppression-history row clearable');
+	$icStateAfterClear = $repoIC->loadSubjectState($icRuleId, $icSubject);
+	assert_same('', (string)($icStateAfterClear['suppression_expires_at'] ?? ''), 'invert consecutive: clearing suppression removes suppression_expires_at from subject state');
+
+	$icClock->now = '2026-07-13 12:01:00';
+	$icRun7 = $icProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $icRun7['incidents_created'], 'invert consecutive: new failing window creates I2 after suppression is cleared');
+	$icI2 = $dbIC->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $icRuleId . ' AND id != ' . $icI1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($icI2), 'invert consecutive: I2 must exist');
+	// W6 ends at 12:00; 12:00 + 180 min = 15:00
+	assert_same('2026-07-13 15:00:00', (string)$icI2['suppression_expires_at'], 'invert consecutive: I2 starts a fresh suppression period from its window end');
+
+	// --- Invert clear-suppression lifecycle (120-min suppression) ---
+	// W1 (09:00-09:30) fails: I1 created (suppression = 09:30+120 = 11:30)
+	// W2 (09:30-10:00) passes (3 calls): I1 closed, latch re-armed
+	// W3 (10:00-10:30) fails: blocked, suppression-history row written
+	// Clear suppression; W4 (10:30-11:00) fails: I2 created
+	// Accept I2; W5 (11:00-11:30) passes: I2 closed; W6 (11:30-12:00) fails: blocked
+	// Clear suppression; W7 (12:00-12:30) fails: I3 created
+	$dbPathInvertClearLifecycle = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathInvertClearLifecycle === false) {
+		throw new RuntimeException('Unable to create invert clear-suppression lifecycle runtime SQLite file');
+	}
+	[$dbInvertClear, $repoInvertClear] = create_runtime_environment($dbPathInvertClearLifecycle, '2026-07-13 09:00:00');
+	insert_route($dbInvertClear, '18005550001', '', 'Main');
+	$invertClearRuleId = insert_rule($dbInvertClear, [
+		'name' => 'Invert Clear Lifecycle Rule',
+		'mode' => 'invert',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 30,
+		'suppression_minutes_override' => 120,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
+		'created_at' => '2026-07-13 09:00:00',
+		'updated_at' => '2026-07-13 09:00:00',
+		'enabled_at' => '2026-07-13 09:00:00',
+	]);
+	$invertClearSubject = '__invert_rule__' . $invertClearRuleId;
+	$invertClearClock = new InvertTestClock('2026-07-13 09:00:00');
+	$invertClearProc = new BackgroundProcessor($dbInvertClear, $repoInvertClear, new CdrScanner($dbInvertClear, $invertClearClock), $invertClearClock);
+
+	// Run 1: W1 has not yet elapsed
+	$invertClearRun1 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertClearRun1['incidents_created'], 'invert clear lifecycle: no incident before first window ends');
+
+	// Run 2: W1 (09:00-09:30, 0 calls) elapses; I1 created
+	$invertClearClock->now = '2026-07-13 09:31:00';
+	$invertClearRun2 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertClearRun2['incidents_created'], 'invert clear lifecycle: first failing window creates I1');
+	$invertClearI1 = $dbInvertClear->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertClearRuleId)->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($invertClearI1), 'invert clear lifecycle: I1 must exist');
+	$invertClearI1Id = (int)$invertClearI1['id'];
+	assert_same('2026-07-13 11:30:00', (string)$invertClearI1['suppression_expires_at'], 'invert clear lifecycle: I1 suppression = window end + 120 min');
+	assert_true($repoInvertClear->acceptActiveIncident($invertClearI1Id, 'testuser', '2026-07-13 09:32:00', 'gui'), 'invert clear lifecycle: I1 must be acceptable');
+	assert_same('2026-07-13 11:30:00', (string)$dbInvertClear->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $invertClearI1Id)->fetchColumn(), 'invert clear lifecycle: acceptance must not change suppression_expires_at');
+
+	// Run 3: W2 (09:30-10:00, 3 calls) elapses; passing window closes I1 and re-arms latch
+	insert_cdr($dbInvertClear, ['linkedid' => 'ICL1', 'calldate' => '2026-07-13 09:35:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertClear, ['linkedid' => 'ICL2', 'calldate' => '2026-07-13 09:45:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertClear, ['linkedid' => 'ICL3', 'calldate' => '2026-07-13 09:55:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	$invertClearClock->now = '2026-07-13 10:01:00';
+	$invertClearRun3 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertClearRun3['incidents_created'], 'invert clear lifecycle: passing window closes I1 without creating a new incident');
+	assert_same('closed', (string)$dbInvertClear->query('SELECT state FROM repeatcaller_incidents WHERE id = ' . $invertClearI1Id)->fetchColumn(), 'invert clear lifecycle: passing window must close the accepted incident');
+
+	// Run 4: W3 (10:00-10:30, 0 calls) elapses; new episode blocked (10:30 < 11:30)
+	$invertClearClock->now = '2026-07-13 10:31:00';
+	$invertClearRun4 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertClearRun4['incidents_created'], 'invert clear lifecycle: new episode blocked while I1 suppression is active');
+	$invertClearSuppressedRows = $repoInvertClear->loadSuppressedIncidentHistory();
+	assert_same(1, count($invertClearSuppressedRows), 'invert clear lifecycle: one suppression-history row written for the blocked episode');
+	assert_same($invertClearI1Id, (int)$invertClearSuppressedRows[0]['related_incident_id'], 'invert clear lifecycle: suppression-history row references I1');
+	assert_same('2026-07-13 11:30:00', (string)$invertClearSuppressedRows[0]['suppression_expires_at'], 'invert clear lifecycle: suppression-history row captures I1 expiry');
+	assert_same(0, (int)$dbInvertClear->query('SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = ' . $invertClearI1Id)->fetchColumn(), 'invert clear lifecycle: blocked episode must not create alert-history rows');
+
+	// Clear suppression
+	assert_true($repoInvertClear->clearSuppressedIncidentHistory((int)$invertClearSuppressedRows[0]['id'], '2026-07-13 10:32:00'), 'invert clear lifecycle: suppression-history row must be clearable');
+	assert_same('2026-07-13 10:32:00', (string)$repoInvertClear->loadSuppressedIncidentHistory()[0]['cleared_at'], 'invert clear lifecycle: cleared_at persisted on audit row');
+	$stateAfterClearInvert = $repoInvertClear->loadSubjectState($invertClearRuleId, $invertClearSubject);
+	assert_same('', (string)($stateAfterClearInvert['suppression_expires_at'] ?? ''), 'invert clear lifecycle: clearing suppression removes suppression_expires_at from subject state');
+
+	// Run 5: W4 (10:30-11:00, 0 calls) elapses; I2 created with fresh suppression period
+	$invertClearClock->now = '2026-07-13 11:01:00';
+	$invertClearRun5 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertClearRun5['incidents_created'], 'invert clear lifecycle: failing window after clear suppression creates I2');
+	$invertClearI2 = $dbInvertClear->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertClearRuleId . ' AND id != ' . $invertClearI1Id)->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($invertClearI2), 'invert clear lifecycle: I2 must exist');
+	$invertClearI2Id = (int)$invertClearI2['id'];
+	assert_same('2026-07-13 13:00:00', (string)$invertClearI2['suppression_expires_at'], 'invert clear lifecycle: I2 suppression = W4 end (11:00) + 120 min');
+	assert_true($repoInvertClear->acceptActiveIncident($invertClearI2Id, 'testuser', '2026-07-13 11:02:00', 'gui'), 'invert clear lifecycle: I2 must be acceptable');
+
+	// Run 6: W5 (11:00-11:30, 3 calls) elapses; passing window closes I2
+	insert_cdr($dbInvertClear, ['linkedid' => 'ICL4', 'calldate' => '2026-07-13 11:05:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertClear, ['linkedid' => 'ICL5', 'calldate' => '2026-07-13 11:15:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	insert_cdr($dbInvertClear, ['linkedid' => 'ICL6', 'calldate' => '2026-07-13 11:25:00', 'src' => 'withheld', 'clid' => 'withheld']);
+	$invertClearClock->now = '2026-07-13 11:31:00';
+	$invertClearRun6 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertClearRun6['incidents_created'], 'invert clear-again: passing window closes I2');
+	assert_same('closed', (string)$dbInvertClear->query('SELECT state FROM repeatcaller_incidents WHERE id = ' . $invertClearI2Id)->fetchColumn(), 'invert clear-again: I2 must be closed by passing window');
+
+	// Run 7: W6 (11:30-12:00, 0 calls) elapses; new episode blocked by I2 suppression (12:00 < 13:00)
+	$invertClearClock->now = '2026-07-13 12:01:00';
+	$invertClearRun7 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $invertClearRun7['incidents_created'], 'invert clear-again: new episode blocked by I2 suppression');
+	$invertClearRows2 = $repoInvertClear->loadSuppressedIncidentHistory();
+	assert_same(2, count($invertClearRows2), 'invert clear-again: second block produces second suppression-history row');
+	assert_same($invertClearI2Id, (int)$invertClearRows2[0]['related_incident_id'], 'invert clear-again: newest suppression-history row references I2');
+
+	// Clear only the current (I2) suppression row
+	assert_true($repoInvertClear->clearSuppressedIncidentHistory((int)$invertClearRows2[0]['id'], '2026-07-13 12:02:00'), 'invert clear-again: I2 suppression-history row must be clearable');
+
+	// Run 8: W7 (12:00-12:30, 0 calls) elapses; I3 created
+	$invertClearClock->now = '2026-07-13 12:31:00';
+	$invertClearRun8 = $invertClearProc->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $invertClearRun8['incidents_created'], 'invert clear-again: clearing suppression a second time allows I3 to be created');
+	$invertClearI3 = $dbInvertClear->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $invertClearRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true((int)$invertClearI3['id'] !== $invertClearI2Id, 'invert clear-again: I3 must be a distinct incident');
+	assert_same('2026-07-13 14:30:00', (string)$invertClearI3['suppression_expires_at'], 'invert clear-again: I3 suppression = W7 end (12:30) + 120 min');
+
 	$dbPath3Call = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath3Call === false) {
 		throw new RuntimeException('Unable to create call alert runtime contract SQLite file');
@@ -1417,6 +1792,8 @@ try {
 	assert_same('2026-07-13 09:10:00', (string)$acceptedLifecycleIncident['last_matched_at'], 'repeat incident last_matched_at should capture the latest contributing call at incident creation');
 	assert_same('2026-07-14 09:10:00', (string)$acceptedLifecycleIncident['suppression_expires_at'], 'accepted lifecycle scenario should use the 24-hour default suppression window');
 	assert_true($repository7AcceptedLifecycle->acceptActiveIncident($acceptedLifecycleIncidentId, 'tester', '2026-07-13 09:12:00', 'gui'), 'accepted lifecycle scenario should allow accepting the active incident');
+	$afterAcceptRow = $db7AcceptedLifecycle->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $acceptedLifecycleIncidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('2026-07-14 09:10:00', (string)$afterAcceptRow['suppression_expires_at'], 'acceptance must not modify suppression_expires_at: suppression period is fixed at incident creation');
 
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL4', 'calldate' => '2026-07-13 09:15:00', 'src' => '01234440000', 'clid' => '01234440000']);
 	insert_cdr($db7AcceptedLifecycle, ['linkedid' => 'ASL5', 'calldate' => '2026-07-13 09:20:00', 'src' => '01234440000', 'clid' => '01234440000']);
@@ -1564,6 +1941,9 @@ try {
 	$newWorkflowIncident = $dbClearWorkflow->query('SELECT id, state, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $clearWorkflowRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
 	assert_true(is_array($newWorkflowIncident), 'clear-suppression workflow should load the new incident row');
 	assert_same('active', (string)$newWorkflowIncident['state'], 'clear-suppression workflow should create an active incident after clear suppression');
+	// CSW5 calldate = 10:40, CSW6 calldate = 10:45; threshold crossed on CSW6 (CSW5+CSW6 in 60-min window)
+	// suppression = 180 min → 10:45 + 180 = 13:45
+	assert_same('2026-07-13 13:45:00', (string)$newWorkflowIncident['suppression_expires_at'], 'fresh incident after clear suppression must start a new suppression period from the triggering call time');
 	$emailSender = new FakeEmailSender();
 	$callSender = new FakeCallSender();
 	$alertsClearWorkflow = new IncidentAlertProcessor($repositoryClearWorkflow, $emailSender, static function (): string {
@@ -1592,6 +1972,96 @@ try {
 	})), 'clear-suppression workflow should reserve one alert_call row for the fresh incident');
 	assert_same(1, count($emailSender->calls), 'clear-suppression workflow should send one email for the fresh incident');
 	assert_same(1, count($callSender->calls), 'clear-suppression workflow should attempt one alert call for the fresh incident');
+
+	// --- Repeat: clearing again repeats the same lifecycle ---
+	// Accept the fresh incident (I2) and verify its suppression_expires_at is unchanged.
+	$clearAgainIncidentId = (int)$newWorkflowIncident['id'];
+	assert_true($repositoryClearWorkflow->acceptActiveIncident($clearAgainIncidentId, 'operator2', '2026-07-13 10:53:00', 'gui'), 'clear-again: accepting the second incident should succeed');
+	$afterClearAgainAccept = $dbClearWorkflow->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $clearAgainIncidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('2026-07-13 13:45:00', (string)$afterClearAgainAccept['suppression_expires_at'], 'clear-again: acceptance must not change suppression_expires_at of the fresh incident');
+	// CSW8 at 12:30: window 11:30-12:30 has 0 qualifying calls (CSW5-CSW7 all before 11:30) → NOT met → I_CW2 closed
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW8', 'calldate' => '2026-07-13 12:30:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearAgainClearProcessor = new BackgroundProcessor($dbClearWorkflow, new RepeatCallerRepository($dbClearWorkflow), $scannerClearWorkflow, static function (): string {
+		return '2026-07-13 12:31:00';
+	});
+	$clearAgainClearRun = $clearAgainClearProcessor->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $clearAgainClearRun['incidents_created'], 'clear-again: single call should clear the condition without creating a new incident');
+	$closedI2 = $dbClearWorkflow->query('SELECT state FROM repeatcaller_incidents WHERE id = ' . $clearAgainIncidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('closed', (string)$closedI2['state'], 'clear-again: condition clear should close the accepted incident');
+	// CSW9 at 12:50: rolling window 11:50-12:50 includes CSW8 (12:30) → 2 calls → threshold met → BLOCKED by I_CW2 suppression (expires 13:45)
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW9', 'calldate' => '2026-07-13 12:50:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearAgainBlockProcessor = new BackgroundProcessor($dbClearWorkflow, new RepeatCallerRepository($dbClearWorkflow), $scannerClearWorkflow, static function (): string {
+		return '2026-07-13 12:51:00';
+	});
+	$clearAgainBlockRun = $clearAgainBlockProcessor->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $clearAgainBlockRun['incidents_created'], 'clear-again: re-trigger during second suppression period must be blocked');
+	$secondSuppressedRows = $repositoryClearWorkflow->loadSuppressedIncidentHistory();
+	// loadSuppressedIncidentHistory returns newest first: [0] = this new block, [1] = first cleared block
+	assert_same(2, count($secondSuppressedRows), 'clear-again: second block should create a second suppression-history row');
+	assert_same($clearAgainIncidentId, (int)$secondSuppressedRows[0]['related_incident_id'], 'clear-again: newest suppression-history row must reference the second accepted incident');
+	// Clear suppression again
+assert_true($repositoryClearWorkflow->clearSuppressedIncidentHistory((int)$secondSuppressedRows[0]['id'], '2026-07-13 12:52:00'), 'clear-again: second suppression-history row should be clearable');
+	$secondClearedRows = $repositoryClearWorkflow->loadSuppressedIncidentHistory();
+	// [0] = newest (just cleared second row)
+	assert_same('2026-07-13 12:52:00', (string)$secondClearedRows[0]['cleared_at'], 'clear-again: second cleared row should have cleared_at set');
+	// CSW10 at 13:30: rolling window 12:30-13:30 includes CSW8 (12:30) and CSW9 (12:50) → 2 calls → I_CW3 created
+	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW10', 'calldate' => '2026-07-13 13:30:00', 'src' => '01234567898', 'clid' => '01234567898']);
+	$clearAgainFreshProcessor = new BackgroundProcessor($dbClearWorkflow, new RepeatCallerRepository($dbClearWorkflow), $scannerClearWorkflow, static function (): string {
+		return '2026-07-13 13:31:00';
+	});
+	$clearAgainFreshRun = $clearAgainFreshProcessor->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $clearAgainFreshRun['incidents_created'], 'clear-again: clearing suppression a second time must allow a third incident to be created');
+	$thirdWorkflowIncident = $dbClearWorkflow->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $clearWorkflowRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($thirdWorkflowIncident), 'clear-again: third incident should exist');
+	// threshold crossed on CSW10 at 13:30 (CSW8 at 12:30 in window); 13:30 + 180 = 16:30
+	assert_same('2026-07-13 16:30:00', (string)$thirdWorkflowIncident['suppression_expires_at'], 'clear-again: third incident must start a fresh suppression period from its own triggering call');
+
+	// --- Repeat: suppression_minutes_override = 0 prevents any suppression period ---
+	$dbPathZeroSuppress = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
+	if ($dbPathZeroSuppress === false) {
+		throw new RuntimeException('Unable to create zero-suppression runtime contract SQLite file');
+	}
+	[$dbZeroSuppress, $repositoryZeroSuppress, $scannerZeroSuppress, $processorZeroSuppress] = create_runtime_environment($dbPathZeroSuppress, '2026-07-13 09:00:00');
+	insert_route($dbZeroSuppress, '18005550001', '', 'Main');
+	$zeroSuppressRuleId = insert_rule($dbZeroSuppress, [
+		'name' => 'Zero Suppression Rule',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'did_scope_mode' => 'all',
+		'suppression_minutes_override' => 0,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+	]);
+	insert_cdr($dbZeroSuppress, ['linkedid' => 'ZS1', 'calldate' => '2026-07-13 09:00:00']);
+	insert_cdr($dbZeroSuppress, ['linkedid' => 'ZS2', 'calldate' => '2026-07-13 09:05:00']);
+	$zeroSuppressFirstRun = $processorZeroSuppress->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $zeroSuppressFirstRun['incidents_created'], 'zero suppression: first threshold crossing should create an incident');
+	$zeroSuppressIncident = $dbZeroSuppress->query('SELECT id, suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $zeroSuppressRuleId)->fetch(PDO::FETCH_ASSOC);
+	assert_true(is_array($zeroSuppressIncident), 'zero suppression: incident row should exist');
+	$zeroSuppressIncidentId = (int)$zeroSuppressIncident['id'];
+	assert_same('', (string)$zeroSuppressIncident['suppression_expires_at'], 'zero suppression override must produce a null suppression_expires_at on the incident');
+	assert_true($repositoryZeroSuppress->acceptActiveIncident($zeroSuppressIncidentId, 'operator', '2026-07-13 09:06:00', 'gui'), 'zero suppression: incident should be acceptable');
+	$afterAcceptZero = $dbZeroSuppress->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . $zeroSuppressIncidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('', (string)$afterAcceptZero['suppression_expires_at'], 'zero suppression: acceptance must not add a suppression_expires_at when there is none');
+	// Condition clears (one call, rolling window drops below threshold)
+	insert_cdr($dbZeroSuppress, ['linkedid' => 'ZS3', 'calldate' => '2026-07-13 10:10:00']);
+	$zeroSuppressSecondProcessor = new BackgroundProcessor($dbZeroSuppress, new RepeatCallerRepository($dbZeroSuppress), $scannerZeroSuppress, static function (): string {
+		return '2026-07-13 10:11:00';
+	});
+	$zeroSuppressSecondRun = $zeroSuppressSecondProcessor->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $zeroSuppressSecondRun['incidents_created'], 'zero suppression: single call must not create new incident');
+	// Two more calls → threshold met again; with suppression=0 this must NOT be blocked
+	insert_cdr($dbZeroSuppress, ['linkedid' => 'ZS4', 'calldate' => '2026-07-13 10:15:00']);
+	insert_cdr($dbZeroSuppress, ['linkedid' => 'ZS5', 'calldate' => '2026-07-13 10:20:00']);
+	$zeroSuppressThirdProcessor = new BackgroundProcessor($dbZeroSuppress, new RepeatCallerRepository($dbZeroSuppress), $scannerZeroSuppress, static function (): string {
+		return '2026-07-13 10:21:00';
+	});
+	$zeroSuppressThirdRun = $zeroSuppressThirdProcessor->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(1, $zeroSuppressThirdRun['incidents_created'], 'zero suppression: re-trigger after condition clear must not be blocked when suppression override is 0');
+	$zeroSuppressIncident2 = $dbZeroSuppress->query('SELECT suppression_expires_at FROM repeatcaller_incidents WHERE rule_id = ' . $zeroSuppressRuleId . ' ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+	assert_same('', (string)$zeroSuppressIncident2['suppression_expires_at'], 'zero suppression: second incident must also have no suppression period');
+	assert_same(0, (int)$dbZeroSuppress->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history WHERE rule_id = ' . $zeroSuppressRuleId)->fetchColumn(), 'zero suppression: no suppression-history rows should be created when suppression is disabled');
 
 	$dbPath4 = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPath4 === false) {
@@ -1988,7 +2458,7 @@ try {
 
 	echo "repeat runtime contract tests passed\n";
 } finally {
-	foreach (['dbPath', 'dbPathRouteNoActive', 'dbPathRoute', 'dbPath2', 'dbPath3', 'dbPath4', 'dbPath5', 'dbPath6', 'dbPathFirstInstall', 'dbPathBoundaryEquality', 'dbPathReinstallA', 'dbPathReinstallB', 'dbPathUpgradeContinuity'] as $pathVar) {
+	foreach (['dbPath', 'dbPathRouteNoActive', 'dbPathRoute', 'dbPath2', 'dbPath3', 'dbPath4', 'dbPath5', 'dbPath6', 'dbPathFirstInstall', 'dbPathBoundaryEquality', 'dbPathReinstallA', 'dbPathReinstallB', 'dbPathUpgradeContinuity', 'dbPathInvertSuppress', 'dbPathInvertNoSuppress', 'dbPathInvertClearLifecycle', 'dbPathZeroSuppress', 'dbPathInvertConsecutive'] as $pathVar) {
 		if (isset($$pathVar) && is_string($$pathVar) && file_exists($$pathVar)) {
 			unlink($$pathVar);
 		}
