@@ -723,6 +723,8 @@ Recordings, and administrator-controlled routing.
 
 - Renames the global Enable Monitoring and Disable Monitoring buttons to
   Enable All Rules and Disable All Rules for clearer rule-processing terminology.
+- These bulk controls now change both the global Repeat Caller engine state and
+  every non-deleted rule's enabled state.
 
 #### Alert Call self-trigger safeguard
 

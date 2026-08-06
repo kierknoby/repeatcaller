@@ -41,7 +41,7 @@ Main sections:
 - Alert History
 - Run Now
 
-The top Engine Status section contains the operational controls: Enable All Rules, Disable All Rules, Snooze, Resume All Rules, and Run Now.
+The top Engine Status section contains the operational controls: Enable All Rules, Disable All Rules, Snooze, Resume All Rules, and Run Now. Enable All Rules turns on the global engine and enables every non-deleted rule, while Disable All Rules turns off the global engine and disables every non-deleted rule.
 
 ## First-Time Setup
 

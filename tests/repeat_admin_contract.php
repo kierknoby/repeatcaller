@@ -45,8 +45,23 @@ if (!class_exists('FreePBX')) {
 	}
 }
 
+class SqliteCompatPDO extends PDO {
+	public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null) {
+		parent::__construct($dsn, $username ?? '', $password ?? '', $options ?? []);
+	}
+
+	public function prepare(string $query, array $options = []): PDOStatement {
+		$rewrittenQuery = $query;
+		if (stripos($rewrittenQuery, 'ON DUPLICATE KEY UPDATE') !== false) {
+			$rewrittenQuery = str_ireplace('ON DUPLICATE KEY UPDATE', 'ON CONFLICT(setting_key) DO UPDATE SET', $rewrittenQuery);
+			$rewrittenQuery = preg_replace('/setting_value = VALUES\(setting_value\), updated_at = VALUES\(updated_at\)/i', 'setting_value = excluded.setting_value, updated_at = excluded.updated_at', $rewrittenQuery) ?? $rewrittenQuery;
+		}
+		return parent::prepare($rewrittenQuery, $options);
+	}
+}
+
 function make_db(): PDO {
-	$db = new PDO('sqlite::memory:');
+	$db = new SqliteCompatPDO('sqlite::memory:');
 	$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 	$db->exec('CREATE TABLE repeatcaller_rules (
@@ -647,6 +662,58 @@ assert_same(1, $incidentStillThere, 'rule deletion should not corrupt historical
 $incidentStateAfterDelete = $db->query("SELECT state, active_subject_key FROM repeatcaller_incidents WHERE id = {$incidentId}")->fetch(PDO::FETCH_ASSOC);
 assert_same('closed', $incidentStateAfterDelete['state'], 'deleting a rule with an open incident should deliberately close it');
 assert_true($incidentStateAfterDelete['active_subject_key'] === null || $incidentStateAfterDelete['active_subject_key'] === '', 'deleted rule should not leave an active incident key behind');
+
+$bulkRuleAId = (int)$db->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES ('Bulk Rule A', 0, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+$bulkRuleAId = (int)$db->lastInsertId();
+$bulkRuleBId = (int)$db->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES ('Bulk Rule B', 1, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+$bulkRuleBId = (int)$db->lastInsertId();
+$bulkDeletedRuleId = (int)$db->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, is_deleted, deleted_at, created_at, updated_at) VALUES ('Bulk Deleted Rule', 0, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', 1, '2026-07-13 11:00:00', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+$bulkDeletedRuleId = (int)$db->lastInsertId();
+$_REQUEST = [
+	'enabled' => '1',
+	'default_country_code' => '44',
+	'incident_history_prune_policy' => 'daily',
+	'alert_history_prune_policy' => 'daily',
+	'suppression_history_prune_policy' => 'daily',
+];
+$saveGlobalSettingsMethod = new ReflectionMethod($controller, 'rcHandleSaveGlobalSettings');
+$saveGlobalSettingsMethod->setAccessible(true);
+
+$settingsWriteMethod = new ReflectionMethod($controller, 'setSetting');
+$settingsWriteMethod->setAccessible(true);
+$settingsWriteMethod->invoke($controller, 'enabled', '1');
+$settingsWriteMethod->invoke($controller, 'default_country_code', '44');
+$settingsWriteMethod->invoke($controller, 'incident_history_prune_policy', 'daily');
+$settingsWriteMethod->invoke($controller, 'alert_history_prune_policy', 'daily');
+$settingsWriteMethod->invoke($controller, 'suppression_history_prune_policy', 'daily');
+
+$bulkEnableResponse = $saveGlobalSettingsMethod->invoke($controller);
+assert_true(!empty($bulkEnableResponse['status']), 'bulk enable action should succeed');
+assert_same('1', (string)$db->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'enabled'")->fetchColumn(), 'bulk enable action should enable the engine');
+$bulkRuleAState = $db->query("SELECT enabled FROM repeatcaller_rules WHERE id = {$bulkRuleAId}")->fetch(PDO::FETCH_ASSOC);
+$bulkRuleBState = $db->query("SELECT enabled FROM repeatcaller_rules WHERE id = {$bulkRuleBId}")->fetch(PDO::FETCH_ASSOC);
+$bulkDeletedRuleState = $db->query("SELECT enabled, is_deleted FROM repeatcaller_rules WHERE id = {$bulkDeletedRuleId}")->fetch(PDO::FETCH_ASSOC);
+assert_same('1', (string)($bulkRuleAState['enabled'] ?? '0'), 'bulk enable action should enable every non-deleted rule');
+assert_same('1', (string)($bulkRuleBState['enabled'] ?? '0'), 'bulk enable action should preserve enabled state for already-enabled rules');
+assert_same('0', (string)($bulkDeletedRuleState['enabled'] ?? '0'), 'bulk enable action should not alter deleted rules');
+assert_same('1', (string)($bulkDeletedRuleState['is_deleted'] ?? '0'), 'bulk enable action should not restore deleted rules');
+assert_true(isset($bulkEnableResponse['rules']) && is_array($bulkEnableResponse['rules']), 'bulk enable action should return refreshed rule state for UI rendering');
+$bulkRuleAResponse = current(array_values(array_filter($bulkEnableResponse['rules'], function (array $rule) use ($bulkRuleAId): bool {
+	return (int)($rule['id'] ?? 0) === $bulkRuleAId;
+})));
+assert_true(is_array($bulkRuleAResponse), 'bulk enable response should include the newly enabled rule');
+assert_same('1', (string)($bulkRuleAResponse['enabled'] ?? '0'), 'bulk enable response should expose the updated rule state');
+
+$_REQUEST = [
+	'rule_id' => (string)$bulkRuleAId,
+	'enabled' => '0',
+];
+$setRuleEnabledMethod = new ReflectionMethod($controller, 'rcHandleSetRuleEnabled');
+$setRuleEnabledMethod->setAccessible(true);
+$singleRuleDisableResponse = $setRuleEnabledMethod->invoke($controller);
+assert_true(!empty($singleRuleDisableResponse['status']), 'single-rule toggle should still work after a bulk action');
+$bulkRuleAAfterSingleToggle = $db->query("SELECT enabled FROM repeatcaller_rules WHERE id = {$bulkRuleAId}")->fetch(PDO::FETCH_ASSOC);
+assert_same('0', (string)($bulkRuleAAfterSingleToggle['enabled'] ?? '0'), 'individual rule toggles should still work after a bulk action');
 
 // Focused contract: persisted snooze-selection state semantics.
 $controllerSource = file_get_contents(__DIR__ . '/../Repeatcaller.class.php');

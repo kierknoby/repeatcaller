@@ -426,12 +426,25 @@ class Repeatcaller implements \BMO {
 		$this->setSetting('alert_history_prune_policy', $alertPrune);
 		$this->setSetting('suppression_history_prune_policy', $suppressionPrune);
 
+		$repository = $this->rcRepository();
+		if ($enabled !== null) {
+			$targetEnabled = $enabled === '1';
+			foreach ($repository->loadRulesSummary() as $rule) {
+				$ruleId = (int)($rule['id'] ?? 0);
+				if ($ruleId <= 0) {
+					continue;
+				}
+				$repository->setRuleEnabled($ruleId, $targetEnabled, $this->now());
+			}
+		}
+
 		$settings = $this->rcSettings();
 		return [
 			'status' => true,
 			'message' => _('Global settings saved.'),
 			'globalSettings' => $settings,
 			'engineStatus' => $this->rcEngineStatus($settings),
+			'rules' => $repository->loadRulesSummary(),
 		];
 	}
 

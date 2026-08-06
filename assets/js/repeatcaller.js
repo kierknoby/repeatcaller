@@ -2688,6 +2688,7 @@
 		ajax('saveglobalsettings', payload, function (response) {
 			showMessage(response.message || 'Settings saved.', 'success');
 			renderEngine(response.engineStatus || {});
+			renderRules(response.rules || []);
 			scrollToPageTop();
 		}, onDone);
 	}

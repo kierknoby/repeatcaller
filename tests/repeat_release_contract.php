@@ -231,7 +231,7 @@ assert_true(strpos($readmeSource, 'Capped at 24 hours once the interval reaches 
 assert_true(strpos($readmeSource, "- Never\n  - Initial alert only.\n- Every 5 minutes") !== false, 'README repeat mode bullets should use nested spaces for sub-bullets');
 assert_true(strpos($readmeSource, "- Escalating\n  - Uses a Fibonacci-style escalating backoff schedule") !== false, 'README repeat mode bullets should keep nested spacing on escalating mode');
 assert_true(strpos($readmeSource, "\n- Fibonacci\n") === false && strpos($readmeSource, "\n  - Fibonacci\n") === false, 'README must not present Fibonacci as a selectable repeat mode name');
-assert_true(strpos($readmeSource, 'Stored legacy repeat mode values from earlier builds are treated as Escalating.') !== false, 'README should describe legacy repeat mode compatibility without exposing legacy operator-facing terminology');
+assert_true(strpos($readmeSource, 'Stored legacy reminder values from earlier builds are treated as Escalating.') !== false, 'README should describe legacy alert reminder compatibility using current Alert Reminder terminology');
 assert_true(strpos($readmeSource, '## Suppression') !== false, 'README should include Suppression section');
 assert_true(strpos($readmeSource, '## Data Retention') !== false, 'README should include Data Retention section');
 assert_true(strpos($readmeSource, '## Snooze Monitoring') !== false, 'README should include Snooze Monitoring section');
