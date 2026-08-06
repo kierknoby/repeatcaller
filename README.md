@@ -221,7 +221,7 @@ webhook sender, or SMS sender.
 Canonical Repeat Caller tables:
 
 - `repeatcaller_settings`: module settings, engine status timestamps, global
-  repeat/suppression/pruning controls, snooze state, and recipients.
+  Alert Reminder, suppression, and pruning controls, snooze state, and recipients.
 - `repeatcaller_rules`: rule definitions, detection mode, thresholds/windows,
   caller/DID scope, Alert Reminder override, suppression override, and alert action
   toggles.
@@ -365,7 +365,7 @@ Administrators can remove the Ignore entry if it is not appropriate.
 
 Alert reminder emails now show one reminder line:
 
-- Alert Reminder: displays the Alert Reminder scheduling actually used for that alert, such as Never, Hourly, Daily, or Escalating.
+- Alert Reminder: displays the Alert Reminder schedule used for that alert, such as Never, Hourly, Daily, or Escalating.
 
 Alert reminder emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 
