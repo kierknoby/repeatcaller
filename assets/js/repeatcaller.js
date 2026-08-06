@@ -1793,7 +1793,7 @@
 				updateAlertCallDestinationHiddenField();
 			}))
 			.append(' Keep Trying');
-		var $remove = $('<button type="button" class="btn btn-xs btn-link rc-alert-call-destination-remove"/>').text('Remove').on('click', function () {
+		var $remove = $('<button type="button" class="btn btn-xs btn-danger rc-alert-call-destination-remove"/>').text('Remove').on('click', function () {
 			$li.remove();
 			updateAlertCallDestinationOrderLabels();
 			updateAlertCallDestinationAddButtonState();
