@@ -331,8 +331,8 @@ try {
 			'summary_caller_kind' => (string)($argv[10] ?? 'none'),
 			'summary_caller_value' => (string)($argv[11] ?? ''),
 			'summary_did_value' => (string)($argv[12] ?? ''),
-		], $transport, function () use ($incidentId): bool {
-			return repeatcallerAgiDatabaseExists('repeatcaller', 'incident/' . $incidentId . '/accepted');
+		], $transport, function () use ($repository, $incidentId): bool {
+			return $repository->isIncidentAcceptedForRemoteAlertRedirect($incidentId);
 		});
 
 		if ((string)$sessionResult['response'] === 'remote_accepted') {

@@ -686,6 +686,22 @@ final class RepeatCallerRepository {
 		return (string)$stmt->fetchColumn() === 'active';
 	}
 
+	public function isIncidentAcceptedForRemoteAlertRedirect(int $incidentId): bool {
+		$stmt = $this->pdo->prepare(
+			'SELECT state, accepted_at, accepted_by FROM repeatcaller_incidents WHERE id = ? LIMIT 1'
+		);
+		$stmt->execute([$incidentId]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+		if (!is_array($row)) {
+			return false;
+		}
+
+		$state = strtolower(trim((string)($row['state'] ?? '')));
+		$acceptedAt = trim((string)($row['accepted_at'] ?? ''));
+		$acceptedBy = trim((string)($row['accepted_by'] ?? ''));
+		return $state === 'accepted' && $acceptedAt !== '' && $acceptedBy !== '';
+	}
+
 	public function cancelPendingAlertCallAttemptsForIncident(int $incidentId, string $now, ?int $excludeHistoryId = null, string $failureDetail = 'cancelled after incident accepted'): int {
 		$sql =
 			'UPDATE repeatcaller_incident_alert_history

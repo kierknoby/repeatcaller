@@ -106,6 +106,20 @@ assert_true(strpos($installSource, '[repeatcaller-alert-summary]') !== false, 'g
 assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'generated dialplan must expose a dedicated remote_accepted extension so other answered callers can be redirected out immediately on remote acceptance');
 assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'already answered concurrent callers must be routed to thank-you and goodbye once the incident is accepted elsewhere');
 assert_true(strpos($installSource, 'exten => h,1,GotoIf($["${REPEATCALLER_ALERT_COMPLETED}"="1"]?done)') !== false, 'hangup handling must preserve accepted, declined, and third-attempt no-response terminal outcomes');
+preg_match('/\[repeatcaller-alert-playback\]([\s\S]*?)\[repeatcaller-alert-summary\]/', $installSource, $playbackMatch);
+assert_true(!empty($playbackMatch[1]), 'generated playback context should be present for remote-accept prompt regression checks');
+$playbackBlock = $playbackMatch[1];
+preg_match('/exten => remote_accepted,1,Set\(REPEATCALLER_ALERT_COMPLETED=1\)([\s\S]*?)exten => 1,1,Goto\(s,remote_accepted\)/', $playbackBlock, $remoteAcceptedMatch);
+assert_true(!empty($remoteAcceptedMatch[1]), 'generated playback context should include a remote_accepted extension block for accepted-elsewhere redirects');
+$remoteAcceptedBlock = $remoteAcceptedMatch[1];
+$regularPlaybackBlock = substr($playbackBlock, 0, strpos($playbackBlock, 'exten => remote_accepted'));
+assert_true(strpos($remoteAcceptedBlock, 'Background(incoming-call-no-longer-avail)') !== false, 'accepted-elsewhere redirects must play the new incoming-call-no-longer-avail prompt before the closing prompts');
+assert_true(strpos($regularPlaybackBlock, 'Background(incoming-call-no-longer-avail)') === false, 'the regular interactive playback branch for active, unaccepted alerts must not enter the accepted-elsewhere prompt path');
+assert_true(strpos($remoteAcceptedBlock, 'Background(auth-thankyou)') !== false && strpos($remoteAcceptedBlock, 'Background(goodbye)') !== false, 'accepted-elsewhere redirects must retain the existing thank-you and goodbye prompts');
+assert_true(strpos($remoteAcceptedBlock, 'Background(incoming-call-no-longer-avail)') < strpos($remoteAcceptedBlock, 'Background(auth-thankyou)'), 'accepted-elsewhere redirects must play incoming-call-no-longer-avail before thank-you');
+assert_true(strpos($remoteAcceptedBlock, 'Background(auth-thankyou)') < strpos($remoteAcceptedBlock, 'Background(goodbye)'), 'accepted-elsewhere redirects must play thank-you before goodbye');
+assert_true(strpos($playbackBlock, 'Background(incoming-call-no-longer-avail)') !== false, 'the new prompt should be available in the accepted-elsewhere redirect path');
+assert_same(1, substr_count($playbackBlock, 'Background(incoming-call-no-longer-avail)'), 'the new prompt must appear exactly once in the playback context and only in the remote_accepted branch');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}') !== false, 'alert playback must remain module-owned generated dialplan invoked through U() for FreePBX 16 and 17 compatibility');
 assert_true(strpos($installSource, 'Set(CHANNEL(language)=${ARG2})') !== false, 'generated playback must remain language-aware via the carried channel language argument');
 assert_true(strpos($installSource, '/var/lib/asterisk/sounds') === false && strpos($installSource, '/usr/share/asterisk/sounds') === false, 'generated playback must not hardcode absolute sound paths so carried languages like en and en_GB continue to resolve installed prompts');
@@ -272,6 +286,122 @@ $remoteAcceptedResult = $agiSession->run([
 });
 assert_same('remote_accepted', (string)$remoteAcceptedResult['response'], 'remote acceptance must terminate the interactive AGI session cleanly');
 assert_same('1', (string)($remoteAcceptedTransport->variables['REPEATCALLER_ALERT_COMPLETED'] ?? ''), 'remote acceptance must mark the answered call complete before exit audio');
+
+$redirectDecisionDb = new PDO('sqlite::memory:');
+$redirectDecisionDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$redirectDecisionDb->exec(
+	'CREATE TABLE repeatcaller_rules (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		email_enabled INTEGER NOT NULL DEFAULT 0,
+		email_recipients TEXT,
+		alert_call_enabled INTEGER NOT NULL DEFAULT 0,
+		alert_call_destinations TEXT,
+		alert_call_strategy TEXT NOT NULL DEFAULT "ringall",
+		alert_call_keep_trying INTEGER NOT NULL DEFAULT 1,
+		alert_call_recording_id INTEGER,
+		alert_call_handle_callerid_upstream INTEGER NOT NULL DEFAULT 0,
+		alert_call_callerid TEXT,
+		mode TEXT NOT NULL,
+		threshold_count INTEGER NOT NULL,
+		observation_window_minutes INTEGER NOT NULL,
+		caller_mode TEXT NOT NULL,
+		exclude_withheld INTEGER NOT NULL DEFAULT 0,
+		did_scope_mode TEXT NOT NULL,
+		alert_reminder_mode_override TEXT,
+		suppression_minutes_override INTEGER,
+		created_at TEXT,
+		updated_at TEXT
+	)'
+);
+$redirectDecisionDb->exec(
+	'CREATE TABLE repeatcaller_incidents (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		rule_id INTEGER NOT NULL,
+		subject_key TEXT NOT NULL,
+		active_subject_key TEXT,
+		subject_label TEXT NOT NULL,
+		caller_normalized TEXT,
+		caller_display TEXT,
+		withheld_caller INTEGER NOT NULL DEFAULT 0,
+		mode TEXT NOT NULL,
+		threshold_count INTEGER NOT NULL DEFAULT 0,
+		observation_window_minutes INTEGER NOT NULL DEFAULT 0,
+		first_matched_at TEXT NOT NULL,
+		last_matched_at TEXT NOT NULL,
+		matched_call_count INTEGER NOT NULL DEFAULT 0,
+		state TEXT NOT NULL,
+		accepted_by TEXT,
+		accepted_at TEXT,
+		accept_source TEXT,
+		suppression_expires_at TEXT,
+		cleared_at TEXT,
+		created_at TEXT,
+		updated_at TEXT
+	)'
+);
+$redirectDecisionDb->exec(
+	'CREATE TABLE repeatcaller_incident_alert_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		incident_id INTEGER NOT NULL,
+		rule_id INTEGER NOT NULL,
+		subject_key TEXT NOT NULL,
+		subject_label TEXT NOT NULL,
+		action_type TEXT NOT NULL,
+		event_type TEXT NOT NULL,
+		stage_n INTEGER NOT NULL DEFAULT 0,
+		recipient TEXT,
+		delivery_status TEXT NOT NULL,
+		attempted_at TEXT,
+		successful_at TEXT,
+		next_retry_at TEXT,
+		failure_detail TEXT,
+		alert_reminder_mode TEXT NOT NULL,
+		dedupe_key TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)'
+);
+$redirectDecisionRepository = new RepeatCallerRepository($redirectDecisionDb);
+$redirectDecisionRuleId = insert_rule($redirectDecisionDb, ['name' => 'Redirect Decision Rule', 'mode' => 'repeat']);
+$redirectDecisionActiveIncidentId = insert_incident($redirectDecisionDb, [
+	'rule_id' => $redirectDecisionRuleId,
+	'subject_key' => 'reminder-subject',
+	'first_matched_at' => '2026-07-13 10:00:00',
+	'last_matched_at' => '2026-07-13 10:00:00',
+	'state' => 'active',
+	'accepted_by' => null,
+	'accepted_at' => null,
+]);
+$redirectDecisionDb->prepare(
+	'INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+)->execute([
+	$redirectDecisionActiveIncidentId,
+	$redirectDecisionRuleId,
+	'reminder-subject',
+	'reminder-subject',
+	'alert_call',
+	'reminder',
+	1,
+	'100',
+	'sent',
+	'ever y5',
+	'alert-reminder-1',
+	'2026-07-13 10:00:00',
+	'2026-07-13 10:00:00',
+]);
+assert_true(!$redirectDecisionRepository->isIncidentAcceptedForRemoteAlertRedirect($redirectDecisionActiveIncidentId), 'an active unaccepted reminder alert-history attempt must not be treated as a remotely accepted incident');
+$redirectDecisionAcceptedIncidentId = insert_incident($redirectDecisionDb, [
+	'rule_id' => $redirectDecisionRuleId,
+	'subject_key' => 'accepted-subject',
+	'first_matched_at' => '2026-07-13 10:01:00',
+	'last_matched_at' => '2026-07-13 10:01:00',
+	'state' => 'accepted',
+	'accepted_by' => 'alert-call:101',
+	'accepted_at' => '2026-07-13 10:01:00',
+]);
+assert_true($redirectDecisionRepository->isIncidentAcceptedForRemoteAlertRedirect($redirectDecisionAcceptedIncidentId), 'a genuinely accepted incident must still be treated as remotely accepted');
 
 // --- Audio sequence tests ---
 // These prove the exact ordered individual filenames and protect against argument-index
