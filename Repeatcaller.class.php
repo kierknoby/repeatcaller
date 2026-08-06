@@ -13,14 +13,13 @@ namespace FreePBX\modules;
 class Repeatcaller implements \BMO {
 
 	/** Fallback only. Authoritative version lives in module.xml. */
-	const VERSION = '1.0.0';
+	const VERSION = '1.0.1';
 	const CSRF_SESSION_KEY = 'repeatcaller_csrf_token';
 	const REPEAT_MODE_NEVER = 'never';
 	const REPEAT_MODE_FIVE_MINUTES = '5m';
 	const REPEAT_MODE_HOURLY = 'hourly';
 	const REPEAT_MODE_DAILY = 'daily';
 	const REPEAT_MODE_ESCALATING = 'escalating';
-	const REPEAT_MODE_FIBONACCI = 'fibonacci';
 	const AJAX_COMMANDS = [
 		'getenginestatus',
 		'runmonitor',
@@ -33,7 +32,7 @@ class Repeatcaller implements \BMO {
 		'setruleenabled',
 		'getinboundroutes',
 		'getincidents',
-		'claimincident',
+		'acceptincident',
 		'getalerthistory',
 		'clearsuppression',
 		'getuichangetoken',
@@ -46,6 +45,7 @@ class Repeatcaller implements \BMO {
 	private $settingsDefaults = [
 		'enabled' => '0',
 		'default_country_code' => '',
+		'initial_processing_boundary_at' => '',
 		'engine_last_success_at' => '',
 		'engine_last_summary_json' => '',
 		'global_snoozed_until' => '',
@@ -137,6 +137,7 @@ class Repeatcaller implements \BMO {
 						'alert_call_recording_id' => $rule['alert_call_recording_id'] !== null && $rule['alert_call_recording_id'] !== ''
 							? (int)$rule['alert_call_recording_id']
 							: null,
+						'alert_call_handle_callerid_upstream' => isset($rule['alert_call_handle_callerid_upstream']) ? (!empty($rule['alert_call_handle_callerid_upstream']) ? 1 : 0) : 0,
 						'alert_call_callerid' => (string)($rule['alert_call_callerid'] ?? ''),
 						'mode' => (string)($rule['mode'] ?? 'repeat'),
 						'threshold_count' => (int)($rule['threshold_count'] ?? 2),
@@ -144,7 +145,7 @@ class Repeatcaller implements \BMO {
 						'caller_mode' => (string)($rule['caller_mode'] ?? 'any'),
 						'exclude_withheld' => !empty($rule['exclude_withheld']) ? 1 : 0,
 						'did_scope_mode' => (string)($rule['did_scope_mode'] ?? 'all'),
-						'repeat_mode_override' => (string)($rule['repeat_mode_override'] ?? ''),
+						'alert_reminder_mode_override' => (string)($rule['alert_reminder_mode_override'] ?? ''),
 						'suppression_minutes_override' => $rule['suppression_minutes_override'] !== null && $rule['suppression_minutes_override'] !== ''
 							? (int)$rule['suppression_minutes_override']
 							: null,
@@ -231,7 +232,7 @@ class Repeatcaller implements \BMO {
 				case 'getinboundroutes': return $this->rcHandleGetInboundRoutes();
 				case 'getincidents': return $this->rcHandleGetIncidents();
 				case 'getsuppressedincidents': return $this->rcHandleGetSuppressedIncidents();
-				case 'claimincident': return $this->rcHandleClaimIncident();
+				case 'acceptincident': return $this->rcHandleAcceptIncident();
 				case 'getalerthistory': return $this->rcHandleGetAlertHistory();
 				case 'clearsuppression': return $this->rcHandleClearSuppression();
 				case 'getuichangetoken': return $this->rcHandleGetUiChangeToken();
@@ -329,7 +330,7 @@ class Repeatcaller implements \BMO {
 			'globalSettings' => $settings,
 			'rules' => $repository->loadRulesSummary(),
 			'activeIncidents' => $repository->loadIncidents('active', 100),
-			'recentIncidents' => $repository->loadIncidents('claimed', 200),
+			'recentIncidents' => $repository->loadIncidents('accepted', 200),
 			'alertHistory' => $repository->loadIncidentAlertHistory(200),
 			'inboundRoutes' => $repository->loadInboundRoutes(),
 			'systemRecordings' => $this->loadSystemRecordingsForEditor(),
@@ -407,10 +408,14 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleSaveGlobalSettings(): array {
 		$enabled = array_key_exists('enabled', $_REQUEST) ? (!empty($_REQUEST['enabled']) ? '1' : '0') : null;
-		$country = preg_replace('/\D+/', '', trim((string)($_REQUEST['default_country_code'] ?? ''))) ?? '';
+		$country = $this->normaliseDefaultCountryCode((string)($_REQUEST['default_country_code'] ?? ''));
 		$incidentPrune = $this->normalisePrunePolicy((string)($_REQUEST['incident_history_prune_policy'] ?? 'daily'));
 		$alertPrune = $this->normalisePrunePolicy((string)($_REQUEST['alert_history_prune_policy'] ?? 'daily'));
 		$suppressionPrune = $this->normalisePrunePolicy((string)($_REQUEST['suppression_history_prune_policy'] ?? 'daily'));
+
+		if ($enabled === '1' && !$this->rcIsValidDefaultCountryCode((string)($_REQUEST['default_country_code'] ?? ''))) {
+			return ['status' => false, 'message' => _('Repeat Caller cannot be enabled until Global Settings > Default Country Code contains a valid value.')];
+		}
 
 		if ($enabled !== null) {
 			$this->setSetting('enabled', $enabled);
@@ -424,12 +429,25 @@ class Repeatcaller implements \BMO {
 		$this->setSetting('alert_history_prune_policy', $alertPrune);
 		$this->setSetting('suppression_history_prune_policy', $suppressionPrune);
 
+		$repository = $this->rcRepository();
+		if ($enabled !== null) {
+			$targetEnabled = $enabled === '1';
+			foreach ($repository->loadRulesSummary() as $rule) {
+				$ruleId = (int)($rule['id'] ?? 0);
+				if ($ruleId <= 0) {
+					continue;
+				}
+				$repository->setRuleEnabled($ruleId, $targetEnabled, $this->now());
+			}
+		}
+
 		$settings = $this->rcSettings();
 		return [
 			'status' => true,
 			'message' => _('Global settings saved.'),
 			'globalSettings' => $settings,
 			'engineStatus' => $this->rcEngineStatus($settings),
+			'rules' => $repository->loadRulesSummary(),
 		];
 	}
 
@@ -475,16 +493,22 @@ class Repeatcaller implements \BMO {
 					? (int)$existingRule['alert_call_recording_id']
 					: null);
 
+			$strategy = $this->normaliseAlertCallStrategy((string)($_REQUEST['alert_call_strategy'] ?? 'ringall'));
 			$payload = [
 				'id' => $ruleId,
 				'name' => $name,
 				'enabled' => !empty($_REQUEST['enabled']) ? 1 : 0,
 				'email_enabled' => !empty($_REQUEST['email_enabled']) ? 1 : 0,
 				'alert_call_enabled' => !empty($_REQUEST['alert_call_enabled']) ? 1 : 0,
-				'alert_call_destinations' => implode(', ', $this->normaliseAlertCallDestinations((string)($_REQUEST['alert_call_destinations'] ?? ''))),
-				'alert_call_strategy' => $this->normaliseAlertCallStrategy((string)($_REQUEST['alert_call_strategy'] ?? 'ringall')),
+				'alert_call_destinations' => implode(', ', $this->normaliseAlertCallDestinations((string)($_REQUEST['alert_call_destinations'] ?? ''), true)),
+				'alert_call_strategy' => $strategy,
 				'alert_call_keep_trying' => isset($_REQUEST['alert_call_keep_trying']) ? (!empty($_REQUEST['alert_call_keep_trying']) ? 1 : 0) : 1,
 				'alert_call_recording_id' => $recordingId,
+				'alert_call_handle_callerid_upstream' => array_key_exists('alert_call_handle_callerid_upstream', $_REQUEST)
+					? (!empty($_REQUEST['alert_call_handle_callerid_upstream']) ? 1 : 0)
+					: (($existingRule !== null && array_key_exists('alert_call_handle_callerid_upstream', $existingRule))
+						? (!empty($existingRule['alert_call_handle_callerid_upstream']) ? 1 : 0)
+						: ($ruleId > 0 ? 0 : 1)),
 				'alert_call_callerid' => trim((string)($_REQUEST['alert_call_callerid'] ?? '')),
 				'mode' => (string)($_REQUEST['mode'] ?? 'repeat'),
 				'threshold_count' => $this->boundedDigits((string)($_REQUEST['threshold_count'] ?? '2'), 1, 1000, 2),
@@ -492,7 +516,7 @@ class Repeatcaller implements \BMO {
 				'caller_mode' => (string)($_REQUEST['caller_mode'] ?? 'any'),
 				'exclude_withheld' => !empty($_REQUEST['exclude_withheld']) ? 1 : 0,
 				'did_scope_mode' => (string)($_REQUEST['did_scope_mode'] ?? 'all'),
-				'repeat_mode_override' => (string)($_REQUEST['repeat_mode_override'] ?? self::REPEAT_MODE_NEVER),
+				'alert_reminder_mode_override' => (string)($_REQUEST['alert_reminder_mode_override'] ?? self::REPEAT_MODE_NEVER),
 				'email_recipients' => implode(', ', $this->normaliseRecipients((string)($_REQUEST['email_recipients'] ?? ''))),
 				'suppression_minutes_override' => ($_REQUEST['suppression_minutes_override'] ?? '') !== ''
 					? $this->boundedDigits((string)$_REQUEST['suppression_minutes_override'], 0, 525600, 1440)
@@ -506,12 +530,17 @@ class Repeatcaller implements \BMO {
 		}
 
 		$payload['mode'] = $payload['mode'] === 'invert' ? 'invert' : 'repeat';
+		$payload['alert_call_keep_trying'] = $payload['alert_call_strategy'] === 'ordered' ? $payload['alert_call_keep_trying'] : 0;
 		if (!in_array($payload['caller_mode'], ['any', 'withheld_only', 'specific_only'], true)) {
 			$payload['caller_mode'] = 'any';
 		}
 		if (!in_array($payload['did_scope_mode'], ['all', 'selected'], true)) {
 			$payload['did_scope_mode'] = 'all';
 		}
+		if (!empty($payload['alert_call_handle_callerid_upstream'])) {
+			$payload['alert_call_callerid'] = '';
+		}
+		$payload['dids'] = $this->rcFilterDidsForScopeMode($payload['dids'], $payload['did_scope_mode']);
 		if (!empty($payload['email_enabled'])) {
 			$rawRecipients = trim((string)($_REQUEST['email_recipients'] ?? ''));
 			$recipients = $this->normaliseRecipients($rawRecipients);
@@ -528,8 +557,16 @@ class Repeatcaller implements \BMO {
 		if (!empty($payload['alert_call_enabled']) && trim((string)$payload['alert_call_destinations']) === '') {
 			return ['status' => false, 'message' => _('Alert Call is enabled. Enter at least one Alert Call destination.')];
 		}
-		$override = strtolower(trim((string)$payload['repeat_mode_override']));
-		$payload['repeat_mode_override'] = $this->normaliseRepeatMode($override);
+		if (!empty($payload['alert_call_enabled']) && empty($payload['alert_call_handle_callerid_upstream'])) {
+			if (trim((string)$payload['alert_call_callerid']) === '') {
+				return ['status' => false, 'message' => _('Alert Call Caller ID is required when Alert Call is enabled and Caller ID managed elsewhere is disabled.')];
+			}
+			if (!$this->isValidAlertCallCallerId((string)$payload['alert_call_callerid'])) {
+				return ['status' => false, 'message' => _('Alert Call Caller ID must contain digits only, optionally prefixed with +.')];
+			}
+		}
+		$override = strtolower(trim((string)$payload['alert_reminder_mode_override']));
+		$payload['alert_reminder_mode_override'] = $this->normaliseAlertReminderMode($override);
 		if ($payload['caller_mode'] === 'specific_only') {
 			$hasIncludedCaller = false;
 			foreach ($payload['callers'] as $caller) {
@@ -553,6 +590,12 @@ class Repeatcaller implements \BMO {
 			if (!$hasIncludedRoute) {
 				return ['status' => false, 'message' => _('Selected DID scope requires at least one included inbound route.')];
 			}
+		}
+
+		$targetEnabled = !empty($payload['enabled']) ? 1 : 0;
+		$shouldAttemptEnable = $targetEnabled === 1 && ($ruleId <= 0 || (int)($existingRule['enabled'] ?? 0) !== 1);
+		if ($shouldAttemptEnable && !$this->rcIsValidDefaultCountryCode((string)($this->rcSettings()['default_country_code'] ?? ''))) {
+			return ['status' => false, 'message' => _('Repeat Caller cannot be enabled until Global Settings > Default Country Code contains a valid value.')];
 		}
 
 		$ruleId = $repository->saveRule($payload, $this->now());
@@ -582,10 +625,16 @@ class Repeatcaller implements \BMO {
 			return ['status' => false, 'message' => _('Missing rule ID.')];
 		}
 		$repository = $this->rcRepository();
-		if ($repository->loadRule($ruleId) === null) {
+		$rule = $repository->loadRule($ruleId);
+		if ($rule === null) {
 			return ['status' => false, 'message' => _('Rule not found or has been deleted.')];
 		}
-		$repository->setRuleEnabled($ruleId, !empty($_REQUEST['enabled']), $this->now());
+		$targetEnabled = !empty($_REQUEST['enabled']);
+		$shouldAttemptEnable = $targetEnabled && (int)($rule['enabled'] ?? 0) !== 1;
+		if ($shouldAttemptEnable && !$this->rcIsValidDefaultCountryCode((string)($this->rcSettings()['default_country_code'] ?? ''))) {
+			return ['status' => false, 'message' => _('Repeat Caller cannot be enabled until Global Settings > Default Country Code contains a valid value.')];
+		}
+		$repository->setRuleEnabled($ruleId, $targetEnabled, $this->now());
 		return ['status' => true, 'message' => _('Rule state updated.'), 'rules' => $repository->loadRulesSummary()];
 	}
 
@@ -595,11 +644,11 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleGetIncidents(): array {
 		$view = strtolower(trim((string)($_REQUEST['view'] ?? 'active')));
-		if (!in_array($view, ['active', 'recent', 'claimed'], true)) {
+		if (!in_array($view, ['active', 'recent', 'accepted'], true)) {
 			$view = 'active';
 		}
 		if ($view === 'recent') {
-			$view = 'claimed';
+			$view = 'accepted';
 		}
 		return ['status' => true, 'incidents' => $this->rcRepository()->loadIncidents($view, 300)];
 	}
@@ -629,7 +678,7 @@ class Repeatcaller implements \BMO {
 		];
 	}
 
-	private function rcHandleClaimIncident(): array {
+	private function rcHandleAcceptIncident(): array {
 		$incidentId = $this->positiveRequestId('incident_id');
 		if ($incidentId <= 0) {
 			return ['status' => false, 'message' => _('Missing incident ID.')];
@@ -644,14 +693,15 @@ class Repeatcaller implements \BMO {
 		}
 		$user = $user !== '' ? $user : 'gui';
 		$repository = $this->rcRepository();
-		if (!$repository->claimActiveIncident($incidentId, $user, $this->now(), 'gui')) {
+		if (!$repository->acceptActiveIncident($incidentId, $user, $this->now(), 'gui')) {
 			return ['status' => false, 'message' => _('Incident is not active or was already accepted.')];
 		}
+		$this->signalIncidentAcceptedForLiveAlertCalls($incidentId);
 		return [
 			'status' => true,
 			'message' => _('Incident accepted.'),
 			'activeIncidents' => $repository->loadIncidents('active', 200),
-			'recentIncidents' => $repository->loadIncidents('claimed', 300),
+			'recentIncidents' => $repository->loadIncidents('accepted', 300),
 		];
 	}
 
@@ -668,7 +718,7 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleSetSnooze(): array {
 		$seconds = isset($_REQUEST['seconds']) ? (int)$_REQUEST['seconds'] : 0;
-		if (!in_array($seconds, [300, 900, 1800, 3600, 86400], true)) {
+		if (!in_array($seconds, [300, 900, 1800, 3600, 10800, 21600, 43200, 86400], true)) {
 			return ['status' => false, 'message' => _('Invalid snooze duration.')];
 		}
 		$this->setSetting('global_snoozed_until', date('Y-m-d H:i:s', strtotime($this->now()) + $seconds));
@@ -714,7 +764,7 @@ class Repeatcaller implements \BMO {
 			'deleted' => $deleted,
 			'alertHistory' => $repository->loadIncidentAlertHistory(300),
 			'suppressedIncidents' => $repository->loadSuppressedIncidentHistory(300),
-			'recentIncidents' => $repository->loadIncidents('claimed', 300),
+			'recentIncidents' => $repository->loadIncidents('accepted', 300),
 		];
 	}
 
@@ -885,27 +935,44 @@ class Repeatcaller implements \BMO {
 
 	private function rcParseCallers($raw): array {
 		require_once __DIR__ . '/src/DetectionEngine.php';
-		$items = $this->rcDecodePayloadList($raw);
+		if (is_string($raw)) {
+			$trimmedRaw = trim($raw);
+			if ($trimmedRaw === '') {
+				$items = [];
+			} else {
+				$decoded = json_decode($trimmedRaw, true);
+				if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+					$items = $decoded;
+				} else {
+					$items = [['list_type' => 'include', 'raw_value' => $raw]];
+				}
+			}
+		} else {
+			$items = $this->rcDecodePayloadList($raw);
+		}
 		$normalized = [];
+		$seenByListType = ['include' => [], 'exclude' => []];
 		$country = trim((string)($this->rcSettings()['default_country_code'] ?? ''));
 		foreach ($items as $item) {
 			$listType = (string)($item['list_type'] ?? 'include');
 			if (!in_array($listType, ['include', 'exclude'], true)) {
 				continue;
 			}
-			$rawValue = trim((string)($item['raw_value'] ?? ''));
-			if ($rawValue === '') {
-				continue;
-			}
-			if (strtolower($rawValue) === 'withheld') {
-				$norm = 'withheld';
-			} else {
-				$norm = \FreePBX\modules\Repeatcaller\DetectionEngine::normaliseCaller($rawValue, $country);
-				if ($norm === null || $norm === '') {
+			foreach ($this->splitCallerListValues((string)($item['raw_value'] ?? '')) as $rawValue) {
+				if (strtolower($rawValue) === 'withheld') {
+					$norm = 'withheld';
+				} else {
+					$norm = \FreePBX\modules\Repeatcaller\DetectionEngine::normaliseCaller($rawValue, $country);
+					if ($norm === null || $norm === '') {
+						continue;
+					}
+				}
+				if (isset($seenByListType[$listType][$norm])) {
 					continue;
 				}
+				$seenByListType[$listType][$norm] = true;
+				$normalized[] = ['list_type' => $listType, 'raw_value' => $rawValue, 'normalized_value' => $norm];
 			}
-			$normalized[] = ['list_type' => $listType, 'raw_value' => $rawValue, 'normalized_value' => $norm];
 		}
 		return $normalized;
 	}
@@ -938,6 +1005,24 @@ class Repeatcaller implements \BMO {
 		return $normalized;
 	}
 
+	private function rcFilterDidsForScopeMode(array $dids, string $didScopeMode): array {
+		$mode = $didScopeMode === 'selected' ? 'selected' : 'all';
+		$allowedListType = $mode === 'selected' ? 'include' : 'exclude';
+		$normalized = [];
+		foreach ($dids as $did) {
+			if (!is_array($did)) {
+				continue;
+			}
+			$listType = (string)($did['list_type'] ?? '');
+			if ($listType !== $allowedListType) {
+				continue;
+			}
+			$normalized[] = $did;
+		}
+
+		return $normalized;
+	}
+
 	private function rcDecodePayloadList($raw): array {
 		if (is_array($raw)) {
 			return $raw;
@@ -949,7 +1034,22 @@ class Repeatcaller implements \BMO {
 		return is_array($decoded) ? $decoded : [];
 	}
 
-	private function normaliseAlertCallDestinations(string $raw): array {
+	private function splitCallerListValues(string $raw): array {
+		$parts = preg_split('/[\s,]+/', trim($raw));
+		if (!is_array($parts)) {
+			return [];
+		}
+		$values = [];
+		foreach ($parts as $part) {
+			$value = trim((string)$part);
+			if ($value !== '') {
+				$values[] = $value;
+			}
+		}
+		return $values;
+	}
+
+	private function normaliseAlertCallDestinations(string $raw, bool $preserveKeepTrying = true): array {
 		$parts = preg_split('/[,;\n\r]+/', trim($raw));
 		$destinations = [];
 		foreach ($parts as $part) {
@@ -957,9 +1057,27 @@ class Repeatcaller implements \BMO {
 			if ($value === '') {
 				continue;
 			}
+			if ($preserveKeepTrying && preg_match('/^(.*)\|([01])$/', $value, $matches)) {
+				$destination = trim((string)$matches[1]);
+				$keepTrying = ((int)$matches[2]) === 1 ? 1 : 0;
+				$destinations[] = $destination . '|' . $keepTrying;
+				continue;
+			}
 			$destinations[$value] = $value;
 		}
 		return array_values($destinations);
+	}
+
+	private function defaultAlertCallKeepTryingRequestValue(): int {
+		return isset($_REQUEST['alert_call_keep_trying']) ? (!empty($_REQUEST['alert_call_keep_trying']) ? 1 : 0) : 1;
+	}
+
+	private function normaliseAlertCallKeepTryingFlag(string $strategy, int $default): int {
+		$strategy = $this->normaliseAlertCallStrategy($strategy);
+		if ($strategy !== 'ordered') {
+			return 0;
+		}
+		return $default !== 0 ? 1 : 0;
 	}
 
 	private function normaliseAlertCallStrategy(string $strategy): string {
@@ -968,6 +1086,14 @@ class Repeatcaller implements \BMO {
 			return 'ordered';
 		}
 		return 'ringall';
+	}
+
+	private function isValidAlertCallCallerId(string $value): bool {
+		$value = trim($value);
+		if ($value === '') {
+			return false;
+		}
+		return preg_match('/^\+?\d+$/', $value) === 1;
 	}
 
 	private function nullablePositiveRequestInt(string $key): ?int {
@@ -1096,7 +1222,10 @@ class Repeatcaller implements \BMO {
 			'Data' => '60',
 			'Async' => 'true',
 			'Timeout' => '30000',
-			'Variable' => 'REPEATCALLER_PLAYBACK_TARGET=' . $playbackTarget . ',REPEATCALLER_PLAYBACK_LANGUAGE=' . $playbackLanguage . ',REPEATCALLER_ALERT_HISTORY_ID=' . $historyId . ',REPEATCALLER_INCIDENT_ID=' . $incidentId . ',REPEATCALLER_ALERT_RECIPIENT=' . $recipient . ',REPEATCALLER_SUMMARY_MODE=' . $summaryMode . ',REPEATCALLER_SUMMARY_CALL_COUNT=' . $summaryCallCount . ',REPEATCALLER_SUMMARY_THRESHOLD=' . $summaryThreshold . ',REPEATCALLER_SUMMARY_WINDOW_MINUTES=' . $summaryWindowMinutes . ',REPEATCALLER_SUMMARY_CALLER_KIND=' . $summaryCallerKind . ',REPEATCALLER_SUMMARY_CALLER_VALUE=' . $summaryCallerValue . ',REPEATCALLER_SUMMARY_DID_VALUE=' . $summaryDidValue,
+			// Internal-only marker for Repeat Caller originated alert legs.
+			// This marker is intended for internal CDR filtering and does not survive PSTN hairpin/re-entry paths.
+			'Account' => 'repeatcaller_alert_internal',
+			'Variable' => 'REPEATCALLER_PLAYBACK_TARGET=' . $playbackTarget . ',REPEATCALLER_PLAYBACK_LANGUAGE=' . $playbackLanguage . ',REPEATCALLER_ALERT_HISTORY_ID=' . $historyId . ',REPEATCALLER_INCIDENT_ID=' . $incidentId . ',REPEATCALLER_ALERT_RECIPIENT=' . $recipient . ',REPEATCALLER_SUMMARY_MODE=' . $summaryMode . ',REPEATCALLER_SUMMARY_CALL_COUNT=' . $summaryCallCount . ',REPEATCALLER_SUMMARY_THRESHOLD=' . $summaryThreshold . ',REPEATCALLER_SUMMARY_WINDOW_MINUTES=' . $summaryWindowMinutes . ',REPEATCALLER_SUMMARY_CALLER_KIND=' . $summaryCallerKind . ',REPEATCALLER_SUMMARY_CALLER_VALUE=' . $summaryCallerValue . ',REPEATCALLER_SUMMARY_DID_VALUE=' . $summaryDidValue . ',REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1',
 		];
 		$callerId = trim($callerId);
 		if ($callerId !== '') {
@@ -1130,6 +1259,107 @@ class Repeatcaller implements \BMO {
 	private function astmanConnection() {
 		global $astman;
 		return is_object($astman) ? $astman : null;
+	}
+
+	public function signalIncidentAcceptedForLiveAlertCalls(int $incidentId, ?int $excludeHistoryId = null): void {
+		if ($incidentId <= 0) {
+			return;
+		}
+
+		$astman = $this->astmanConnection();
+		if (!is_object($astman)) {
+			return;
+		}
+
+		try {
+			if (method_exists($astman, 'send_request')) {
+				$astman->send_request('DBPut', [
+					'Family' => 'repeatcaller',
+					'Key' => 'incident/' . $incidentId . '/accepted',
+					'Val' => '1',
+				]);
+
+				$repository = $this->rcRepository();
+				foreach ($repository->loadAlertCallAttemptHistoryByIncident($incidentId) as $attempt) {
+					$historyId = (int)($attempt['id'] ?? 0);
+					if ($historyId <= 0 || ($excludeHistoryId !== null && $historyId === $excludeHistoryId)) {
+						continue;
+					}
+
+					$launchChannel = $this->astDbGetValue($astman, 'repeatcaller', 'alertcall/' . $historyId . '/launch_channel');
+					$playbackChannel = $this->astDbGetValue($astman, 'repeatcaller', 'alertcall/' . $historyId . '/playback_channel');
+
+					if ($playbackChannel !== '') {
+						$redirected = $this->astmanAction($astman, 'Redirect', [
+							'Channel' => $playbackChannel,
+							'Context' => 'repeatcaller-alert-playback',
+							'Exten' => 'remote_accepted',
+							'Priority' => '1',
+						]);
+						if (!$redirected) {
+							$this->astmanAction($astman, 'Hangup', ['Channel' => $playbackChannel]);
+						}
+					}
+
+					if ($launchChannel !== '') {
+						$this->astmanAction($astman, 'Hangup', ['Channel' => $launchChannel]);
+					}
+				}
+			}
+		} catch (\Throwable $e) {
+		}
+	}
+
+	private function astmanAction($astman, string $action, array $params): bool {
+		if (!method_exists($astman, 'send_request')) {
+			return false;
+		}
+
+		try {
+			$result = $astman->send_request($action, $params);
+			if ($result === true) {
+				return true;
+			}
+			if (is_array($result)) {
+				$response = strtolower(trim((string)($result['Response'] ?? $result['response'] ?? '')));
+				$message = strtolower(trim((string)($result['Message'] ?? $result['message'] ?? '')));
+				return $response === 'success' || strpos($message, 'success') !== false;
+			}
+			if (is_string($result)) {
+				$normalized = strtolower(trim($result));
+				return strpos($normalized, 'success') !== false;
+			}
+		} catch (\Throwable $e) {
+		}
+
+		return false;
+	}
+
+	private function astDbGetValue($astman, string $family, string $key): string {
+		if (!method_exists($astman, 'send_request')) {
+			return '';
+		}
+
+		try {
+			$result = $astman->send_request('DBGet', [
+				'Family' => $family,
+				'Key' => $key,
+			]);
+			if (is_array($result)) {
+				foreach (['Val', 'val', 'Value', 'value', 'Data', 'data'] as $field) {
+					if (isset($result[$field])) {
+						return trim((string)$result[$field]);
+					}
+				}
+				$message = trim((string)($result['Message'] ?? $result['message'] ?? ''));
+				if (preg_match('/Value\s*:\s*(.+)$/i', $message, $matches)) {
+					return trim((string)$matches[1]);
+				}
+			}
+		} catch (\Throwable $e) {
+		}
+
+		return '';
 	}
 
 	private function resolveSystemRecordingPlayback(string $recordingId): array {
@@ -1272,11 +1502,8 @@ class Repeatcaller implements \BMO {
 		return count($nonEmpty) >= 3;
 	}
 
-	private function normaliseRepeatMode(?string $mode): string {
+	private function normaliseAlertReminderMode(?string $mode): string {
 		$mode = strtolower(trim((string)$mode));
-		if ($mode === self::REPEAT_MODE_FIBONACCI) {
-			return self::REPEAT_MODE_ESCALATING;
-		}
 		return in_array($mode, [self::REPEAT_MODE_NEVER, self::REPEAT_MODE_FIVE_MINUTES, self::REPEAT_MODE_HOURLY, self::REPEAT_MODE_DAILY, self::REPEAT_MODE_ESCALATING], true)
 			? $mode
 			: self::REPEAT_MODE_NEVER;
@@ -1285,6 +1512,45 @@ class Repeatcaller implements \BMO {
 	private function normalisePrunePolicy(string $policy): string {
 		$policy = strtolower(trim($policy));
 		return in_array($policy, ['hourly', 'daily', 'weekly', 'monthly', 'yearly', 'never'], true) ? $policy : 'never';
+	}
+
+	private function rcIsValidDefaultCountryCode(?string $countryCode): bool {
+		$normalised = $this->normaliseDefaultCountryCode((string)($countryCode ?? ''));
+		if ($normalised === '') {
+			return false;
+		}
+		$validCodes = [
+			'1','7','20','27','30','31','32','33','34','36','39','40','41','43','44','45','46','47','48','49','51','52','53','54','55','56','57','58','60','61','62','63','64','65','66','81','82','84','86','90','91','92','93','94','95','98','211','212','213','216','218','220','221','222','223','224','225','226','227','228','229','230','231','232','233','234','235','236','237','238','239','240','241','242','243','244','245','246','248','249','250','251','252','253','254','255','256','257','258','260','261','262','263','264','265','266','267','268','269','290','297','298','299','350','351','352','353','354','355','356','357','358','359','370','371','372','373','374','375','376','377','378','380','381','382','385','386','387','389','420','421','423','500','501','502','503','504','505','506','507','508','509','590','591','592','593','594','595','596','597','598','599','670','672','673','674','675','676','677','678','679','680','681','682','683','685','686','687','688','689','690','691','692','850','852','853','855','856','880','960','961','962','963','964','965','966','967','968','970','971','972','973','974','975','976','977','992','993','994','995','996','998',
+		];
+		return in_array($normalised, $validCodes, true);
+	}
+
+	private function normaliseDefaultCountryCode(string $countryCode): string {
+		$trimmed = trim($countryCode);
+		if ($trimmed === '') {
+			return '';
+		}
+		$withPlus = $trimmed;
+		if (substr($withPlus, 0, 1) === '+') {
+			$withPlus = substr($withPlus, 1);
+		}
+		$digits = preg_replace('/[^0-9]/', '', $withPlus) ?? '';
+		if ($digits === '' || strlen($digits) > 3) {
+			return '';
+		}
+		if (in_array($digits, ['0', '00', '000', '123', '999'], true)) {
+			return '';
+		}
+		if (preg_match('/^[a-zA-Z]+$/', $trimmed) === 1 || preg_match('/^[^0-9+]+$/', $trimmed) === 1) {
+			return '';
+		}
+		if ($trimmed === '+' || $trimmed === '+0' || $trimmed === '+00' || $trimmed === '+000') {
+			return '';
+		}
+		if (preg_match('/^[+]?\d{1,3}$/', $trimmed) !== 1) {
+			return '';
+		}
+		return $digits;
 	}
 
 	private function pruneCutoff(string $policy): ?string {

@@ -125,7 +125,7 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		caller_mode TEXT NOT NULL,
 		exclude_withheld INTEGER NOT NULL DEFAULT 0,
 		did_scope_mode TEXT NOT NULL,
-		repeat_mode_override TEXT,
+		alert_reminder_mode_override TEXT,
 		suppression_minutes_override INTEGER,
 		created_at TEXT,
 		updated_at TEXT
@@ -232,9 +232,9 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		last_matched_at TEXT NOT NULL,
 		matched_call_count INTEGER NOT NULL DEFAULT 0,
 		state TEXT NOT NULL,
-		claimed_by TEXT,
-		claimed_at TEXT,
-		claim_source TEXT,
+		accepted_by TEXT,
+		accepted_at TEXT,
+		accept_source TEXT,
 		suppression_expires_at TEXT,
 		cleared_at TEXT,
 		created_at TEXT,
@@ -244,7 +244,7 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		incident_id INTEGER NOT NULL UNIQUE,
 		rule_id INTEGER NOT NULL,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		initial_sent_at TEXT,
 		last_alert_at TEXT,
 		reminders_sent INTEGER NOT NULL DEFAULT 0,
@@ -267,7 +267,7 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		successful_at TEXT,
 		next_retry_at TEXT,
 		failure_detail TEXT,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		dedupe_key TEXT NOT NULL UNIQUE,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -287,7 +287,7 @@ function insert_route(PDO $db, string $did, string $description = 'Main'): void 
 }
 
 function insert_rule(PDO $db, array $rule): int {
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, is_deleted, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, is_deleted, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			$rule['name'],
 			$rule['enabled'] ?? 1,
@@ -302,7 +302,7 @@ function insert_rule(PDO $db, array $rule): int {
 			$rule['caller_mode'] ?? 'any',
 			$rule['exclude_withheld'] ?? 0,
 			$rule['did_scope_mode'] ?? 'all',
-			$rule['repeat_mode_override'] ?? null,
+			$rule['alert_reminder_mode_override'] ?? null,
 			$rule['suppression_minutes_override'] ?? 30,
 			$rule['created_at'] ?? '2026-07-13 09:00:00',
 			$rule['updated_at'] ?? '2026-07-13 09:00:00',
@@ -350,12 +350,12 @@ try {
 	[$db, $repo, $runtime, $alerts, $sender] = create_env($path, $clock);
 	insert_route($db, '18005550001');
 	$ruleId = insert_rule($db, [
-		'name' => 'Claim Rule',
+		'name' => 'Accept Rule',
 		'email_enabled' => 1,
 		'alert_call_enabled' => 1,
 		'alert_call_destinations' => '201',
 		'alert_call_recording_id' => 55,
-		'repeat_mode_override' => '5m',
+		'alert_reminder_mode_override' => '5m',
 		'suppression_minutes_override' => 30,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
@@ -366,63 +366,84 @@ try {
 	$incidentId = (int)$db->query('SELECT id FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn();
 	$routeSubjectKey = repeat_route_subject_key('+441234567890', '18005550001|');
 	assert_true($incidentId > 0, 'repeat runtime should create initial incident');
-	$subjectStateBeforeClaim = $db->query("SELECT active_incident_id FROM repeatcaller_rule_subject_state WHERE rule_id = {$ruleId} AND subject_key = '" . $routeSubjectKey . "'")->fetch(PDO::FETCH_ASSOC);
-	assert_same($incidentId, (int)$subjectStateBeforeClaim['active_incident_id'], 'active incident should be linked in subject state before claim');
-	assert_true($repo->claimActiveIncident($incidentId, 'admin', '2026-07-13 10:06:00', 'gui'), 'claim should succeed for active incident');
-	$claimed = $db->query('SELECT state, active_subject_key, matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_same('claimed', $claimed['state'], 'claimed incident should enter claimed state');
-	assert_true((string)$claimed['active_subject_key'] !== '', 'claimed incident should retain active subject linkage');
+	$subjectStateBeforeAccept = $db->query("SELECT active_incident_id FROM repeatcaller_rule_subject_state WHERE rule_id = {$ruleId} AND subject_key = '" . $routeSubjectKey . "'")->fetch(PDO::FETCH_ASSOC);
+	assert_same($incidentId, (int)$subjectStateBeforeAccept['active_incident_id'], 'active incident should be linked in subject state before accept');
+	assert_true($repo->acceptActiveIncident($incidentId, 'admin', '2026-07-13 10:06:00', 'gui'), 'accept should succeed for active incident');
+	$accepted = $db->query('SELECT state, active_subject_key, matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('accepted', $accepted['state'], 'accepted incident should enter accepted state');
+	assert_true((string)$accepted['active_subject_key'] !== '', 'accepted incident should retain active subject linkage');
 	$subjectState = $db->query("SELECT active_incident_id FROM repeatcaller_rule_subject_state WHERE rule_id = {$ruleId} AND subject_key = '" . $routeSubjectKey . "'")->fetch(PDO::FETCH_ASSOC);
-	assert_same($incidentId, (int)$subjectState['active_incident_id'], 'claimed incident remains linked in subject state');
+	assert_same($incidentId, (int)$subjectState['active_incident_id'], 'accepted incident remains linked in subject state');
 
 	$clock->now = '2026-07-13 10:20:00';
 	insert_cdr($db, ['linkedid' => 'C3', 'calldate' => '2026-07-13 10:20:00']);
-	$summaryClaimed = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
-	assert_same(0, $summaryClaimed['incidents_created'], 'later matching call after claim must not create a second incident');
-	$claimedUpdated = $db->query('SELECT state, matched_call_count, last_matched_at FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_same('claimed', $claimedUpdated['state'], 'later matching call should keep same claimed incident');
-	assert_same(3, (int)$claimedUpdated['matched_call_count'], 'later matching call should update the same claimed incident');
-	assert_same(1, (int)$db->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn(), 'no second incident should exist while claimed condition persists');
+	$summaryAccepted = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $summaryAccepted['incidents_created'], 'later matching call after accept must not create a second incident');
+	$acceptedUpdated = $db->query('SELECT state, matched_call_count, last_matched_at FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('accepted', $acceptedUpdated['state'], 'later matching call should keep same accepted incident');
+	assert_same(3, (int)$acceptedUpdated['matched_call_count'], 'later matching call should update the same accepted incident');
+	assert_same(1, (int)$db->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn(), 'no second incident should exist while accepted condition persists');
 	$idempotentSummary = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
 	assert_same(0, $idempotentSummary['incidents_created'], 'repeated processing without new journeys must not create incidents');
 	assert_same(0, $idempotentSummary['incidents_updated'], 'repeated processing without new journeys must not update incidents');
-	$claimedAfterIdempotentRun = $db->query('SELECT matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_same(3, (int)$claimedAfterIdempotentRun['matched_call_count'], 'repeated processing without new journeys should be idempotent for the claimed incident');
+	$acceptedAfterIdempotentRun = $db->query('SELECT matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same(3, (int)$acceptedAfterIdempotentRun['matched_call_count'], 'repeated processing without new journeys should be idempotent for the accepted incident');
 
 	insert_route($db, '18005550002', 'Backup');
 	$clock->now = '2026-07-13 10:25:00';
 	insert_cdr($db, ['linkedid' => 'C7', 'calldate' => '2026-07-13 10:25:00', 'dst' => '18005550002', 'did' => '18005550002']);
 	$summaryDifferentRoute = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
 	assert_same(0, $summaryDifferentRoute['incidents_created'], 'a single matching call on a different route must not create a new incident before threshold is met');
-	$claimedAfterDifferentRoute = $db->query('SELECT matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_same(3, (int)$claimedAfterDifferentRoute['matched_call_count'], 'a call on a different route must not attach to the claimed incident');
-	assert_same(1, (int)$db->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn(), 'a different-route call below threshold must not create or attach to the claimed incident');
-	$beforeReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder'")->fetchColumn();
-	$beforeEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'email'")->fetchColumn();
-	$beforeCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'alert_call'")->fetchColumn();
+	$acceptedAfterDifferentRoute = $db->query('SELECT matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same(3, (int)$acceptedAfterDifferentRoute['matched_call_count'], 'a call on a different route must not attach to the accepted incident');
+	assert_same(1, (int)$db->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn(), 'a different-route call below threshold must not create or attach to the accepted incident');
+	$beforeReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
+	$beforeEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'email'")->fetchColumn();
+	$beforeCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'")->fetchColumn();
 	$alerts->run(['alert_enabled' => '1', 'alert_history_prune_policy' => 'never']);
-	$afterReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder'")->fetchColumn();
-	$afterEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'email'")->fetchColumn();
-	$afterCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'alert_call'")->fetchColumn();
-	assert_same($beforeReminderCount + 3, $afterReminderCount, 'claimed incidents with new qualifying activity should emit one new reminder stage across GUI, email, and alert_call');
-	assert_same($beforeEmailReminderCount + 1, $afterEmailReminderCount, 'claimed incidents with new qualifying activity should emit one new email reminder stage');
-	assert_same($beforeCallReminderCount + 1, $afterCallReminderCount, 'claimed incidents with new qualifying activity should emit one new alert_call reminder stage');
+	$afterReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
+	$afterEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'email'")->fetchColumn();
+	$afterCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'")->fetchColumn();
+	assert_same($beforeReminderCount, $afterReminderCount, 'GUI-accepted incidents should not reserve reminder rows while suppression remains active');
+	assert_same($beforeEmailReminderCount, $afterEmailReminderCount, 'GUI-accepted incidents should not reserve email reminder rows while suppression remains active');
+	assert_same($beforeCallReminderCount, $afterCallReminderCount, 'GUI-accepted incidents should not reserve alert_call reminder rows while suppression remains active');
+	$acceptedStateSuppressed = $db->query('SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('2026-07-13 10:06:00', (string)$acceptedStateSuppressed['last_alert_at'], 'GUI-accepted incidents should keep the original last-alert checkpoint while suppression remains active');
+	assert_same(0, (int)$acceptedStateSuppressed['reminders_sent'], 'GUI-accepted incidents should not advance reminder count while suppression remains active');
 
-	$clock->now = '2026-07-13 11:30:00';
-	insert_cdr($db, ['linkedid' => 'C4', 'calldate' => '2026-07-13 11:30:00']);
+	$clock->now = '2026-07-13 10:36:00';
+	insert_cdr($db, ['linkedid' => 'C8', 'calldate' => '2026-07-13 10:36:00']);
+	$summaryAfterSuppression = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
+	assert_same(0, $summaryAfterSuppression['incidents_created'], 'post-suppression qualifying activity should continue updating the same accepted incident');
+	$beforePostExpiryEmailSends = count($sender->calls);
+	$alerts->run(['alert_enabled' => '1', 'alert_history_prune_policy' => 'never']);
+	$afterPostExpiryReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
+	$afterPostExpiryEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'email'")->fetchColumn();
+	$afterPostExpiryCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'")->fetchColumn();
+	// Accepted incidents receive GUI + email reminder rows only; Alert Call reminders are not reserved for accepted incidents.
+	assert_same($beforeReminderCount + 2, $afterPostExpiryReminderCount, 'GUI-accepted incidents should reserve gui and email reminder rows after suppression expires and new activity occurs');
+	assert_same($beforeEmailReminderCount + 1, $afterPostExpiryEmailReminderCount, 'GUI-accepted incidents should reserve exactly one fresh email reminder after suppression expires and new activity occurs');
+	assert_same(0, $afterPostExpiryCallReminderCount, 'alert_call reminders must not be reserved for accepted incidents regardless of suppression state');
+	assert_same($beforePostExpiryEmailSends + 1, count($sender->calls), 'GUI-accepted incidents should deliver the fresh post-suppression email reminder');
+	$acceptedStateAfterExpiry = $db->query('SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('2026-07-13 10:36:00', (string)$acceptedStateAfterExpiry['last_alert_at'], 'GUI-accepted incidents should advance the last-alert checkpoint once fresh post-suppression activity re-alerts');
+	assert_same(1, (int)$acceptedStateAfterExpiry['reminders_sent'], 'GUI-accepted incidents should advance reminder count once fresh post-suppression activity re-alerts');
+
+	$clock->now = '2026-07-13 11:37:00';
+	insert_cdr($db, ['linkedid' => 'C4', 'calldate' => '2026-07-13 11:37:00']);
 	$runtime->run(['enabled' => '1', 'default_country_code' => '44']);
 	$afterClear = $db->query('SELECT state, cleared_at FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_same('closed', $afterClear['state'], 'claimed incident should only re-arm after a genuine clear closes it');
-	$clock->now = '2026-07-13 11:35:00';
-	insert_cdr($db, ['linkedid' => 'C5', 'calldate' => '2026-07-13 11:35:00']);
-	insert_cdr($db, ['linkedid' => 'C6', 'calldate' => '2026-07-13 11:36:00']);
+	assert_same('closed', $afterClear['state'], 'accepted incident should only re-arm after a genuine clear closes it');
+	$clock->now = '2026-07-13 11:42:00';
+	insert_cdr($db, ['linkedid' => 'C5', 'calldate' => '2026-07-13 11:42:00']);
+	insert_cdr($db, ['linkedid' => 'C6', 'calldate' => '2026-07-13 11:43:00']);
 	$runtime->run(['enabled' => '1', 'default_country_code' => '44']);
 	assert_same(2, (int)$db->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn(), 'new incident should only be possible after clear and re-arm');
 
 	$ruleDeleteId = insert_rule($db, [
 		'name' => 'Delete Rule',
 		'email_enabled' => 1,
-		'repeat_mode_override' => '5m',
+		'alert_reminder_mode_override' => '5m',
 		'suppression_minutes_override' => 30,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
@@ -443,7 +464,7 @@ try {
 	assert_true(!isset($deletedState['active_incident_id']) || $deletedState['active_incident_id'] === null || (int)$deletedState['active_incident_id'] === 0, 'deleted rule should clear subject active link');
 	$clock->now = '2026-07-13 14:10:00';
 	$alerts->run(['alert_enabled' => '1', 'alert_history_prune_policy' => 'never']);
-	$deletedReminders = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$deleteIncidentId} AND event_type = 'reminder'")->fetchColumn();
+	$deletedReminders = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$deleteIncidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
 	assert_same(0, $deletedReminders, 'deleted rules must not emit reminders');
 	insert_cdr($db, ['linkedid' => 'D3', 'calldate' => '2026-07-13 14:11:00', 'src' => '01230000001', 'clid' => '01230000001']);
 	$summaryDeletedRule = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
@@ -471,7 +492,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => '',
+		'alert_reminder_mode_override' => '',
 		'suppression_minutes_override' => 30,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 		'callers' => [],

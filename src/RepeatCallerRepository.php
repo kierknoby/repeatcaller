@@ -6,6 +6,7 @@ namespace FreePBX\modules\Repeatcaller;
 
 use PDO;
 use PDOException;
+use Throwable;
 
 final class RepeatCallerRepository {
 	private const SEEN_CALL_RETENTION_DAYS = 8;
@@ -26,6 +27,7 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadEnabledRules(): array {
+		$enabledAtExpr = $this->columnExpr('repeatcaller_rules', 'enabled_at', 'NULL');
 		$emailEnabledExpr = $this->columnExpr('repeatcaller_rules', 'email_enabled', '0');
 		$emailRecipientsExpr = $this->columnExpr('repeatcaller_rules', 'email_recipients', 'NULL');
 		$alertCallExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_enabled', '0');
@@ -33,16 +35,18 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->query(
-			'SELECT id, name, enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
+			'SELECT id, name, enabled, ' . $enabledAtExpr . ' AS enabled_at, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
+					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying,
 				' . $isDeletedExpr . ' AS is_deleted, mode, threshold_count, ' . $windowMinutesExpr . ' AS observation_window_minutes,
-				caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override,
+				caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override,
 				suppression_minutes_override, created_at, updated_at
 			 FROM repeatcaller_rules
 			 WHERE enabled = 1
@@ -54,6 +58,7 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadRulesSummary(): array {
+		$enabledAtExpr = $this->columnExpr('repeatcaller_rules', 'enabled_at', 'NULL');
 		$emailEnabledExpr = $this->columnExpr('repeatcaller_rules', 'email_enabled', '0');
 		$emailRecipientsExpr = $this->columnExpr('repeatcaller_rules', 'email_recipients', 'NULL');
 		$alertCallExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_enabled', '0');
@@ -61,16 +66,18 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->query(
-			'SELECT r.id, r.name, r.enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
+			'SELECT r.id, r.name, r.enabled, ' . $enabledAtExpr . ' AS enabled_at, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
+					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying, r.mode,
 				r.threshold_count, r.observation_window_minutes, r.caller_mode,
-				r.exclude_withheld, r.did_scope_mode, r.repeat_mode_override,
+				r.exclude_withheld, r.did_scope_mode, r.alert_reminder_mode_override,
 				r.suppression_minutes_override, r.created_at, r.updated_at,
 				(SELECT COUNT(*) FROM repeatcaller_rule_schedules s WHERE s.rule_id = r.id) AS schedule_count,
 				(SELECT COUNT(*) FROM repeatcaller_rule_callers c WHERE c.rule_id = r.id AND c.list_type = "include") AS caller_include_count,
@@ -205,7 +212,7 @@ final class RepeatCallerRepository {
 			   AND state IN (?, ?)
 			 ORDER BY subject_key ASC, created_at DESC, id DESC'
 		);
-		$params = array_merge($subjectKeys, ['active', 'claimed']);
+		$params = array_merge($subjectKeys, ['active', 'accepted']);
 		$stmt->execute($params);
 
 		$bySubject = [];
@@ -221,6 +228,7 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadRule(int $ruleId): ?array {
+		$enabledAtExpr = $this->columnExpr('repeatcaller_rules', 'enabled_at', 'NULL');
 		$emailEnabledExpr = $this->columnExpr('repeatcaller_rules', 'email_enabled', '0');
 		$emailRecipientsExpr = $this->columnExpr('repeatcaller_rules', 'email_recipients', 'NULL');
 		$alertCallExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_enabled', '0');
@@ -228,17 +236,19 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$deletedAtExpr = $this->columnExpr('repeatcaller_rules', 'deleted_at', 'NULL');
 		$stmt = $this->pdo->prepare(
-			'SELECT id, name, enabled, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
+			'SELECT id, name, enabled, ' . $enabledAtExpr . ' AS enabled_at, ' . $emailEnabledExpr . ' AS email_enabled, ' . $emailRecipientsExpr . ' AS email_recipients, ' . $alertCallExpr . ' AS alert_call_enabled,
 				' . $alertCallDestinationsExpr . ' AS alert_call_destinations, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id,
+					' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream,
 				' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying,
 				' . $isDeletedExpr . ' AS is_deleted, mode,
 				threshold_count, observation_window_minutes, caller_mode, exclude_withheld,
-				did_scope_mode, repeat_mode_override, suppression_minutes_override,
+				did_scope_mode, alert_reminder_mode_override, suppression_minutes_override,
 				' . $deletedAtExpr . ' AS deleted_at, created_at, updated_at
 			 FROM repeatcaller_rules
 			 WHERE id = ? AND ' . $isDeletedExpr . ' = 0
@@ -259,6 +269,18 @@ final class RepeatCallerRepository {
 
 	public function saveRule(array $payload, string $now): int {
 		$ruleId = isset($payload['id']) && (int)$payload['id'] > 0 ? (int)$payload['id'] : 0;
+		$hasEnabledAt = $this->hasColumn('repeatcaller_rules', 'enabled_at');
+		$existingRule = $ruleId > 0 ? $this->loadRule($ruleId) : null;
+		$wasEnabled = is_array($existingRule) ? !empty($existingRule['enabled']) : false;
+		$wasMode = is_array($existingRule) ? (string)($existingRule['mode'] ?? 'repeat') : 'repeat';
+		$isEnableTransition = !$wasEnabled && !empty($payload['enabled']);
+		$isModeTransitionToInvert = $ruleId > 0 && $wasMode !== 'invert' && (string)$payload['mode'] === 'invert' && !empty($payload['enabled']);
+		$isEnabledInvertWindowConfigChange = $ruleId > 0
+			&& $wasEnabled
+			&& !empty($payload['enabled'])
+			&& $wasMode === 'invert'
+			&& (string)$payload['mode'] === 'invert'
+			&& $this->invertWindowConfigChanged($existingRule, $payload);
 		$hasEmailEnabled = $this->hasColumn('repeatcaller_rules', 'email_enabled');
 		$hasEmailRecipients = $this->hasColumn('repeatcaller_rules', 'email_recipients');
 		$hasAlertCall = $this->hasColumn('repeatcaller_rules', 'alert_call_enabled');
@@ -266,12 +288,29 @@ final class RepeatCallerRepository {
 		$hasAlertCallStrategy = $this->hasColumn('repeatcaller_rules', 'alert_call_strategy');
 		$hasAlertCallKeepTrying = $this->hasColumn('repeatcaller_rules', 'alert_call_keep_trying');
 		$hasAlertCallRecording = $this->hasColumn('repeatcaller_rules', 'alert_call_recording_id');
+		$hasAlertCallHandleCallerIdUpstream = $this->hasColumn('repeatcaller_rules', 'alert_call_handle_callerid_upstream');
 		$hasAlertCallCallerId = $this->hasColumn('repeatcaller_rules', 'alert_call_callerid');
 		$hasIsDeleted = $this->hasColumn('repeatcaller_rules', 'is_deleted');
 		$hasDeletedAt = $this->hasColumn('repeatcaller_rules', 'deleted_at');
 		$alertCallStrategy = $this->normaliseAlertCallStrategy((string)($payload['alert_call_strategy'] ?? 'ringall'));
 		$alertCallKeepTrying = $this->alertCallKeepTryingFlag($payload, true);
-		if ($ruleId > 0) {
+		$existingSuppressionOverride = is_array($existingRule)
+			? $this->normaliseSuppressionOverrideValue($existingRule['suppression_minutes_override'] ?? null)
+			: null;
+		$newSuppressionOverride = array_key_exists('suppression_minutes_override', $payload)
+			? $this->normaliseSuppressionOverrideValue($payload['suppression_minutes_override'] ?? null)
+			: $existingSuppressionOverride;
+		$shouldReconcileSuppression = $ruleId > 0
+			&& is_array($existingRule)
+			&& array_key_exists('suppression_minutes_override', $payload)
+			&& $existingSuppressionOverride !== $newSuppressionOverride;
+		$ownsTransaction = false;
+		if (!$this->pdo->inTransaction()) {
+			$this->pdo->beginTransaction();
+			$ownsTransaction = true;
+		}
+		try {
+			if ($ruleId > 0) {
 			$set = [
 				'name = ?',
 				'enabled = ?',
@@ -281,7 +320,7 @@ final class RepeatCallerRepository {
 				'caller_mode = ?',
 				'exclude_withheld = ?',
 				'did_scope_mode = ?',
-				'repeat_mode_override = ?',
+				'alert_reminder_mode_override = ?',
 				'suppression_minutes_override = ?',
 				'updated_at = ?',
 			];
@@ -294,7 +333,7 @@ final class RepeatCallerRepository {
 				(string)$payload['caller_mode'],
 				!empty($payload['exclude_withheld']) ? 1 : 0,
 				(string)$payload['did_scope_mode'],
-				$this->nullableString($payload['repeat_mode_override'] ?? null),
+				$this->nullableString($payload['alert_reminder_mode_override'] ?? null),
 				$this->nullableInt($payload['suppression_minutes_override'] ?? null),
 				$now,
 			];
@@ -326,9 +365,17 @@ final class RepeatCallerRepository {
 				$set[] = 'alert_call_recording_id = ?';
 				$params[] = $this->nullableInt($payload['alert_call_recording_id'] ?? null);
 			}
+			if ($hasAlertCallHandleCallerIdUpstream) {
+				$set[] = 'alert_call_handle_callerid_upstream = ?';
+				$params[] = !empty($payload['alert_call_handle_callerid_upstream']) ? 1 : 0;
+			}
 			if ($hasAlertCallCallerId) {
 				$set[] = 'alert_call_callerid = ?';
 				$params[] = $this->nullableString($payload['alert_call_callerid'] ?? null);
+			}
+			if ($hasEnabledAt && ($isEnableTransition || $isModeTransitionToInvert || $isEnabledInvertWindowConfigChange)) {
+				$set[] = 'enabled_at = ?';
+				$params[] = $now;
 			}
 			if ($hasIsDeleted) {
 				$set[] = 'is_deleted = 0';
@@ -339,10 +386,14 @@ final class RepeatCallerRepository {
 			$params[] = $ruleId;
 			$stmt = $this->pdo->prepare('UPDATE repeatcaller_rules SET ' . implode(', ', $set) . ' WHERE id = ?');
 			$stmt->execute($params);
+
+			if (($isEnableTransition && (string)$payload['mode'] === 'invert') || $isModeTransitionToInvert || $isEnabledInvertWindowConfigChange) {
+				$this->resetInvertObservationWindowState($ruleId, $now);
+			}
 		} else {
 			$columns = [
 				'name', 'enabled', 'mode', 'threshold_count', 'observation_window_minutes',
-				'caller_mode', 'exclude_withheld', 'did_scope_mode', 'repeat_mode_override',
+				'caller_mode', 'exclude_withheld', 'did_scope_mode', 'alert_reminder_mode_override',
 				'suppression_minutes_override', 'created_at', 'updated_at',
 			];
 			$values = [
@@ -354,11 +405,15 @@ final class RepeatCallerRepository {
 				(string)$payload['caller_mode'],
 				!empty($payload['exclude_withheld']) ? 1 : 0,
 				(string)$payload['did_scope_mode'],
-				$this->nullableString($payload['repeat_mode_override'] ?? null),
+				$this->nullableString($payload['alert_reminder_mode_override'] ?? null),
 				$this->nullableInt($payload['suppression_minutes_override'] ?? null),
 				$now,
 				$now,
 			];
+			if ($hasEnabledAt) {
+				$columns[] = 'enabled_at';
+				$values[] = !empty($payload['enabled']) ? $now : null;
+			}
 			if ($hasEmailEnabled) {
 				$columns[] = 'email_enabled';
 				$values[] = !empty($payload['email_enabled']) ? 1 : 0;
@@ -387,6 +442,10 @@ final class RepeatCallerRepository {
 				$columns[] = 'alert_call_recording_id';
 				$values[] = $this->nullableInt($payload['alert_call_recording_id'] ?? null);
 			}
+			if ($hasAlertCallHandleCallerIdUpstream) {
+				$columns[] = 'alert_call_handle_callerid_upstream';
+				$values[] = !empty($payload['alert_call_handle_callerid_upstream']) ? 1 : 0;
+			}
 			if ($hasAlertCallCallerId) {
 				$columns[] = 'alert_call_callerid';
 				$values[] = $this->nullableString($payload['alert_call_callerid'] ?? null);
@@ -407,15 +466,95 @@ final class RepeatCallerRepository {
 
 		$this->replaceRuleSchedules($ruleId, self::normalizeSchedules($payload['schedules'] ?? []), $now);
 		$this->replaceRuleCallers($ruleId, $payload['callers'] ?? [], $now);
-		$this->replaceRuleDids($ruleId, $payload['dids'] ?? [], $now);
+		$this->replaceRuleDids(
+			$ruleId,
+			$this->didsForScopeMode($payload['dids'] ?? [], (string)($payload['did_scope_mode'] ?? 'all')),
+			$now
+		);
 
-		return $ruleId;
+		if ($shouldReconcileSuppression) {
+			$this->reconcileSuppressionForRule($ruleId, $existingSuppressionOverride, $newSuppressionOverride, $now);
+		}
+
+		if ($ownsTransaction) {
+			$this->pdo->commit();
+		}
+
+			return $ruleId;
+		} catch (Throwable $e) {
+			if ($ownsTransaction && $this->pdo->inTransaction()) {
+				$this->pdo->rollBack();
+			}
+			throw $e;
+		}
 	}
 
 	public function setRuleEnabled(int $ruleId, bool $enabled, string $now): void {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
-		$stmt = $this->pdo->prepare('UPDATE repeatcaller_rules SET enabled = ?, updated_at = ? WHERE id = ? AND ' . $isDeletedExpr . ' = 0');
-		$stmt->execute([$enabled ? 1 : 0, $now, $ruleId]);
+		$hasEnabledAt = $this->hasColumn('repeatcaller_rules', 'enabled_at');
+
+		$selectColumns = ['enabled', 'mode'];
+		if ($hasEnabledAt) {
+			$selectColumns[] = 'enabled_at';
+		}
+		$select = $this->pdo->prepare(
+			'SELECT ' . implode(', ', $selectColumns) . '
+			 FROM repeatcaller_rules
+			 WHERE id = ? AND ' . $isDeletedExpr . ' = 0
+			 LIMIT 1'
+		);
+		$select->execute([$ruleId]);
+		$row = $select->fetch(PDO::FETCH_ASSOC);
+		if (!is_array($row)) {
+			return;
+		}
+
+		$wasEnabled = !empty($row['enabled']);
+		$isInvertRule = (string)($row['mode'] ?? 'repeat') === 'invert';
+		$isEnableTransition = $enabled && !$wasEnabled;
+
+		$set = ['enabled = ?', 'updated_at = ?'];
+		$params = [$enabled ? 1 : 0, $now];
+		if ($hasEnabledAt && $isEnableTransition) {
+			$set[] = 'enabled_at = ?';
+			$params[] = $now;
+		}
+		$params[] = $ruleId;
+
+		$update = $this->pdo->prepare('UPDATE repeatcaller_rules SET ' . implode(', ', $set) . ' WHERE id = ? AND ' . $isDeletedExpr . ' = 0');
+		$update->execute($params);
+
+		if ($isEnableTransition && $isInvertRule) {
+			$this->resetInvertObservationWindowState($ruleId, $now);
+		}
+	}
+
+	private function resetInvertObservationWindowState(int $ruleId, string $now): void {
+		$stmt = $this->pdo->prepare(
+			'UPDATE repeatcaller_rule_subject_state
+			 SET current_window_started_at = NULL,
+				 current_window_ends_at = NULL,
+				 current_window_call_count = 0,
+				 threshold_met = 0,
+				 clear_observed_since_trigger = 0,
+				 last_call_at = NULL,
+				 last_evaluated_at = NULL,
+				 updated_at = ?
+			 WHERE rule_id = ?'
+		);
+		$stmt->execute([$now, $ruleId]);
+	}
+
+	private function invertWindowConfigChanged(array $existingRule, array $payload): bool {
+		$existingWindow = (int)($existingRule['observation_window_minutes'] ?? 0);
+		$newWindow = (int)($payload['observation_window_minutes'] ?? 0);
+		if ($existingWindow !== $newWindow) {
+			return true;
+		}
+
+		$existingSchedules = self::normalizeSchedules($existingRule['schedules'] ?? []);
+		$newSchedules = self::normalizeSchedules($payload['schedules'] ?? []);
+		return $existingSchedules !== $newSchedules;
 	}
 
 	public function softDeleteRule(int $ruleId, string $now): void {
@@ -443,7 +582,7 @@ final class RepeatCallerRepository {
 			 WHERE rule_id = ?
 				AND state IN (?, ?)' 
 		);
-		$closeIncidents->execute(['closed', $now, $now, $ruleId, 'active', 'claimed']);
+		$closeIncidents->execute(['closed', $now, $now, $ruleId, 'active', 'accepted']);
 
 		$clearState = $this->pdo->prepare(
 			'UPDATE repeatcaller_rule_subject_state
@@ -487,16 +626,16 @@ final class RepeatCallerRepository {
 	public function loadIncidents(string $view = 'active', int $limit = 200): array {
 		if ($view === 'active') {
 			$states = ['active'];
-		} elseif ($view === 'claimed') {
-			$states = ['claimed'];
+		} elseif ($view === 'accepted') {
+			$states = ['accepted'];
 		} else {
-			$states = ['active', 'claimed', 'suppressed', 'expired', 'closed'];
+			$states = ['active', 'accepted', 'suppressed', 'expired', 'closed'];
 		}
 		$placeholders = $this->placeholders($states);
 		$stmt = $this->pdo->prepare(
 			'SELECT i.id, i.rule_id, i.subject_key, i.subject_label, i.caller_normalized, i.caller_display,
 				i.withheld_caller, i.mode, i.threshold_count, i.observation_window_minutes, i.first_matched_at, i.last_matched_at, i.matched_call_count,
-				i.state, i.claimed_by, i.claimed_at, i.claim_source, i.suppression_expires_at,
+				i.state, i.accepted_by, i.accepted_at, i.accept_source, i.suppression_expires_at,
 				i.cleared_at, i.created_at, i.updated_at,
 				r.name AS rule_name,
 				r.caller_mode, r.did_scope_mode
@@ -511,7 +650,7 @@ final class RepeatCallerRepository {
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
-	public function claimActiveIncident(int $incidentId, string $claimedBy, string $claimedAt, string $claimSource = 'gui'): bool {
+	public function acceptActiveIncident(int $incidentId, string $acceptedBy, string $acceptedAt, string $acceptSource = 'gui'): bool {
 		$select = $this->pdo->prepare('SELECT id, rule_id, subject_key FROM repeatcaller_incidents WHERE id = ? AND state = ? LIMIT 1');
 		$select->execute([$incidentId, 'active']);
 		$row = $select->fetch(PDO::FETCH_ASSOC);
@@ -521,29 +660,90 @@ final class RepeatCallerRepository {
 
 		$update = $this->pdo->prepare(
 			'UPDATE repeatcaller_incidents
-			 SET state = ?, claimed_by = ?, claimed_at = ?, claim_source = ?, updated_at = ?
+			 SET state = ?, accepted_by = ?, accepted_at = ?, accept_source = ?, updated_at = ?
 			 WHERE id = ? AND state = ?'
 		);
-		$update->execute(['claimed', $claimedBy, $claimedAt, $claimSource, $claimedAt, $incidentId, 'active']);
+		$update->execute(['accepted', $acceptedBy, $acceptedAt, $acceptSource, $acceptedAt, $incidentId, 'active']);
 		$verify = $this->pdo->prepare('SELECT state FROM repeatcaller_incidents WHERE id = ? LIMIT 1');
 		$verify->execute([$incidentId]);
-		if ((string)$verify->fetchColumn() !== 'claimed') {
+		if ((string)$verify->fetchColumn() !== 'accepted') {
 			return false;
 		}
 
 		$state = $this->loadSubjectState((int)$row['rule_id'], (string)$row['subject_key']) ?? [];
 		$state['active_incident_id'] = $incidentId;
-		$state['last_evaluated_at'] = $claimedAt;
+		$state['last_evaluated_at'] = $acceptedAt;
 		$this->saveSubjectState((int)$row['rule_id'], (string)$row['subject_key'], $state);
+		$this->cancelPendingAlertCallAttemptsForIncident($incidentId, $acceptedAt);
 
 		return true;
+	}
+
+	public function isIncidentActive(int $incidentId): bool {
+		$stmt = $this->pdo->prepare('SELECT state FROM repeatcaller_incidents WHERE id = ? LIMIT 1');
+		$stmt->execute([$incidentId]);
+
+		return (string)$stmt->fetchColumn() === 'active';
+	}
+
+	public function isIncidentAcceptedForRemoteAlertRedirect(int $incidentId): bool {
+		$stmt = $this->pdo->prepare(
+			'SELECT state, accepted_at, accepted_by FROM repeatcaller_incidents WHERE id = ? LIMIT 1'
+		);
+		$stmt->execute([$incidentId]);
+		$row = $stmt->fetch(PDO::FETCH_ASSOC);
+		if (!is_array($row)) {
+			return false;
+		}
+
+		$state = strtolower(trim((string)($row['state'] ?? '')));
+		$acceptedAt = trim((string)($row['accepted_at'] ?? ''));
+		$acceptedBy = trim((string)($row['accepted_by'] ?? ''));
+		return $state === 'accepted' && $acceptedAt !== '' && $acceptedBy !== '';
+	}
+
+	public function cancelPendingAlertCallAttemptsForIncident(int $incidentId, string $now, ?int $excludeHistoryId = null, string $failureDetail = 'cancelled after incident accepted'): int {
+		$sql =
+			'UPDATE repeatcaller_incident_alert_history
+			 SET delivery_status = ?,
+				 next_retry_at = NULL,
+				 failure_detail = ?,
+				 updated_at = ?
+			 WHERE incident_id = ?
+				AND action_type = ?
+				AND delivery_status IN (?, ?, ?)';
+		$params = ['failed', $failureDetail, $now, $incidentId, 'alert_call', 'pending', 'snoozed', 'sending'];
+		if ($excludeHistoryId !== null && $excludeHistoryId > 0) {
+			$sql .= ' AND id <> ?';
+			$params[] = $excludeHistoryId;
+		}
+		$stmt = $this->pdo->prepare($sql);
+		$stmt->execute($params);
+
+		return $stmt->rowCount();
+	}
+
+	public function cancelAlertCallAttempt(int $historyId, string $now, string $failureDetail = 'cancelled after incident accepted'): bool {
+		$stmt = $this->pdo->prepare(
+			'UPDATE repeatcaller_incident_alert_history
+			 SET delivery_status = ?,
+				 next_retry_at = NULL,
+				 failure_detail = ?,
+				 updated_at = ?
+			 WHERE id = ?
+				AND action_type = ?
+				AND delivery_status IN (?, ?, ?, ?, ?)'
+		);
+		$stmt->execute(['failed', $failureDetail, $now, $historyId, 'alert_call', 'pending', 'snoozed', 'sending', 'sent', 'failed']);
+
+		return $stmt->rowCount() > 0;
 	}
 
 	public function loadIncidentAlertHistory(int $limit = 200): array {
 		$stmt = $this->pdo->prepare(
 			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label,
 				h.action_type, h.event_type, h.stage_n, h.recipient, h.delivery_status,
-				h.attempted_at, h.successful_at, h.failure_detail, h.repeat_mode,
+				h.attempted_at, h.successful_at, h.failure_detail, h.alert_reminder_mode,
 				h.created_at, h.updated_at,
 				i.mode AS incident_mode,
 				i.threshold_count AS incident_threshold_count,
@@ -604,7 +804,7 @@ final class RepeatCallerRepository {
 
 	public function loadUiChangeTokens(): array {
 		$incidentActive = $this->aggregateStateSnapshot('repeatcaller_incidents', "state = 'active'");
-		$incidentClaimed = $this->aggregateStateSnapshot('repeatcaller_incidents', "state = 'claimed'");
+		$incidentAccepted = $this->aggregateStateSnapshot('repeatcaller_incidents', "state = 'accepted'");
 		$alertHistory = $this->aggregateStateSnapshot('repeatcaller_incident_alert_history', '1 = 1');
 		$suppressionHistory = $this->aggregateStateSnapshot('repeatcaller_incident_suppression_history', '1 = 1');
 
@@ -635,9 +835,9 @@ final class RepeatCallerRepository {
 			'v' => '1',
 			'active' => $incidentActive,
 		];
-		$claimedSnapshot = [
+		$acceptedSnapshot = [
 			'v' => '1',
-			'claimed' => $incidentClaimed,
+			'accepted' => $incidentAccepted,
 		];
 		$alertSnapshot = [
 			'v' => '1',
@@ -655,7 +855,7 @@ final class RepeatCallerRepository {
 
 		return [
 			'activeIncidents' => hash('sha256', json_encode($activeSnapshot)),
-			'claimedIncidents' => hash('sha256', json_encode($claimedSnapshot)),
+			'acceptedIncidents' => hash('sha256', json_encode($acceptedSnapshot)),
 			'alertHistory' => hash('sha256', json_encode($alertSnapshot)),
 			'suppressedIncidents' => hash('sha256', json_encode($suppressionSnapshot)),
 			'engineStatus' => hash('sha256', json_encode($engineSnapshot)),
@@ -1012,14 +1212,14 @@ final class RepeatCallerRepository {
 	}
 
 	public function loadTrackedIncident(int $ruleId, string $subjectKey): ?array {
-		return $this->loadOpenIncident($ruleId, $subjectKey, ['active', 'claimed']);
+		return $this->loadOpenIncident($ruleId, $subjectKey, ['active', 'accepted']);
 	}
 
 	public function loadMostRecentIncidentForSubject(int $ruleId, string $subjectKey): ?array {
 		$stmt = $this->pdo->prepare(
 			'SELECT id, rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 				withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-				claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at
+				accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at
 			 FROM repeatcaller_incidents
 			 WHERE rule_id = ? AND subject_key = ?
 			 ORDER BY created_at DESC, id DESC
@@ -1036,7 +1236,7 @@ final class RepeatCallerRepository {
 		$stmt = $this->pdo->prepare(
 			'SELECT id, rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 				withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-				claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at
+				accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at
 			 FROM repeatcaller_incidents
 			 WHERE rule_id = ? AND subject_key = ? AND state IN (' . $placeholders . ')
 			 LIMIT 1'
@@ -1072,7 +1272,7 @@ final class RepeatCallerRepository {
 			'INSERT INTO repeatcaller_incidents
 				(rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display,
 				 withheld_caller, mode, threshold_count, observation_window_minutes, first_matched_at, last_matched_at, matched_call_count, state,
-				 claimed_by, claimed_at, claim_source, suppression_expires_at, cleared_at, created_at, updated_at)
+				 accepted_by, accepted_at, accept_source, suppression_expires_at, cleared_at, created_at, updated_at)
 			 VALUES
 				(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 		);
@@ -1091,9 +1291,9 @@ final class RepeatCallerRepository {
 			(string)$incident['last_matched_at'],
 			(int)($incident['matched_call_count'] ?? 0),
 			$state,
-			$this->nullableString($incident['claimed_by'] ?? null),
-			$this->nullableString($incident['claimed_at'] ?? null),
-			$this->nullableString($incident['claim_source'] ?? null),
+			$this->nullableString($incident['accepted_by'] ?? null),
+			$this->nullableString($incident['accepted_at'] ?? null),
+			$this->nullableString($incident['accept_source'] ?? null),
 			$this->nullableString($incident['suppression_expires_at'] ?? null),
 			$this->nullableString($incident['cleared_at'] ?? null),
 			(string)$incident['created_at'],
@@ -1147,7 +1347,7 @@ final class RepeatCallerRepository {
 				 updated_at = ?
 			 WHERE rule_id = ? AND subject_key = ? AND state IN (?, ?, ?, ?)' 
 		);
-		$stmt->execute(['closed', $clearedAt, $clearedAt, $ruleId, $subjectKey, 'active', 'claimed', 'suppressed', 'expired']);
+		$stmt->execute(['closed', $clearedAt, $clearedAt, $ruleId, $subjectKey, 'active', 'accepted', 'suppressed', 'expired']);
 	}
 
 	public function expireActiveIncidents(string $now): int {
@@ -1174,16 +1374,17 @@ final class RepeatCallerRepository {
 		$alertCallStrategyExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'");
 		$alertCallKeepTryingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_keep_trying', '1');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$stmt = $this->pdo->prepare(
 			'SELECT i.id, i.rule_id, i.subject_key, i.subject_label, i.caller_normalized, i.caller_display,
 				i.withheld_caller, i.mode, i.first_matched_at, i.last_matched_at, i.matched_call_count,
-				i.state, i.claimed_by, i.claimed_at, i.claim_source, i.suppression_expires_at,
+				i.state, i.accepted_by, i.accepted_at, i.accept_source, i.suppression_expires_at,
 				r.name AS rule_name, r.enabled AS rule_enabled, ' . $emailEnabledExpr . ' AS email_enabled,
 				' . $emailRecipientsExpr . ' AS email_recipients,
 				' . $alertCallEnabledExpr . ' AS alert_call_enabled, ' . $alertCallDestinationsExpr . ' AS alert_call_destinations,
 				' . $alertCallStrategyExpr . ' AS alert_call_strategy, ' . $alertCallKeepTryingExpr . ' AS alert_call_keep_trying,
-				' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid, r.repeat_mode_override
+				' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid, r.alert_reminder_mode_override
 			 FROM repeatcaller_incidents i
 			 JOIN repeatcaller_rules r ON r.id = i.rule_id
 			 LEFT JOIN repeatcaller_incident_alert_state s ON s.incident_id = i.id
@@ -1192,23 +1393,24 @@ final class RepeatCallerRepository {
 				OR (
 					i.state = ?
 					AND s.last_alert_at IS NOT NULL
+					AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?)
 					AND i.last_matched_at > s.last_alert_at
 				)
 			 )
 				AND r.enabled = 1
 				AND ' . $isDeletedExpr . ' = 0
-				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
+				AND (i.state <> ? OR i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 			 ORDER BY i.first_matched_at ASC, i.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['active', 'claimed', $now]);
+		$stmt->execute(['active', 'accepted', $now, 'active', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
 	public function loadIncidentAlertState(int $incidentId): ?array {
 		$stmt = $this->pdo->prepare(
-			'SELECT id, incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at,
+			'SELECT id, incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at,
 				reminders_sent, next_due_at, created_at, updated_at
 			 FROM repeatcaller_incident_alert_state
 			 WHERE incident_id = ?
@@ -1223,22 +1425,22 @@ final class RepeatCallerRepository {
 	public function ensureIncidentAlertState(int $incidentId, int $ruleId, string $repeatMode, string $firstDueAt, string $now): array {
 		$existing = $this->loadIncidentAlertState($incidentId);
 		if ($existing !== null) {
-			if ((string)$existing['repeat_mode'] !== $repeatMode) {
+			if ((string)$existing['alert_reminder_mode'] !== $repeatMode) {
 				$update = $this->pdo->prepare(
 					'UPDATE repeatcaller_incident_alert_state
-					 SET repeat_mode = ?,
+					 SET alert_reminder_mode = ?,
 						 updated_at = ?
 					 WHERE incident_id = ?'
 				);
 				$update->execute([$repeatMode, $now, $incidentId]);
-				$existing['repeat_mode'] = $repeatMode;
+				$existing['alert_reminder_mode'] = $repeatMode;
 			}
 			return $existing;
 		}
 
 		$insert = $this->pdo->prepare(
 			'INSERT INTO repeatcaller_incident_alert_state
-				(incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
+				(incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
 			 VALUES
 				(?, ?, ?, NULL, NULL, 0, ?, ?, ?)'
 		);
@@ -1254,7 +1456,7 @@ final class RepeatCallerRepository {
 		return $this->loadIncidentAlertState($incidentId) ?? [
 			'incident_id' => $incidentId,
 			'rule_id' => $ruleId,
-			'repeat_mode' => $repeatMode,
+			'alert_reminder_mode' => $repeatMode,
 			'initial_sent_at' => null,
 			'last_alert_at' => null,
 			'reminders_sent' => 0,
@@ -1299,7 +1501,7 @@ final class RepeatCallerRepository {
 		$stmt = $this->pdo->prepare(
 			'INSERT INTO repeatcaller_incident_alert_history
 				(incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient,
-				 delivery_status, attempted_at, successful_at, next_retry_at, failure_detail, repeat_mode,
+				 delivery_status, attempted_at, successful_at, next_retry_at, failure_detail, alert_reminder_mode,
 				 dedupe_key, created_at, updated_at)
 			 VALUES
 				(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -1320,7 +1522,7 @@ final class RepeatCallerRepository {
 				$this->nullableString($row['successful_at'] ?? null),
 				$this->nullableString($row['next_retry_at'] ?? null),
 				$this->nullableString($row['failure_detail'] ?? null),
-				(string)$row['repeat_mode'],
+				(string)$row['alert_reminder_mode'],
 				(string)$row['dedupe_key'],
 				(string)$row['created_at'],
 				(string)$row['updated_at'],
@@ -1472,24 +1674,26 @@ final class RepeatCallerRepository {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$stmt = $this->pdo->prepare(
 			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label, h.event_type, h.stage_n,
-				h.recipient, h.delivery_status, h.repeat_mode,
+				h.recipient, h.delivery_status, h.alert_reminder_mode,
 				i.caller_display, i.caller_normalized, i.withheld_caller, i.mode,
 				i.threshold_count, i.observation_window_minutes, i.first_matched_at, i.last_matched_at, i.matched_call_count, i.state, i.suppression_expires_at,
 				r.name AS rule_name,
-				r.repeat_mode_override AS rule_repeat_mode_override
+				r.alert_reminder_mode_override AS rule_alert_reminder_mode_override
 			 FROM repeatcaller_incident_alert_history h
 			 JOIN repeatcaller_incidents i ON i.id = h.incident_id
 			 JOIN repeatcaller_rules r ON r.id = h.rule_id
 			 WHERE h.action_type = ?
 				AND h.delivery_status IN (?, ?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
-				AND i.state = ?
+				AND (
+					(i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?))
+					OR (i.state = ? AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at <= ?))
+				)
 				AND ' . $isDeletedExpr . ' = 0
-				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
-		$stmt->execute(['email', 'pending', 'failed', 'snoozed', $now, 'active', $now]);
+		$stmt->execute(['email', 'pending', 'failed', 'snoozed', $now, 'active', $now, 'accepted', $now]);
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
@@ -1554,27 +1758,27 @@ final class RepeatCallerRepository {
 	public function recordAlertCallDtmfResponse(int $historyId, int $incidentId, string $response, string $recipient, string $digit, string $now): array {
 		$row = $this->loadAlertCallAttempt($historyId, $incidentId);
 		if ($row === null) {
-			return ['status' => false, 'claimed' => false, 'message' => 'alert call attempt not found'];
+			return ['status' => false, 'accepted' => false, 'message' => 'alert call attempt not found'];
 		}
 
 		$storedRecipient = trim((string)($row['recipient'] ?? ''));
 		if ($recipient !== '' && $storedRecipient !== '' && $recipient !== $storedRecipient) {
-			return ['status' => false, 'claimed' => false, 'message' => 'alert call recipient mismatch'];
+			return ['status' => false, 'accepted' => false, 'message' => 'alert call recipient mismatch'];
 		}
 
 		$response = strtolower(trim($response));
 		$digit = trim($digit);
-		$claimed = false;
+		$accepted = false;
 		$deliveryStatus = self::ALERT_CALL_OUTCOME_ANSWERED_NO_RESPONSE;
 		$successfulAt = null;
 		$failureDetail = null;
 
 		if ($response === self::ALERT_CALL_OUTCOME_ACCEPTED) {
-			$claimedBy = 'alert-call' . ($storedRecipient !== '' ? ':' . $storedRecipient : '');
-			$claimed = $this->claimActiveIncident($incidentId, $claimedBy, $now, 'alert_call');
+			$acceptedBy = 'alert-call' . ($storedRecipient !== '' ? ':' . $storedRecipient : '');
+			$accepted = $this->acceptActiveIncident($incidentId, $acceptedBy, $now, 'alert_call');
 			$deliveryStatus = self::ALERT_CALL_OUTCOME_ACCEPTED;
 			$successfulAt = $now;
-			$failureDetail = $claimed ? 'incident accepted' : 'accepted after incident was already accepted or no longer active';
+			$failureDetail = $accepted ? 'incident accepted' : 'accepted after incident was already accepted or no longer active';
 		} elseif ($response === self::ALERT_CALL_OUTCOME_DECLINED) {
 			$deliveryStatus = self::ALERT_CALL_OUTCOME_DECLINED;
 			$successfulAt = $now;
@@ -1589,11 +1793,11 @@ final class RepeatCallerRepository {
 
 		$updated = $this->updateAlertCallAttemptResult($historyId, $deliveryStatus, $successfulAt, $failureDetail, $now);
 		$reservedNextHistoryId = null;
-		if ($updated && !$claimed && $deliveryStatus !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
-			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now);
+		if ($updated && !$accepted && $deliveryStatus !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
+			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now, true);
 		}
 
-		return ['status' => $updated, 'claimed' => $claimed, 'delivery_status' => $deliveryStatus, 'next_history_id' => $reservedNextHistoryId];
+		return ['status' => $updated, 'accepted' => $accepted, 'delivery_status' => $deliveryStatus, 'next_history_id' => $reservedNextHistoryId];
 	}
 
 	public function recordAlertCallDialDisposition(int $historyId, int $incidentId, string $recipient, string $dialStatus, string $hangupCause, string $now): array {
@@ -1628,7 +1832,7 @@ final class RepeatCallerRepository {
 		$updated = $this->updateAlertCallAttemptResult($historyId, $mapped, null, $detail, $now);
 		$reservedNextHistoryId = null;
 		if ($updated && $mapped !== self::ALERT_CALL_OUTCOME_ACCEPTED) {
-			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now);
+			$reservedNextHistoryId = $this->reserveNextOrderedAlertCallAttempt($historyId, $now, true);
 		}
 
 		return ['status' => $updated, 'delivery_status' => $mapped, 'next_history_id' => $reservedNextHistoryId];
@@ -1636,7 +1840,7 @@ final class RepeatCallerRepository {
 
 	private function loadAlertCallAttempt(int $historyId, int $incidentId): ?array {
 		$stmt = $this->pdo->prepare(
-			'SELECT id, incident_id, rule_id, event_type, stage_n, repeat_mode, recipient, delivery_status
+			'SELECT id, incident_id, rule_id, event_type, stage_n, alert_reminder_mode, recipient, delivery_status
 			 FROM repeatcaller_incident_alert_history
 			 WHERE id = ?
 				AND incident_id = ?
@@ -1688,19 +1892,20 @@ final class RepeatCallerRepository {
 	public function loadDeliverableCallAlerts(string $now, int $limit = 200): array {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$callerModeExpr = $this->columnExpr('repeatcaller_rules', 'caller_mode', "'any'");
 		$didScopeModeExpr = $this->columnExpr('repeatcaller_rules', 'did_scope_mode', "'all'");
 		$thresholdCountExpr = $this->columnExpr('repeatcaller_rules', 'threshold_count', '0');
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
-		// Only pending/snoozed call stages are deliverable. Failed call outcomes are
-		// terminal for that stage and must wait for the next due reminder stage.
+		// Only active incidents may continue originating Alert Calls. Once an incident
+		// is accepted, further alert-call activity becomes ineligible.
 		$stmt = $this->pdo->prepare(
 			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label, h.event_type, h.stage_n,
-				h.recipient, h.delivery_status, h.repeat_mode,
+				h.recipient, h.delivery_status, h.alert_reminder_mode,
 				i.caller_display, i.caller_normalized, i.withheld_caller, i.mode,
 				i.threshold_count, i.observation_window_minutes, i.first_matched_at, i.last_matched_at, i.matched_call_count, i.state, i.suppression_expires_at,
-				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
+				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $callerModeExpr . ' AS caller_mode, ' . $didScopeModeExpr . ' AS did_scope_mode
 			 FROM repeatcaller_incident_alert_history h
 			 JOIN repeatcaller_incidents i ON i.id = h.incident_id
@@ -1709,8 +1914,8 @@ final class RepeatCallerRepository {
 				AND h.delivery_status IN (?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
 				AND i.state = ?
-				AND ' . $isDeletedExpr . ' = 0
 				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
+				AND ' . $isDeletedExpr . ' = 0
 			 ORDER BY h.created_at ASC, h.id ASC
 			 LIMIT ' . (int)$limit
 		);
@@ -1722,6 +1927,7 @@ final class RepeatCallerRepository {
 	public function loadDeliverableCallAlertByHistoryId(int $historyId, string $now): ?array {
 		$isDeletedExpr = $this->columnExpr('repeatcaller_rules', 'is_deleted', '0');
 		$alertCallRecordingExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_recording_id', 'NULL');
+		$alertCallHandleCallerIdUpstreamExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_handle_callerid_upstream', '0');
 		$alertCallCallerIdExpr = $this->columnExpr('repeatcaller_rules', 'alert_call_callerid', 'NULL');
 		$callerModeExpr = $this->columnExpr('repeatcaller_rules', 'caller_mode', "'any'");
 		$didScopeModeExpr = $this->columnExpr('repeatcaller_rules', 'did_scope_mode', "'all'");
@@ -1729,10 +1935,10 @@ final class RepeatCallerRepository {
 		$windowMinutesExpr = $this->columnExpr('repeatcaller_rules', 'observation_window_minutes', '0');
 		$stmt = $this->pdo->prepare(
 			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label, h.event_type, h.stage_n,
-				h.recipient, h.delivery_status, h.repeat_mode,
+				h.recipient, h.delivery_status, h.alert_reminder_mode,
 				i.caller_display, i.caller_normalized, i.withheld_caller, i.mode,
 				i.first_matched_at, i.last_matched_at, i.matched_call_count, i.state, i.suppression_expires_at,
-				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
+				r.name AS rule_name, ' . $alertCallRecordingExpr . ' AS alert_call_recording_id, ' . $alertCallHandleCallerIdUpstreamExpr . ' AS alert_call_handle_callerid_upstream, ' . $alertCallCallerIdExpr . ' AS alert_call_callerid,
 				' . $callerModeExpr . ' AS caller_mode, ' . $didScopeModeExpr . ' AS did_scope_mode
 			 FROM repeatcaller_incident_alert_history h
 			 JOIN repeatcaller_incidents i ON i.id = h.incident_id
@@ -1742,14 +1948,24 @@ final class RepeatCallerRepository {
 				AND h.delivery_status IN (?, ?)
 				AND (h.next_retry_at IS NULL OR h.next_retry_at <= ?)
 				AND i.state = ?
-				AND ' . $isDeletedExpr . ' = 0
 				AND (i.suppression_expires_at IS NULL OR i.suppression_expires_at > ?)
+				AND ' . $isDeletedExpr . ' = 0
 			 LIMIT 1'
 		);
 		$stmt->execute([$historyId, 'alert_call', 'pending', 'snoozed', $now, 'active', $now]);
 		$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
 		return is_array($row) ? $row : null;
+	}
+
+	public function orderedAlertCallStageRecipientCount(int $historyId): int {
+		$attempt = $this->loadOrderedAttemptContext($historyId);
+		if ($attempt === null) {
+			return 0;
+		}
+
+		$destinationEntries = $this->parseAlertCallDestinationEntries((string)($attempt['alert_call_destinations'] ?? ''));
+		return count($destinationEntries);
 	}
 
 	public function loadAlertCallAttemptHistoryByIncident(int $incidentId): array {
@@ -1765,7 +1981,7 @@ final class RepeatCallerRepository {
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
-	public function reserveNextOrderedAlertCallAttempt(int $historyId, string $now): ?int {
+	public function reserveNextOrderedAlertCallAttempt(int $historyId, string $now, bool $defer = false): ?int {
 		$attempt = $this->loadOrderedAttemptContext($historyId);
 		if ($attempt === null) {
 			return null;
@@ -1782,6 +1998,10 @@ final class RepeatCallerRepository {
 		$currentRecipient = trim((string)$attempt['recipient']);
 		if ($currentRecipient === '') {
 			return null;
+		}
+
+		if ($defer) {
+			return $this->reserveNextOrderedAlertCallStage($historyId, $now);
 		}
 
 		$destinationEntries = $this->parseAlertCallDestinationEntries((string)$attempt['alert_call_destinations']);
@@ -1831,7 +2051,7 @@ final class RepeatCallerRepository {
 			'successful_at' => null,
 			'next_retry_at' => null,
 			'failure_detail' => null,
-			'repeat_mode' => (string)$attempt['repeat_mode'],
+			'alert_reminder_mode' => (string)$attempt['alert_reminder_mode'],
 			'dedupe_key' => $this->alertDedupeKey((int)$attempt['incident_id'], (string)$attempt['event_type'], (int)$attempt['stage_n'], 'alert_call', $nextRecipient),
 			'created_at' => $now,
 			'updated_at' => $now,
@@ -1842,6 +2062,18 @@ final class RepeatCallerRepository {
 		}
 
 		return (int)$this->pdo->lastInsertId();
+	}
+
+	public function hasActiveCycleAlertCalls(int $incidentId): bool {
+		$stmt = $this->pdo->prepare(
+			'SELECT COUNT(*)
+			 FROM repeatcaller_incident_alert_history
+			 WHERE incident_id = ?
+				AND action_type = ?
+				AND delivery_status IN (?, ?, ?)'
+		);
+		$stmt->execute([$incidentId, 'alert_call', 'pending', 'snoozed', 'sending']);
+		return (int)$stmt->fetchColumn() > 0;
 	}
 
 	public function eligibleAlertCallDestinationsForStage(int $incidentId, array $destinations, bool $keepTrying, string $eventType, int $stageN): array {
@@ -1856,7 +2088,11 @@ final class RepeatCallerRepository {
 				continue;
 			}
 			$status = strtolower(trim((string)($row['delivery_status'] ?? '')));
-			$attemptedAny[$recipient] = true;
+			// Scope within-cycle tracking to the current event_type so each reminder
+			// cycle gets a fresh eligibility check, independent of the initial or prior cycles.
+			if ((string)$row['event_type'] === $eventType) {
+				$attemptedAny[$recipient] = true;
+			}
 			if ((string)$row['event_type'] === $eventType && (int)$row['stage_n'] === $stageN) {
 				$attemptedThisStage[$recipient] = true;
 			}
@@ -2158,13 +2394,30 @@ final class RepeatCallerRepository {
 		}
 	}
 
+	private function didsForScopeMode(array $dids, string $didScopeMode): array {
+		$mode = strtolower(trim($didScopeMode)) === 'selected' ? 'selected' : 'all';
+		$allowedListType = $mode === 'selected' ? 'include' : 'exclude';
+		$filtered = [];
+		foreach ($dids as $did) {
+			if (!is_array($did)) {
+				continue;
+			}
+			if ((string)($did['list_type'] ?? '') !== $allowedListType) {
+				continue;
+			}
+			$filtered[] = $did;
+		}
+
+		return $filtered;
+	}
+
 	private function placeholders(array $values): string {
 		return implode(', ', array_fill(0, count($values), '?'));
 	}
 
 	private function loadOrderedAttemptContext(int $historyId): ?array {
 		$stmt = $this->pdo->prepare(
-			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label, h.event_type, h.stage_n, h.repeat_mode, h.recipient,
+			'SELECT h.id, h.incident_id, h.rule_id, h.subject_key, h.subject_label, h.event_type, h.stage_n, h.alert_reminder_mode, h.recipient,
 				i.state AS incident_state,
 				' . $this->columnExpr('repeatcaller_rules', 'alert_call_destinations', 'NULL') . ' AS alert_call_destinations,
 				' . $this->columnExpr('repeatcaller_rules', 'alert_call_strategy', "'ringall'") . ' AS strategy,
@@ -2185,6 +2438,182 @@ final class RepeatCallerRepository {
 	private function alertDedupeKey(int $incidentId, string $eventType, int $stageN, string $actionType, ?string $recipient): string {
 		$recipientKey = $recipient === null ? '-' : strtolower(trim($recipient));
 		return sprintf('incident:%d|event:%s|stage:%d|action:%s|recipient:%s', $incidentId, $eventType, $stageN, $actionType, $recipientKey);
+	}
+
+	private function reserveNextOrderedAlertCallStage(int $historyId, string $now): ?int {
+		$attempt = $this->loadOrderedAttemptContext($historyId);
+		if ($attempt === null) {
+			return null;
+		}
+
+		if ((string)$attempt['strategy'] !== 'ordered') {
+			return null;
+		}
+
+		if ((string)$attempt['incident_state'] !== 'active') {
+			return null;
+		}
+
+		$stageN = (int)$attempt['stage_n'] + 1;
+		$destinationEntries = $this->parseAlertCallDestinationEntries((string)$attempt['alert_call_destinations']);
+		if (!$destinationEntries) {
+			return null;
+		}
+
+		$activeSiblings = $this->loadActiveOrderedStageSiblings((int)$attempt['incident_id'], (string)$attempt['event_type'], (int)$attempt['stage_n'], $historyId);
+		if ($activeSiblings) {
+			return null;
+		}
+
+		$eligible = $this->buildNextOrderedAlertCallStageRecipients(
+			(int)$attempt['incident_id'],
+			(string)$attempt['event_type'],
+			(int)$attempt['stage_n'],
+			$destinationEntries
+		);
+		if (!$eligible) {
+			return null;
+		}
+
+		$nextRetryAt = $this->futureTimestamp($now, 60);
+		$insertedHistoryId = null;
+		foreach ($eligible as $recipient) {
+			$inserted = $this->reserveIncidentAlertHistory([
+				'incident_id' => (int)$attempt['incident_id'],
+				'rule_id' => (int)$attempt['rule_id'],
+				'subject_key' => (string)$attempt['subject_key'],
+				'subject_label' => (string)$attempt['subject_label'],
+				'action_type' => 'alert_call',
+				'event_type' => (string)$attempt['event_type'],
+				'stage_n' => $stageN,
+				'recipient' => $recipient,
+				'delivery_status' => 'pending',
+				'attempted_at' => null,
+				'successful_at' => null,
+				'next_retry_at' => $nextRetryAt,
+				'failure_detail' => null,
+				'alert_reminder_mode' => (string)$attempt['alert_reminder_mode'],
+				'dedupe_key' => $this->alertDedupeKey((int)$attempt['incident_id'], (string)$attempt['event_type'], $stageN, 'alert_call', $recipient),
+				'created_at' => $now,
+				'updated_at' => $now,
+			]);
+			if ($inserted && $insertedHistoryId === null) {
+				$insertedHistoryId = (int)$this->pdo->lastInsertId();
+			}
+		}
+
+		return $insertedHistoryId;
+	}
+
+	private function buildNextOrderedAlertCallStageRecipients(int $incidentId, string $eventType, int $stageN, array $destinationEntries): array {
+		$orderedDestinations = [];
+		$destinationLookup = [];
+		foreach ($destinationEntries as $entry) {
+			$destination = '';
+			$keepTrying = false;
+			if (is_array($entry)) {
+				$destination = trim((string)($entry['destination'] ?? ''));
+				$keepTrying = ((int)($entry['keep_trying'] ?? 0)) === 1;
+			} else {
+				$destination = trim((string)$entry);
+			}
+			if ($destination === '') {
+				continue;
+			}
+			$orderedDestinations[] = $destination;
+			$destinationLookup[$destination] = [
+				'index' => count($orderedDestinations) - 1,
+				'keep_trying' => $keepTrying,
+			];
+		}
+		if (!$orderedDestinations) {
+			return [];
+		}
+
+		$history = $this->loadAlertCallAttemptHistoryByIncident($incidentId);
+		$declined = [];
+		$attempted = [];
+		$currentStageRecipients = [];
+		$currentStageLastIndex = -1;
+		foreach ($history as $row) {
+			$recipient = trim((string)($row['recipient'] ?? ''));
+			if ($recipient === '') {
+				continue;
+			}
+			$status = strtolower(trim((string)($row['delivery_status'] ?? '')));
+			// Scope attempted tracking to the current event_type so ordered progression
+			// within a reminder cycle is independent of the initial or prior reminder cycles.
+			if ((string)($row['event_type'] ?? '') === $eventType) {
+				$attempted[$recipient] = true;
+			}
+			if ($status === self::ALERT_CALL_OUTCOME_DECLINED) {
+				$declined[$recipient] = true;
+			}
+			if ((string)($row['event_type'] ?? '') === $eventType && (int)($row['stage_n'] ?? 0) === $stageN) {
+				$currentStageRecipients[] = $recipient;
+				$lookup = $destinationLookup[$recipient] ?? null;
+				if (is_array($lookup) && (int)($lookup['index'] ?? -1) > $currentStageLastIndex) {
+					$currentStageLastIndex = (int)$lookup['index'];
+				}
+			}
+		}
+
+		$carryOver = [];
+		foreach ($currentStageRecipients as $recipient) {
+			if ($recipient === '' || isset($declined[$recipient])) {
+				continue;
+			}
+			$lookup = $destinationLookup[$recipient] ?? null;
+			if (!is_array($lookup) || ((int)($lookup['keep_trying'] ?? 0)) !== 1) {
+				continue;
+			}
+			$carryOver[] = $recipient;
+		}
+
+		$eligible = $carryOver;
+		$nextRecipient = null;
+		for ($i = $currentStageLastIndex + 1; $i < count($orderedDestinations); $i++) {
+			$candidate = $orderedDestinations[$i];
+			if ($candidate === '' || isset($declined[$candidate]) || isset($attempted[$candidate])) {
+				continue;
+			}
+			$nextRecipient = $candidate;
+			break;
+		}
+		if ($nextRecipient !== null) {
+			$eligible[] = $nextRecipient;
+		}
+
+		return $eligible;
+	}
+
+	private function loadActiveOrderedStageSiblings(int $incidentId, string $eventType, int $stageN, int $excludeHistoryId): bool {
+		$stmt = $this->pdo->prepare(
+			'SELECT COUNT(*)
+			 FROM repeatcaller_incident_alert_history
+			 WHERE incident_id = ?
+				AND action_type = ?
+				AND event_type = ?
+				AND stage_n = ?
+				AND id <> ?
+				AND delivery_status IN (?, ?, ?, ?)
+			 LIMIT 1'
+		);
+		$stmt->execute([$incidentId, 'alert_call', $eventType, $stageN, $excludeHistoryId, 'pending', 'snoozed', 'sending', 'sent']);
+
+		return (int)$stmt->fetchColumn() > 0;
+	}
+
+	private function futureTimestamp(string $now, int $seconds): ?string {
+		try {
+			return (new \DateTimeImmutable($now))->modify('+' . $seconds . ' seconds')->format('Y-m-d H:i:s');
+		} catch (\Throwable $e) {
+			$timestamp = strtotime($now);
+			if ($timestamp === false) {
+				return null;
+			}
+			return date('Y-m-d H:i:s', $timestamp + $seconds);
+		}
 	}
 
 	private function mapDialStatusOutcome(string $dialStatus): string {
@@ -2287,6 +2716,141 @@ final class RepeatCallerRepository {
 
 	private function activeSubjectKey(int $ruleId, string $subjectKey): string {
 		return $ruleId . '|' . $subjectKey;
+	}
+
+	private function reconcileSuppressionForRule(int $ruleId, ?int $previousOverride, ?int $newOverride, string $now): void {
+		$previousMinutes = $this->suppressionMinutesForOverride($previousOverride);
+		$newMinutes = $this->suppressionMinutesForOverride($newOverride);
+		if ($previousMinutes === $newMinutes) {
+			return;
+		}
+
+		$subjectStates = $this->selectRowsSafe(
+			'SELECT rule_id, subject_key, active_incident_id, suppression_expires_at
+			 FROM repeatcaller_rule_subject_state
+			 WHERE rule_id = ?
+				AND (active_incident_id IS NOT NULL OR suppression_expires_at IS NOT NULL)',
+			[$ruleId]
+		);
+		if ($subjectStates === null) {
+			return;
+		}
+
+		$historyRows = $this->selectRowsSafe(
+			'SELECT id, subject_key, suppression_started_at, suppression_expires_at
+			 FROM repeatcaller_incident_suppression_history
+			 WHERE rule_id = ?
+				AND related_incident_id > 0
+				AND (cleared_at IS NULL OR cleared_at IN (?, ?, ?))',
+			[$ruleId, '', '0000-00-00', '0000-00-00 00:00:00']
+		);
+
+		foreach ($subjectStates as $subjectStateRow) {
+			$subjectKey = (string)($subjectStateRow['subject_key'] ?? '');
+			if ($subjectKey === '') {
+				continue;
+			}
+			$incidentId = (int)($subjectStateRow['active_incident_id'] ?? 0);
+			$incident = null;
+			if ($incidentId > 0) {
+				$incidentStmt = $this->pdo->prepare(
+					'SELECT id, state, suppression_expires_at, created_at, first_matched_at
+					 FROM repeatcaller_incidents
+					 WHERE id = ?
+					 LIMIT 1'
+				);
+				$incidentStmt->execute([$incidentId]);
+				$incident = $incidentStmt->fetch(PDO::FETCH_ASSOC);
+			}
+
+			$startAt = '';
+			if (is_array($incident)) {
+				$startAt = trim((string)($incident['created_at'] ?? ''));
+				if ($startAt === '') {
+					$startAt = trim((string)($incident['first_matched_at'] ?? ''));
+				}
+			}
+			if ($startAt === '' && is_array($historyRows)) {
+				foreach ($historyRows as $historyRow) {
+					if ((string)($historyRow['subject_key'] ?? '') === $subjectKey) {
+						$startAt = trim((string)($historyRow['suppression_started_at'] ?? ''));
+						break;
+					}
+				}
+			}
+			if ($startAt === '') {
+				$startAt = $now;
+			}
+
+			$subjectState = $this->loadSubjectState($ruleId, $subjectKey) ?? [];
+			$subjectState['active_incident_id'] = $newMinutes <= 0 ? ($incidentId > 0 ? $incidentId : null) : null;
+			$subjectState['suppression_expires_at'] = $newMinutes <= 0 ? null : $this->suppressionExpiryForStart($startAt, $newMinutes);
+			$subjectState['last_evaluated_at'] = $now;
+			$subjectState['updated_at'] = $now;
+			$this->saveSubjectState($ruleId, $subjectKey, $subjectState);
+
+			if ($incidentId > 0 && is_array($incident)) {
+				$updateStmt = $this->pdo->prepare(
+					'UPDATE repeatcaller_incidents
+					 SET state = ?,
+						 active_subject_key = ?,
+						 suppression_expires_at = ?,
+						 updated_at = ?
+					 WHERE id = ?'
+				);
+				$updateStmt->execute([
+					$newMinutes <= 0 ? 'active' : 'suppressed',
+					$newMinutes <= 0 ? $this->activeSubjectKey($ruleId, $subjectKey) : null,
+					$this->nullableString($newMinutes <= 0 ? null : $this->suppressionExpiryForStart($startAt, $newMinutes)),
+					$now,
+					$incidentId,
+				]);
+			}
+		}
+
+		if (is_array($historyRows)) {
+			foreach ($historyRows as $historyRow) {
+				$historyStartedAt = trim((string)($historyRow['suppression_started_at'] ?? ''));
+				if ($historyStartedAt === '') {
+					$historyStartedAt = $now;
+				}
+				$nextHistoryExpiry = $newMinutes <= 0
+					? trim((string)($historyRow['suppression_expires_at'] ?? ''))
+					: $this->suppressionExpiryForStart($historyStartedAt, $newMinutes);
+				$nextHistoryExpiry = $nextHistoryExpiry === '' ? $this->suppressionExpiryForStart($historyStartedAt, $newMinutes) : $nextHistoryExpiry;
+				$updateHistoryStmt = $this->pdo->prepare(
+					'UPDATE repeatcaller_incident_suppression_history
+					 SET suppression_minutes = ?,
+						 suppression_expires_at = ?,
+						 cleared_at = ?,
+						 updated_at = ?
+					 WHERE id = ?'
+				);
+				$updateHistoryStmt->execute([
+					$newMinutes,
+					(string)$nextHistoryExpiry,
+					$newMinutes <= 0 ? $now : null,
+					$now,
+					(int)($historyRow['id'] ?? 0),
+				]);
+			}
+		}
+	}
+
+	private function suppressionMinutesForOverride(?int $override): int {
+		$value = $override === null ? 1440 : $override;
+		return max(0, $value);
+	}
+
+	private function suppressionExpiryForStart(string $startedAt, int $minutes): ?string {
+		if ($minutes <= 0) {
+			return null;
+		}
+		return date('Y-m-d H:i:s', strtotime($startedAt) + ($minutes * 60));
+	}
+
+	private function normaliseSuppressionOverrideValue($value): ?int {
+		return $this->nullableInt($value);
 	}
 
 	private function nullableString($value): ?string {

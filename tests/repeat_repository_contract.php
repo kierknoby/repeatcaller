@@ -25,12 +25,14 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			enabled INTEGER NOT NULL DEFAULT 1,
+			enabled_at TEXT,
 			email_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_enabled INTEGER NOT NULL DEFAULT 0,
 			alert_call_destinations TEXT,
 			alert_call_strategy TEXT NOT NULL DEFAULT "ringall",
 			alert_call_keep_trying INTEGER NOT NULL DEFAULT 1,
 			alert_call_recording_id INTEGER,
+			alert_call_handle_callerid_upstream INTEGER NOT NULL DEFAULT 0,
 			alert_call_callerid TEXT,
 			mode TEXT NOT NULL,
 			threshold_count INTEGER NOT NULL,
@@ -38,7 +40,7 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			caller_mode TEXT NOT NULL,
 			exclude_withheld INTEGER NOT NULL DEFAULT 0,
 			did_scope_mode TEXT NOT NULL,
-			repeat_mode_override TEXT,
+			alert_reminder_mode_override TEXT,
 			suppression_minutes_override INTEGER,
 			created_at TEXT,
 			updated_at TEXT
@@ -131,9 +133,9 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			last_matched_at TEXT NOT NULL,
 			matched_call_count INTEGER NOT NULL DEFAULT 0,
 			state TEXT NOT NULL,
-			claimed_by TEXT,
-			claimed_at TEXT,
-			claim_source TEXT,
+			accepted_by TEXT,
+			accepted_at TEXT,
+			accept_source TEXT,
 			suppression_expires_at TEXT,
 			cleared_at TEXT,
 			created_at TEXT,
@@ -156,7 +158,7 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			successful_at TEXT,
 			next_retry_at TEXT,
 			failure_detail TEXT,
-			repeat_mode TEXT NOT NULL,
+			alert_reminder_mode TEXT NOT NULL,
 			dedupe_key TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -210,11 +212,11 @@ try {
 	$db = new PDO('sqlite:' . $dbPath);
 	$repo = create_repository($db);
 
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Rule A', 1, 1, 1, '100,101', 'ordered', 1, 55, '5551234', 'repeat', 2, 60, 'any', 0, 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Rule A', 1, '2026-07-13 09:00:00', 1, 1, '100,101', 'ordered', 1, 55, 0, '5551234', 'repeat', 2, 60, 'any', 0, 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$ruleId = (int)$db->lastInsertId();
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-		->execute(['Rule Disabled', 0, 0, 0, null, 'ringall', 1, null, null, 'repeat', 2, 60, 'any', 0, 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+		->execute(['Rule Disabled', 0, null, 0, 0, null, 'ringall', 1, null, 0, null, 'repeat', 2, 60, 'any', 0, 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 
 	$db->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ruleId, 1, '09:00:00', '12:00:00', '2026-07-13 09:00:00']);
 	$db->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ruleId, 1, '14:00:00', '18:00:00', '2026-07-13 09:00:00']);
@@ -226,6 +228,202 @@ try {
 	$enabledRules = $repo->loadEnabledRules();
 	assert_same(1, count($enabledRules), 'only enabled rules should be loaded');
 	assert_same('Rule A', $enabledRules[0]['name'], 'enabled rule should round-trip');
+	assert_same('2026-07-13 09:00:00', (string)($enabledRules[0]['enabled_at'] ?? ''), 'enabled rules should expose enabled_at when available');
+	assert_same(0, (int)($enabledRules[0]['alert_call_handle_callerid_upstream'] ?? 0), 'existing stored rules should preserve legacy upstream-caller-id handling default as disabled');
+
+	$enabledAtEditRuleId = $repo->saveRule([
+		'name' => 'EnabledAt Edit Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:40:00');
+	$enabledAtCreatedRule = $repo->loadRule($enabledAtEditRuleId);
+	assert_same('2026-07-13 09:40:00', (string)$enabledAtCreatedRule['enabled_at'], 'new enabled rules should persist enabled_at at creation time');
+
+	$repo->saveRule([
+		'id' => $enabledAtEditRuleId,
+		'name' => 'EnabledAt Edit Rule Updated',
+		'enabled' => 1,
+		'email_enabled' => 1,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 3,
+		'observation_window_minutes' => 90,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:45:00');
+	$editedRule = $repo->loadRule($enabledAtEditRuleId);
+	assert_same('2026-07-13 09:40:00', (string)$editedRule['enabled_at'], 'ordinary rule edits should not alter enabled_at');
+
+	$invertDisabledRuleId = $repo->saveRule([
+		'name' => 'Invert Disabled Rule',
+		'enabled' => 0,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'invert',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:30:00');
+	$invertDisabledSubject = '__invert_rule__' . $invertDisabledRuleId;
+	$repo->saveSubjectState($invertDisabledRuleId, $invertDisabledSubject, [
+		'current_window_started_at' => '2026-07-13 09:00:00',
+		'current_window_ends_at' => '2026-07-13 10:00:00',
+		'current_window_call_count' => 0,
+		'threshold_met' => 1,
+		'clear_observed_since_trigger' => 1,
+		'active_incident_id' => 44,
+		'suppression_expires_at' => '2026-07-13 11:00:00',
+		'last_call_at' => null,
+		'last_evaluated_at' => '2026-07-13 09:30:00',
+		'created_at' => '2026-07-13 09:30:00',
+		'updated_at' => '2026-07-13 09:30:00',
+	]);
+
+	$invertBeforeEnable = $repo->loadRule($invertDisabledRuleId);
+	assert_same(null, $invertBeforeEnable['enabled_at'], 'disabled invert rules should not receive enabled_at at creation');
+	assert_true(is_array($repo->loadSubjectState($invertDisabledRuleId, $invertDisabledSubject)), 'invert subject state precondition should exist before re-enable');
+
+	$repo->setRuleEnabled($invertDisabledRuleId, true, '2026-07-13 10:00:00');
+	$invertAfterEnable = $repo->loadRule($invertDisabledRuleId);
+	assert_same('2026-07-13 10:00:00', (string)$invertAfterEnable['enabled_at'], 'enabling a disabled invert rule should stamp enabled_at with the transition time');
+	$invertStateAfterEnable = $repo->loadSubjectState($invertDisabledRuleId, $invertDisabledSubject);
+	assert_true(is_array($invertStateAfterEnable), 'enabling a disabled invert rule should preserve subject-state rows while resetting only observation-window fields');
+	assert_same(null, $invertStateAfterEnable['current_window_started_at'], 'enable transition should reset current_window_started_at for invert re-anchoring');
+	assert_same(null, $invertStateAfterEnable['current_window_ends_at'], 'enable transition should reset current_window_ends_at for invert re-anchoring');
+	assert_same(0, (int)$invertStateAfterEnable['current_window_call_count'], 'enable transition should reset current_window_call_count for invert re-anchoring');
+	assert_same(0, (int)$invertStateAfterEnable['threshold_met'], 'enable transition should reset threshold latch state for invert re-anchoring');
+	assert_same(0, (int)$invertStateAfterEnable['clear_observed_since_trigger'], 'enable transition should reset clear-observed latch for invert re-anchoring');
+	assert_same(44, (int)$invertStateAfterEnable['active_incident_id'], 'enable transition should preserve active_incident_id linkage');
+	assert_same('2026-07-13 11:00:00', (string)$invertStateAfterEnable['suppression_expires_at'], 'enable transition should preserve suppression expiry state');
+
+	$repeatToInvertRuleId = $repo->saveRule([
+		'name' => 'Repeat To Invert Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:10:00');
+	$repeatToInvertSubject = '__invert_rule__' . $repeatToInvertRuleId;
+	$repo->saveSubjectState($repeatToInvertRuleId, $repeatToInvertSubject, [
+		'current_window_started_at' => '2026-07-13 09:00:00',
+		'current_window_ends_at' => '2026-07-13 10:00:00',
+		'current_window_call_count' => 2,
+		'threshold_met' => 1,
+		'clear_observed_since_trigger' => 1,
+		'active_incident_id' => 77,
+		'suppression_expires_at' => '2026-07-13 12:00:00',
+		'last_call_at' => '2026-07-13 09:05:00',
+		'last_evaluated_at' => '2026-07-13 09:05:00',
+		'created_at' => '2026-07-13 09:10:00',
+		'updated_at' => '2026-07-13 09:10:00',
+	]);
+	$repo->saveRule([
+		'id' => $repeatToInvertRuleId,
+		'name' => 'Repeat To Invert Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 10:15:00');
+	$repeatToInvertRule = $repo->loadRule($repeatToInvertRuleId);
+	assert_same('2026-07-13 10:15:00', (string)$repeatToInvertRule['enabled_at'], 'editing an enabled rule from repeat to invert should re-anchor enabled_at to transition time');
+	$repeatToInvertState = $repo->loadSubjectState($repeatToInvertRuleId, $repeatToInvertSubject);
+	assert_true(is_array($repeatToInvertState), 'repeat-to-invert transition should preserve subject-state rows');
+	assert_same(null, $repeatToInvertState['current_window_started_at'], 'repeat-to-invert transition should reset current_window_started_at for invert re-anchoring');
+	assert_same(null, $repeatToInvertState['current_window_ends_at'], 'repeat-to-invert transition should reset current_window_ends_at for invert re-anchoring');
+	assert_same(0, (int)$repeatToInvertState['current_window_call_count'], 'repeat-to-invert transition should reset current_window_call_count for invert re-anchoring');
+	assert_same(77, (int)$repeatToInvertState['active_incident_id'], 'repeat-to-invert transition should preserve active incident linkage');
+	assert_same('2026-07-13 12:00:00', (string)$repeatToInvertState['suppression_expires_at'], 'repeat-to-invert transition should preserve suppression expiry linkage');
+
+	$repo->saveRule([
+		'id' => $repeatToInvertRuleId,
+		'name' => 'Repeat To Invert Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'invert',
+		'threshold_count' => 1,
+		'observation_window_minutes' => 30,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => null,
+		'schedules' => [['day' => 1, 'start' => '10:00', 'end' => '17:00']],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 10:45:00');
+	$invertConfigChangeRule = $repo->loadRule($repeatToInvertRuleId);
+	assert_same('2026-07-13 10:45:00', (string)$invertConfigChangeRule['enabled_at'], 'editing observation window or schedule on an enabled invert rule should re-anchor enabled_at to edit time');
 
 	$invertRuleId = $repo->saveRule([
 		'name' => 'Invert Recording Rule',
@@ -236,6 +434,7 @@ try {
 		'alert_call_strategy' => 'ringall',
 		'alert_call_keep_trying' => 1,
 		'alert_call_recording_id' => 77,
+		'alert_call_handle_callerid_upstream' => 1,
 		'alert_call_callerid' => '',
 		'mode' => 'invert',
 		'threshold_count' => 2,
@@ -243,7 +442,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -251,6 +450,7 @@ try {
 	], '2026-07-13 09:05:00');
 	$invertRule = $repo->loadRule($invertRuleId);
 	assert_same(77, (int)($invertRule['alert_call_recording_id'] ?? 0), 'invert rules should persist alert_call_recording_id the same as repeat rules');
+	assert_same(1, (int)($invertRule['alert_call_handle_callerid_upstream'] ?? 0), 'repository should persist Handle Caller ID Upstream for new rules');
 
 	$schedules = $repo->loadSchedules([$ruleId]);
 	assert_same(2, count($schedules[$ruleId]), 'multiple schedules should round-trip correctly');
@@ -261,9 +461,131 @@ try {
 	assert_same('+441234567890', $callers[$ruleId]['include'][0]['normalized_value'], 'caller includes should round-trip correctly');
 	assert_same('+441230000001', $callers[$ruleId]['exclude'][0]['normalized_value'], 'caller exclusions should round-trip correctly');
 
+	$mixedCallerRuleId = $repo->saveRule([
+		'name' => 'Mixed Caller Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'specific_only',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [
+			['list_type' => 'include', 'raw_value' => '01234567890', 'normalized_value' => '+441234567890'],
+			['list_type' => 'include', 'raw_value' => '07876543210', 'normalized_value' => '+447876543210'],
+			['list_type' => 'include', 'raw_value' => '01234567890', 'normalized_value' => '+441234567890'],
+			['list_type' => 'exclude', 'raw_value' => '01632960000', 'normalized_value' => '+441632960000'],
+			['list_type' => 'exclude', 'raw_value' => '07700900123', 'normalized_value' => '+447700900123'],
+		],
+		'dids' => [],
+	], '2026-07-13 09:10:00');
+	$mixedCallerRule = $repo->loadRule($mixedCallerRuleId);
+		assert_same(3, count($mixedCallerRule['caller_lists']['include']), 'repository should preserve the caller include rows it is given, including duplicates');
+	assert_same('01234567890', (string)$mixedCallerRule['caller_lists']['include'][0]['raw_value'], 'caller include order should preserve the first caller');
+	assert_same('07876543210', (string)$mixedCallerRule['caller_lists']['include'][1]['raw_value'], 'caller include order should preserve the second caller');
+		assert_same('01234567890', (string)$mixedCallerRule['caller_lists']['include'][2]['raw_value'], 'caller include order should preserve duplicate rows when passed directly to the repository');
+	assert_same(2, count($mixedCallerRule['caller_lists']['exclude']), 'caller exclude entries should remain independent from include entries');
+	assert_same('01632960000', (string)$mixedCallerRule['caller_lists']['exclude'][0]['raw_value'], 'caller exclude order should preserve the first excluded caller');
+	assert_same('07700900123', (string)$mixedCallerRule['caller_lists']['exclude'][1]['raw_value'], 'caller exclude order should preserve the second excluded caller');
+
+	$emptyCallerRuleId = $repo->saveRule([
+		'name' => 'Empty Caller Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'specific_only',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:11:00');
+	$emptyCallerRule = $repo->loadRule($emptyCallerRuleId);
+	assert_same(0, count($emptyCallerRule['caller_lists']['include']), 'empty caller include lists should persist as empty');
+	assert_same(0, count($emptyCallerRule['caller_lists']['exclude']), 'empty caller exclude lists should persist as empty');
+
 	$dids = $repo->loadDidLists([$ruleId]);
 	assert_same('18005550001|', $dids[$ruleId]['include'][0]['route_key'], 'selected DIDs should round-trip correctly');
 	assert_same('18005550002|', $dids[$ruleId]['exclude'][0]['route_key'], 'DID exclusions should round-trip correctly');
+
+	$didScopeSwitchRuleId = $repo->saveRule([
+		'name' => 'DID Scope Switch Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'alert_call_callerid' => '',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [
+			['list_type' => 'include', 'route_key' => '18005550001|', 'route_label' => 'Main DID', 'did_value' => '18005550001', 'cid_value' => ''],
+			['list_type' => 'exclude', 'route_key' => '18005550002|', 'route_label' => 'Excluded DID', 'did_value' => '18005550002', 'cid_value' => ''],
+		],
+	], '2026-07-13 09:06:00');
+	$didScopeAllReload = $repo->loadRule($didScopeSwitchRuleId);
+	assert_same('all', (string)$didScopeAllReload['did_scope_mode'], 'all-DID mode should persist during save');
+	assert_same(0, count($didScopeAllReload['did_lists']['include']), 'all-DID mode should clear stored include rows');
+	assert_same(1, count($didScopeAllReload['did_lists']['exclude']), 'all-DID mode should persist exclusions');
+
+	$repo->saveRule([
+		'id' => $didScopeSwitchRuleId,
+		'name' => 'DID Scope Switch Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'alert_call_callerid' => '',
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'selected',
+		'alert_reminder_mode_override' => 'never',
+		'suppression_minutes_override' => null,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [
+			['list_type' => 'include', 'route_key' => '18005550001|', 'route_label' => 'Main DID', 'did_value' => '18005550001', 'cid_value' => ''],
+			['list_type' => 'exclude', 'route_key' => '18005550002|', 'route_label' => 'Excluded DID', 'did_value' => '18005550002', 'cid_value' => ''],
+		],
+	], '2026-07-13 09:07:00');
+	$didScopeSelectedReload = $repo->loadRule($didScopeSwitchRuleId);
+	assert_same('selected', (string)$didScopeSelectedReload['did_scope_mode'], 'selected-DID mode should persist during save');
+	assert_same(1, count($didScopeSelectedReload['did_lists']['include']), 'selected-DID mode should persist includes');
+	assert_same(0, count($didScopeSelectedReload['did_lists']['exclude']), 'selected-DID mode should clear stored exclude rows');
 
 	$firstSeen = [
 		'call_identity' => 'linkedid-100',
@@ -388,13 +710,13 @@ try {
 	assert_same(3, (int)$updatedIncident['matched_call_count'], 'further matching calls should update the same active incident');
 	assert_same('2026-07-13 09:20:00', $updatedIncident['last_matched_at'], 'updated incident should persist latest matched time');
 
-	assert_true($repo->claimActiveIncident($incidentId, 'admin', '2026-07-13 09:25:00', 'gui'), 'claiming an active incident should succeed');
-	assert_true($repo->loadActiveIncident($ruleId, '+441234567890') === null, 'claim should move the incident out of the active state');
-	assert_true(is_array($repo->loadTrackedIncident($ruleId, '+441234567890')), 'claimed incident should remain tracked so later matching calls update it');
-	$claimedState = $repo->loadSubjectState($ruleId, '+441234567890');
-	assert_same($incidentId, (int)$claimedState['active_incident_id'], 'claim must not clear the subject-state link; later matching calls update the same claimed incident');
-	$claimedIncidentRow = $db->query('SELECT active_subject_key FROM repeatcaller_incidents WHERE id = ' . (int)$incidentId)->fetch(PDO::FETCH_ASSOC);
-	assert_true((string)$claimedIncidentRow['active_subject_key'] !== '', 'claimed incident should retain its active subject linkage to block a duplicate active incident');
+	assert_true($repo->acceptActiveIncident($incidentId, 'admin', '2026-07-13 09:25:00', 'gui'), 'accepting an active incident should succeed');
+	assert_true($repo->loadActiveIncident($ruleId, '+441234567890') === null, 'accept should move the incident out of the active state');
+	assert_true(is_array($repo->loadTrackedIncident($ruleId, '+441234567890')), 'accepted incident should remain tracked so later matching calls update it');
+	$acceptedState = $repo->loadSubjectState($ruleId, '+441234567890');
+	assert_same($incidentId, (int)$acceptedState['active_incident_id'], 'accept must not clear the subject-state link; later matching calls update the same accepted incident');
+	$acceptedIncidentRow = $db->query('SELECT active_subject_key FROM repeatcaller_incidents WHERE id = ' . (int)$incidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_true((string)$acceptedIncidentRow['active_subject_key'] !== '', 'accepted incident should retain its active subject linkage to block a duplicate active incident');
 
 	$otherIncidentId = $repo->createIncident([
 		'rule_id' => $ruleId,
@@ -412,13 +734,13 @@ try {
 		'created_at' => '2026-07-13 09:26:05',
 		'updated_at' => '2026-07-13 09:26:05',
 	]);
-	assert_true($repo->claimActiveIncident($otherIncidentId, 'admin', '2026-07-13 09:27:00', 'gui'), 'claiming a second active incident should succeed independently');
-	$claimedRows = $repo->loadIncidents('claimed', 50);
-	assert_same(2, count($claimedRows), 'claimed incident retrieval should return all currently claimed incidents');
-	assert_same($otherIncidentId, (int)$claimedRows[0]['id'], 'claimed incident retrieval should order newest claim first');
-	assert_same($incidentId, (int)$claimedRows[1]['id'], 'earlier claimed incident should remain visible after later claims');
+	assert_true($repo->acceptActiveIncident($otherIncidentId, 'admin', '2026-07-13 09:27:00', 'gui'), 'accepting a second active incident should succeed independently');
+	$acceptedRows = $repo->loadIncidents('accepted', 50);
+	assert_same(2, count($acceptedRows), 'accepted incident retrieval should return all currently accepted incidents');
+	assert_same($otherIncidentId, (int)$acceptedRows[0]['id'], 'accepted incident retrieval should order newest accept first');
+	assert_same($incidentId, (int)$acceptedRows[1]['id'], 'earlier accepted incident should remain visible after later accepts');
 
-	$duplicateWhileClaimedFailed = false;
+	$duplicateWhileAcceptedFailed = false;
 	try {
 		$repo->createIncident([
 			'rule_id' => $ruleId,
@@ -439,9 +761,9 @@ try {
 			'updated_at' => '2026-07-13 09:30:05',
 		]);
 	} catch (Throwable $e) {
-		$duplicateWhileClaimedFailed = true;
+		$duplicateWhileAcceptedFailed = true;
 	}
-	assert_true($duplicateWhileClaimedFailed, 'no second incident should be creatable while the claimed incident has not genuinely cleared');
+	assert_true($duplicateWhileAcceptedFailed, 'no second incident should be creatable while the accepted incident has not genuinely cleared');
 
 	$repo->markConditionCleared($ruleId, '+441234567890', '2026-07-13 10:00:00');
 	$rearmedState = $repo->loadSubjectState($ruleId, '+441234567890');
@@ -484,6 +806,186 @@ try {
 	assert_same('suppressed', $incidentState['state'], 'suppression should be persisted on the incident');
 	assert_same('2026-07-13 11:40:00', $incidentState['suppression_expires_at'], 'incident suppression expiry should round-trip');
 
+	$reconcileRuleId = $repo->saveRule([
+		'name' => 'Suppression Reconcile Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => 30,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:50:00');
+	$reconcileIncidentId = $repo->createIncident([
+		'rule_id' => $reconcileRuleId,
+		'subject_key' => 'reconcile-subject-a',
+		'subject_label' => 'reconcile-subject-a',
+		'caller_normalized' => 'reconcile-subject-a',
+		'caller_display' => 'reconcile-subject-a',
+		'withheld_caller' => 0,
+		'mode' => 'repeat',
+		'first_matched_at' => '2026-07-13 09:55:00',
+		'last_matched_at' => '2026-07-13 09:55:00',
+		'matched_call_count' => 2,
+		'state' => 'suppressed',
+		'suppression_expires_at' => '2026-07-13 10:25:00',
+		'created_at' => '2026-07-13 09:55:00',
+		'updated_at' => '2026-07-13 09:55:00',
+	]);
+	$repo->saveSubjectState($reconcileRuleId, 'reconcile-subject-a', [
+		'active_incident_id' => $reconcileIncidentId,
+		'suppression_expires_at' => '2026-07-13 10:25:00',
+		'updated_at' => '2026-07-13 09:55:00',
+	]);
+	$repo->reserveSuppressedIncidentHistory([
+		'related_incident_id' => $reconcileIncidentId,
+		'rule_id' => $reconcileRuleId,
+		'rule_name' => 'Suppression Reconcile Rule',
+		'mode' => 'repeat',
+		'subject_key' => 'reconcile-subject-a',
+		'subject_label' => 'reconcile-subject-a',
+		'caller_normalized' => 'reconcile-subject-a',
+		'caller_display' => 'reconcile-subject-a',
+		'inbound_route_key' => null,
+		'inbound_route_label' => '',
+		'did_value' => null,
+		'matched_call_count' => 2,
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'suppression_source' => 'rule_override',
+		'suppression_minutes' => 30,
+		'suppression_started_at' => '2026-07-13 09:55:00',
+		'suppression_expires_at' => '2026-07-13 10:25:00',
+		'related_incident_state' => 'suppressed',
+		'detected_at' => '2026-07-13 09:56:00',
+		'created_at' => '2026-07-13 09:56:00',
+		'updated_at' => '2026-07-13 09:56:00',
+	]);
+	$repo->saveRule([
+		'id' => $reconcileRuleId,
+		'name' => 'Suppression Reconcile Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => 0,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:57:00');
+	$reconciledSubjectState = $repo->loadSubjectState($reconcileRuleId, 'reconcile-subject-a');
+	assert_true(is_array($reconciledSubjectState), 'rule-save reconciliation should update existing subject-state rows');
+	assert_same(null, $reconciledSubjectState['suppression_expires_at'], 'changing the rule override to 0 should clear active suppression from subject state');
+	$reconciledIncident = $db->query('SELECT state, suppression_expires_at FROM repeatcaller_incidents WHERE id = ' . (int)$reconcileIncidentId)->fetch(PDO::FETCH_ASSOC);
+	assert_same('active', (string)$reconciledIncident['state'], 'changing the rule override to 0 should reactivate a previously suppressed incident');
+	assert_same(null, $reconciledIncident['suppression_expires_at'], 'changing the rule override to 0 should clear incident suppression expiry');
+	$reconciledHistory = $repo->loadSuppressedIncidentHistory();
+	assert_same(1, count($reconciledHistory), 'rule-save reconciliation should preserve suppression-history rows');
+	assert_same('2026-07-13 09:57:00', (string)$reconciledHistory[0]['cleared_at'], 'rule-save reconciliation should mark the active suppression-history row as cleared when suppression is disabled');
+
+	$secondReconcileRuleId = $repo->saveRule([
+		'name' => 'Suppression Reconcile Other Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => 60,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 09:58:00');
+	$otherSubject = 'reconcile-subject-b';
+	$repo->saveSubjectState($secondReconcileRuleId, $otherSubject, [
+		'active_incident_id' => null,
+		'suppression_expires_at' => '2026-07-13 10:10:00',
+		'updated_at' => '2026-07-13 09:58:00',
+	]);
+	$repo->reserveSuppressedIncidentHistory([
+		'related_incident_id' => 9001,
+		'rule_id' => $secondReconcileRuleId,
+		'rule_name' => 'Suppression Reconcile Other Rule',
+		'mode' => 'repeat',
+		'subject_key' => $otherSubject,
+		'subject_label' => $otherSubject,
+		'caller_normalized' => $otherSubject,
+		'caller_display' => $otherSubject,
+		'inbound_route_key' => null,
+		'inbound_route_label' => '',
+		'did_value' => null,
+		'matched_call_count' => 2,
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'suppression_source' => 'rule_override',
+		'suppression_minutes' => 60,
+		'suppression_started_at' => '2026-07-13 09:58:00',
+		'suppression_expires_at' => '2026-07-13 10:10:00',
+		'related_incident_state' => 'suppressed',
+		'detected_at' => '2026-07-13 09:59:00',
+		'created_at' => '2026-07-13 09:59:00',
+		'updated_at' => '2026-07-13 09:59:00',
+	]);
+	$repo->saveRule([
+		'id' => $secondReconcileRuleId,
+		'name' => 'Suppression Reconcile Other Rule',
+		'enabled' => 1,
+		'email_enabled' => 0,
+		'alert_call_enabled' => 0,
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 1,
+		'alert_call_recording_id' => null,
+		'mode' => 'repeat',
+		'threshold_count' => 2,
+		'observation_window_minutes' => 60,
+		'caller_mode' => 'any',
+		'exclude_withheld' => 0,
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => null,
+		'suppression_minutes_override' => 120,
+		'schedules' => [],
+		'callers' => [],
+		'dids' => [],
+	], '2026-07-13 10:00:00');
+	$otherSubjectState = $repo->loadSubjectState($secondReconcileRuleId, $otherSubject);
+	assert_true(is_array($otherSubjectState), 'other-rule subject state should remain available during reconciliation');
+	assert_same('2026-07-13 11:58:00', (string)$otherSubjectState['suppression_expires_at'], 'rule-save reconciliation should apply positive override changes to the edited rule only');
+
+	$db->prepare('DELETE FROM repeatcaller_incident_suppression_history WHERE rule_id IN (?, ?)')->execute([$reconcileRuleId, $secondReconcileRuleId]);
+	$db->prepare('DELETE FROM repeatcaller_incidents WHERE rule_id IN (?, ?)')->execute([$reconcileRuleId, $secondReconcileRuleId]);
+	$db->prepare('DELETE FROM repeatcaller_rule_subject_state WHERE rule_id IN (?, ?)')->execute([$reconcileRuleId, $secondReconcileRuleId]);
+	$db->prepare('DELETE FROM repeatcaller_rules WHERE id IN (?, ?)')->execute([$reconcileRuleId, $secondReconcileRuleId]);
+
 	$repo->markConditionCleared($ruleId, '+441234567890', '2026-07-13 12:10:00');
 
 	$db->prepare('INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute(['enabled', '1', '2026-07-13 12:10:00']);
@@ -514,25 +1016,25 @@ try {
 	$repo->updateIncidentWithCall($activeProbeIncidentId, '2026-07-13 12:12:00', 2);
 	$tokensAfterActiveUpdate = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterActiveUpdate['activeIncidents'] !== $tokensWithActiveProbe['activeIncidents'], 'active incident updates should change only activeIncidents token');
-	assert_same($tokensWithActiveProbe['claimedIncidents'], $tokensAfterActiveUpdate['claimedIncidents'], 'active incident updates should not change claimedIncidents token');
+	assert_same($tokensWithActiveProbe['acceptedIncidents'], $tokensAfterActiveUpdate['acceptedIncidents'], 'active incident updates should not change acceptedIncidents token');
 	assert_same($tokensWithActiveProbe['alertHistory'], $tokensAfterActiveUpdate['alertHistory'], 'active incident updates should not change alertHistory token');
 	assert_same($tokensWithActiveProbe['engineStatus'], $tokensAfterActiveUpdate['engineStatus'], 'active incident updates should not change engineStatus token');
 
-	assert_true($repo->claimActiveIncident($activeProbeIncidentId, 'admin', '2026-07-13 12:13:00', 'gui'), 'claiming the active probe incident should succeed');
-	$tokensAfterClaim = $repo->loadUiChangeTokens();
-	assert_true($tokensAfterClaim['activeIncidents'] !== $tokensAfterActiveUpdate['activeIncidents'], 'claiming should change activeIncidents token');
-	assert_true($tokensAfterClaim['claimedIncidents'] !== $tokensAfterActiveUpdate['claimedIncidents'], 'claiming should change claimedIncidents token');
-	assert_same($tokensAfterActiveUpdate['alertHistory'], $tokensAfterClaim['alertHistory'], 'claiming should not change alertHistory token');
-	assert_same($tokensAfterActiveUpdate['engineStatus'], $tokensAfterClaim['engineStatus'], 'claiming should not change engineStatus token');
+	assert_true($repo->acceptActiveIncident($activeProbeIncidentId, 'admin', '2026-07-13 12:13:00', 'gui'), 'accepting the active probe incident should succeed');
+	$tokensAfterAccept = $repo->loadUiChangeTokens();
+	assert_true($tokensAfterAccept['activeIncidents'] !== $tokensAfterActiveUpdate['activeIncidents'], 'accepting should change activeIncidents token');
+	assert_true($tokensAfterAccept['acceptedIncidents'] !== $tokensAfterActiveUpdate['acceptedIncidents'], 'accepting should change acceptedIncidents token');
+	assert_same($tokensAfterActiveUpdate['alertHistory'], $tokensAfterAccept['alertHistory'], 'accepting should not change alertHistory token');
+	assert_same($tokensAfterActiveUpdate['engineStatus'], $tokensAfterAccept['engineStatus'], 'accepting should not change engineStatus token');
 
-	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'gui', 'initial', 0, null, 'recorded', 'never', 'repo-token-1', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
 	$historyWithIncidentMode = $repo->loadIncidentAlertHistory(20);
 	assert_same('repeat', (string)$historyWithIncidentMode[0]['incident_mode'], 'alert history should include originating incident detection mode when incident exists');
 	assert_same(2, (int)$historyWithIncidentMode[0]['incident_threshold_count'], 'alert history should include the incident snapshot threshold count');
 	assert_same(60, (int)$historyWithIncidentMode[0]['incident_observation_window_minutes'], 'alert history should include the incident snapshot observation window');
 
-	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([999999, $ruleId, 'orphan-subject', 'orphan-subject', 'gui', 'initial', 0, null, 'recorded', 'hourly', 'repo-token-orphan', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
 	$historyWithOrphan = $repo->loadIncidentAlertHistory(20);
 	$orphanRows = array_values(array_filter($historyWithOrphan, static function (array $row): bool {
@@ -541,26 +1043,26 @@ try {
 	assert_same(1, count($orphanRows), 'orphan alert-history row should be queryable');
 	assert_true($orphanRows[0]['incident_mode'] === null, 'alert history should return null incident mode when originating incident row is missing');
 	$tokensAfterAlertInsert = $repo->loadUiChangeTokens();
-	assert_true($tokensAfterAlertInsert['alertHistory'] !== $tokensAfterClaim['alertHistory'], 'alert-history inserts should change alertHistory token');
-	assert_same($tokensAfterClaim['activeIncidents'], $tokensAfterAlertInsert['activeIncidents'], 'alert-history inserts should not change activeIncidents token');
-	assert_same($tokensAfterClaim['claimedIncidents'], $tokensAfterAlertInsert['claimedIncidents'], 'alert-history inserts should not change claimedIncidents token');
-	assert_same($tokensAfterClaim['engineStatus'], $tokensAfterAlertInsert['engineStatus'], 'alert-history inserts should not change engineStatus token');
+	assert_true($tokensAfterAlertInsert['alertHistory'] !== $tokensAfterAccept['alertHistory'], 'alert-history inserts should change alertHistory token');
+	assert_same($tokensAfterAccept['activeIncidents'], $tokensAfterAlertInsert['activeIncidents'], 'alert-history inserts should not change activeIncidents token');
+	assert_same($tokensAfterAccept['acceptedIncidents'], $tokensAfterAlertInsert['acceptedIncidents'], 'alert-history inserts should not change acceptedIncidents token');
+	assert_same($tokensAfterAccept['engineStatus'], $tokensAfterAlertInsert['engineStatus'], 'alert-history inserts should not change engineStatus token');
 
 	$db->prepare('UPDATE repeatcaller_settings SET setting_value = ?, updated_at = ? WHERE setting_key = ?')->execute(['2026-07-13 12:20:00', '2026-07-13 12:20:00', 'engine_last_success_at']);
 	$tokensAfterEngineUpdate = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterEngineUpdate['engineStatus'] !== $tokensAfterAlertInsert['engineStatus'], 'engine last-run updates should change only engineStatus token');
 	assert_same($tokensAfterAlertInsert['activeIncidents'], $tokensAfterEngineUpdate['activeIncidents'], 'engine-only updates should not change activeIncidents token');
-	assert_same($tokensAfterAlertInsert['claimedIncidents'], $tokensAfterEngineUpdate['claimedIncidents'], 'engine-only updates should not change claimedIncidents token');
+	assert_same($tokensAfterAlertInsert['acceptedIncidents'], $tokensAfterEngineUpdate['acceptedIncidents'], 'engine-only updates should not change acceptedIncidents token');
 	assert_same($tokensAfterAlertInsert['alertHistory'], $tokensAfterEngineUpdate['alertHistory'], 'engine-only updates should not change alertHistory token');
 
-	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'gui', 'reminder', 1, null, 'recorded', 'never', 'repo-token-2', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
 	$tokensBeforeDelete = $repo->loadUiChangeTokens();
 	$db->exec("DELETE FROM repeatcaller_incident_alert_history WHERE dedupe_key = 'repo-token-1'");
 	$tokensAfterDelete = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterDelete['alertHistory'] !== $tokensBeforeDelete['alertHistory'], 'alert-history deletion must change alertHistory token even when max timestamp is unchanged');
 	assert_same($tokensBeforeDelete['activeIncidents'], $tokensAfterDelete['activeIncidents'], 'alert-history deletion should not change activeIncidents token');
-	assert_same($tokensBeforeDelete['claimedIncidents'], $tokensAfterDelete['claimedIncidents'], 'alert-history deletion should not change claimedIncidents token');
+	assert_same($tokensBeforeDelete['acceptedIncidents'], $tokensAfterDelete['acceptedIncidents'], 'alert-history deletion should not change acceptedIncidents token');
 	assert_same($tokensBeforeDelete['engineStatus'], $tokensAfterDelete['engineStatus'], 'alert-history deletion should not change engineStatus token');
 
 	$clearCount = $repo->clearIncidentAlertHistory();
@@ -568,7 +1070,7 @@ try {
 	$tokensAfterClear = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterClear['alertHistory'] !== $tokensAfterDelete['alertHistory'], 'clearIncidentAlertHistory should change alertHistory token');
 	assert_same($tokensAfterDelete['activeIncidents'], $tokensAfterClear['activeIncidents'], 'clearIncidentAlertHistory should not change activeIncidents token');
-	assert_same($tokensAfterDelete['claimedIncidents'], $tokensAfterClear['claimedIncidents'], 'clearIncidentAlertHistory should not change claimedIncidents token');
+	assert_same($tokensAfterDelete['acceptedIncidents'], $tokensAfterClear['acceptedIncidents'], 'clearIncidentAlertHistory should not change acceptedIncidents token');
 	assert_same($tokensAfterDelete['engineStatus'], $tokensAfterClear['engineStatus'], 'clearIncidentAlertHistory should not change engineStatus token');
 
 	assert_true($repo->reserveSuppressedIncidentHistory([
@@ -590,7 +1092,7 @@ try {
 		'suppression_minutes' => 30,
 		'suppression_started_at' => '2026-07-13 12:20:00',
 		'suppression_expires_at' => '2026-07-13 12:50:00',
-		'related_incident_state' => 'claimed',
+		'related_incident_state' => 'accepted',
 		'detected_at' => '2026-07-13 12:20:00',
 		'created_at' => '2026-07-13 12:20:00',
 		'updated_at' => '2026-07-13 12:20:00',
@@ -614,7 +1116,7 @@ try {
 		'suppression_minutes' => 30,
 		'suppression_started_at' => '2026-07-13 12:20:00',
 		'suppression_expires_at' => '2026-07-13 12:50:00',
-		'related_incident_state' => 'claimed',
+		'related_incident_state' => 'accepted',
 		'detected_at' => '2026-07-13 12:20:00',
 		'created_at' => '2026-07-13 12:20:00',
 		'updated_at' => '2026-07-13 12:20:00',
@@ -631,13 +1133,13 @@ try {
 	$tokensAfterSuppressionClear = $repo->loadUiChangeTokens();
 	assert_true($tokensAfterSuppressionClear['suppressedIncidents'] !== $tokensAfterSuppressionInsert['suppressedIncidents'], 'suppression history clear should change suppressedIncidents token');
 	assert_same($tokensAfterClear['activeIncidents'], $tokensAfterSuppressionInsert['activeIncidents'], 'suppression history inserts should not change activeIncidents token');
-	assert_same($tokensAfterClear['claimedIncidents'], $tokensAfterSuppressionInsert['claimedIncidents'], 'suppression history inserts should not change claimedIncidents token');
+	assert_same($tokensAfterClear['acceptedIncidents'], $tokensAfterSuppressionInsert['acceptedIncidents'], 'suppression history inserts should not change acceptedIncidents token');
 	assert_same($tokensAfterClear['alertHistory'], $tokensAfterSuppressionInsert['alertHistory'], 'suppression history inserts should not change alertHistory token');
 	assert_same($tokensAfterClear['engineStatus'], $tokensAfterSuppressionInsert['engineStatus'], 'suppression history inserts should not change engineStatus token');
 	assert_same(1, $repo->pruneSuppressedIncidentHistory('2026-07-13 12:40:00'), 'suppression history pruning should delete stale rows');
 	assert_same(0, count($repo->loadSuppressedIncidentHistory()), 'suppression history pruning should remove old rows');
 
-	$alertHistoryInsert = $db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+	$alertHistoryInsert = $db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 	$alertHistoryInsert->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'alert_call', 'initial', 0, '100', 'sent', 'never', 'repo-alert-call-1', '2026-07-13 12:20:00', '2026-07-13 12:20:00']);
 	$dialResult = $repo->recordAlertCallDialDisposition((int)$db->lastInsertId(), $secondIncidentId, '100', 'BUSY', '17', '2026-07-13 12:20:10');
 	assert_true(!empty($dialResult['status']), 'recordAlertCallDialDisposition should update alert_call rows');
@@ -651,8 +1153,8 @@ try {
 	$eligibleWithDestinationKeepFlags = $repo->eligibleAlertCallDestinationsForStage($secondIncidentId, [
 		['destination' => '100', 'keep_trying' => 0],
 		['destination' => '102', 'keep_trying' => 1],
-	], true, 'reminder', 1);
-	assert_same(['102'], $eligibleWithDestinationKeepFlags, 'destination-specific keep-trying flags should control future-stage recipient eligibility');
+	], true, 'initial', 1);
+	assert_same(['102'], $eligibleWithDestinationKeepFlags, 'destination-specific keep-trying flags should block same-cycle retry of a destination with keep-trying disabled');
 
 	$followupIncidentId = $repo->createIncident([
 		'rule_id' => $ruleId,
@@ -677,9 +1179,9 @@ try {
 	$deliverable = $repo->loadDeliverableCallAlertByHistoryId($pendingHistoryId, '2026-07-13 12:21:00');
 	assert_true(is_array($deliverable), 'pending alert_call row should be loadable as a deliverable single-row follow-up target');
 	assert_same('102', (string)$deliverable['recipient'], 'single-row deliverable lookup should return the reserved recipient');
-	$repo->claimActiveIncident($followupIncidentId, 'qa', '2026-07-13 12:21:10', 'gui');
-	$deliverableAfterClaim = $repo->loadDeliverableCallAlertByHistoryId($pendingHistoryId, '2026-07-13 12:21:11');
-	assert_true($deliverableAfterClaim === null, 'single-row deliverable lookup should stop once incident is no longer active');
+	$repo->acceptActiveIncident($followupIncidentId, 'qa', '2026-07-13 12:21:10', 'gui');
+	$deliverableAfterAccept = $repo->loadDeliverableCallAlertByHistoryId($pendingHistoryId, '2026-07-13 12:21:11');
+	assert_true($deliverableAfterAccept === null, 'single-row deliverable lookup should stop once incident is no longer active');
 	unset($repo, $db);
 
 	$dbReloaded = new PDO('sqlite:' . $dbPath);

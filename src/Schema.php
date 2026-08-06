@@ -50,6 +50,7 @@ final class Schema {
 	 */
 	public static function install(PDO $pdo): void {
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$isFreshInstall = !self::tableExists($pdo, 'repeatcaller_settings');
 
 		foreach (self::createTableStatements() as $statement) {
 			$pdo->exec($statement);
@@ -68,6 +69,9 @@ final class Schema {
 		}
 
 		self::seedDefaultSettings($pdo);
+		if ($isFreshInstall) {
+			self::seedFreshInstallBoundary($pdo);
+		}
 		self::applyGuardedMigrations($pdo);
 	}
 
@@ -102,7 +106,18 @@ final class Schema {
 		}
 	}
 
+	private static function seedFreshInstallBoundary(PDO $pdo): void {
+		$stmt = $pdo->prepare(
+			"INSERT IGNORE INTO repeatcaller_settings
+				(setting_key, setting_value, updated_at)
+			 VALUES
+				('initial_processing_boundary_at', NOW(), NOW())"
+		);
+		$stmt->execute();
+	}
+
 	private static function applyGuardedMigrations(PDO $pdo): void {
+		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'enabled_at', 'DATETIME NULL');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'email_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'email_recipients', 'TEXT NULL');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_enabled', 'TINYINT(1) NOT NULL DEFAULT 0');
@@ -110,6 +125,7 @@ final class Schema {
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_strategy', 'VARCHAR(20) NOT NULL DEFAULT "ringall"');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_keep_trying', 'TINYINT(1) NOT NULL DEFAULT 1');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_recording_id', 'INT UNSIGNED NULL');
+		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_handle_callerid_upstream', 'TINYINT(1) NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'alert_call_callerid', 'VARCHAR(255) NULL');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'is_deleted', 'TINYINT(1) NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_rules', 'deleted_at', 'DATETIME NULL');
@@ -167,6 +183,7 @@ final class Schema {
 				id INT UNSIGNED NOT NULL AUTO_INCREMENT,
 				name VARCHAR(255) NOT NULL,
 				enabled TINYINT(1) NOT NULL DEFAULT 1,
+				enabled_at DATETIME NULL,
 				email_enabled TINYINT(1) NOT NULL DEFAULT 0,
 				email_recipients TEXT NULL,
 				alert_call_enabled TINYINT(1) NOT NULL DEFAULT 0,
@@ -174,6 +191,7 @@ final class Schema {
 				alert_call_strategy VARCHAR(20) NOT NULL DEFAULT 'ringall',
 				alert_call_keep_trying TINYINT(1) NOT NULL DEFAULT 1,
 				alert_call_recording_id INT UNSIGNED NULL,
+				alert_call_handle_callerid_upstream TINYINT(1) NOT NULL DEFAULT 0,
 				alert_call_callerid VARCHAR(255) NULL,
 				is_deleted TINYINT(1) NOT NULL DEFAULT 0,
 				deleted_at DATETIME NULL,
@@ -183,7 +201,7 @@ final class Schema {
 				caller_mode VARCHAR(20) NOT NULL,
 				exclude_withheld TINYINT(1) NOT NULL DEFAULT 0,
 				did_scope_mode VARCHAR(20) NOT NULL,
-				repeat_mode_override VARCHAR(20) NULL,
+				alert_reminder_mode_override VARCHAR(20) NULL,
 				suppression_minutes_override INT UNSIGNED NULL,
 				created_at DATETIME NULL,
 				updated_at DATETIME NULL,
@@ -294,9 +312,9 @@ final class Schema {
 				last_matched_at DATETIME NOT NULL,
 				matched_call_count INT UNSIGNED NOT NULL DEFAULT 0,
 				state VARCHAR(20) NOT NULL,
-				claimed_by VARCHAR(255) NULL,
-				claimed_at DATETIME NULL,
-				claim_source VARCHAR(20) NULL,
+				accepted_by VARCHAR(255) NULL,
+				accepted_at DATETIME NULL,
+				accept_source VARCHAR(20) NULL,
 				suppression_expires_at DATETIME NULL,
 				cleared_at DATETIME NULL,
 				created_at DATETIME NULL,
@@ -313,7 +331,7 @@ final class Schema {
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 				incident_id BIGINT UNSIGNED NOT NULL,
 				rule_id INT UNSIGNED NOT NULL,
-				repeat_mode VARCHAR(20) NOT NULL,
+				alert_reminder_mode VARCHAR(20) NOT NULL,
 				initial_sent_at DATETIME NULL,
 				last_alert_at DATETIME NULL,
 				reminders_sent INT UNSIGNED NOT NULL DEFAULT 0,
@@ -341,7 +359,7 @@ final class Schema {
 				successful_at DATETIME NULL,
 				next_retry_at DATETIME NULL,
 				failure_detail VARCHAR(1024) NULL,
-				repeat_mode VARCHAR(20) NOT NULL,
+				alert_reminder_mode VARCHAR(20) NOT NULL,
 				dedupe_key VARCHAR(191) NOT NULL,
 				created_at DATETIME NOT NULL,
 				updated_at DATETIME NOT NULL,

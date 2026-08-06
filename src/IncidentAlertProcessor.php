@@ -10,7 +10,6 @@ final class IncidentAlertProcessor {
 	private const REPEAT_MODE_HOURLY = 'hourly';
 	private const REPEAT_MODE_DAILY = 'daily';
 	private const REPEAT_MODE_ESCALATING = 'escalating';
-	private const REPEAT_MODE_FIBONACCI = 'fibonacci';
 	private const REPEAT_ESCALATING_BASE_SECONDS = 300;
 	private const REPEAT_ESCALATING_CEILING_SECONDS = 86400;
 
@@ -106,6 +105,11 @@ final class IncidentAlertProcessor {
 				continue;
 			}
 
+			if (!$this->repository->isIncidentActive((int)$callAlert['incident_id'])) {
+				$this->repository->cancelAlertCallAttempt((int)$callAlert['id'], $now);
+				continue;
+			}
+
 			$result = $this->sendAlertCall($callAlert);
 
 			if (!empty($result['status'])) {
@@ -117,6 +121,19 @@ final class IncidentAlertProcessor {
 			$error = trim((string)($result['message'] ?? 'Unknown alert call error'));
 			$this->repository->markCallAlertFailed((int)$callAlert['id'], $error, $now);
 			$summary['alert_call_failed']++;
+			$nextHistoryId = $this->repository->reserveNextOrderedAlertCallAttempt((int)$callAlert['id'], $now);
+			$followUp = self::continueImmediateOrderedStage(
+				$this->repository,
+				function (array $nextCall): array {
+					return $this->sendAlertCall($nextCall);
+				},
+				$nextHistoryId !== null ? (int)$nextHistoryId : 0,
+				$now
+			);
+			$summary['alert_call_failed'] += (int)($followUp['failed_attempts'] ?? 0);
+			if (!empty($followUp['sent'])) {
+				$summary['alert_call_sent']++;
+			}
 		}
 
 		$alertCutoff = $this->pruneCutoff((string)($settings['alert_history_prune_policy'] ?? 'never'), $now);
@@ -148,8 +165,8 @@ final class IncidentAlertProcessor {
 		$ruleId = (int)$incident['rule_id'];
 		$incidentState = strtolower(trim((string)($incident['state'] ?? 'active')));
 		$recipients = $this->normaliseRecipients((string)($incident['email_recipients'] ?? ''));
-		$repeatMode = $this->resolveRepeatMode(
-			isset($incident['repeat_mode_override']) ? (string)$incident['repeat_mode_override'] : null
+		$repeatMode = $this->resolveAlertReminderMode(
+			isset($incident['alert_reminder_mode_override']) ? (string)$incident['alert_reminder_mode_override'] : null
 		);
 		$firstDueAt = (string)$incident['first_matched_at'];
 		$lastMatchedAt = trim((string)($incident['last_matched_at'] ?? ''));
@@ -157,17 +174,18 @@ final class IncidentAlertProcessor {
 		$initialSentAt = isset($state['initial_sent_at']) ? (string)$state['initial_sent_at'] : '';
 		$lastAlertAt = isset($state['last_alert_at']) ? trim((string)$state['last_alert_at']) : '';
 
-		if ($incidentState === 'claimed') {
+		if ($incidentState === 'accepted') {
 			if ($lastMatchedAt === '' || $lastAlertAt === '' || !$this->isAfter($lastMatchedAt, $lastAlertAt)) {
 				return;
 			}
 
 			$remindersSent = max(0, (int)($state['reminders_sent'] ?? 0));
 			$reminderN = $remindersSent + 1;
-			if (!$this->reserveStageEvents($incident, $repeatMode, 'reminder', $reminderN, $recipients, $summary, $now)) {
+			$reminderEventType = 'reminder_' . $reminderN;
+			if (!$this->reserveStageEvents($incident, $repeatMode, $reminderEventType, 0, $recipients, $summary, $now)) {
 				return;
 			}
-			$nextDue = $this->nextRepeatDueAt($now, $repeatMode, $reminderN);
+			$nextDue = $this->nextAlertReminderDueAt($now, $repeatMode, $reminderN);
 			$this->repository->markReminderAlertSent($incidentId, $remindersSent, $reminderN, $now, $nextDue, $now);
 			$summary['reminder_events']++;
 			return;
@@ -182,7 +200,7 @@ final class IncidentAlertProcessor {
 			if (!$this->reserveStageEvents($incident, $repeatMode, 'initial', 0, $recipients, $summary, $now)) {
 				return;
 			}
-			$nextDue = $this->nextRepeatDueAt($now, $repeatMode, 0);
+			$nextDue = $this->nextAlertReminderDueAt($now, $repeatMode, 0);
 			$this->repository->markInitialAlertSent($incidentId, $now, $nextDue, $now);
 			$summary['initial_events']++;
 			return;
@@ -197,12 +215,18 @@ final class IncidentAlertProcessor {
 			return;
 		}
 
-		$remindersSent = max(0, (int)($state['reminders_sent'] ?? 0));
-		$reminderN = $remindersSent + 1;
-		if (!$this->reserveStageEvents($incident, $repeatMode, 'reminder', $reminderN, $recipients, $summary, $now)) {
+		// Guard: don't start a new reminder cycle while an alert-call stage is still active.
+		if ($this->repository->hasActiveCycleAlertCalls($incidentId)) {
 			return;
 		}
-		$nextDue = $this->nextRepeatDueAt($now, $repeatMode, $reminderN);
+
+		$remindersSent = max(0, (int)($state['reminders_sent'] ?? 0));
+		$reminderN = $remindersSent + 1;
+		$reminderEventType = 'reminder_' . $reminderN;
+		if (!$this->reserveStageEvents($incident, $repeatMode, $reminderEventType, 0, $recipients, $summary, $now)) {
+			return;
+		}
+		$nextDue = $this->nextAlertReminderDueAt($now, $repeatMode, $reminderN);
 		$this->repository->markReminderAlertSent($incidentId, $remindersSent, $reminderN, $now, $nextDue, $now);
 		$summary['reminder_events']++;
 	}
@@ -237,8 +261,9 @@ final class IncidentAlertProcessor {
 		}
 
 		$ruleCallEnabled = !empty($incident['alert_call_enabled']) && (string)$incident['alert_call_enabled'] !== '0';
+		$incidentState = strtolower(trim((string)($incident['state'] ?? 'active')));
 		$callDestinationEntries = $this->normaliseAlertCallDestinationEntries((string)($incident['alert_call_destinations'] ?? ''));
-		if (!$ruleCallEnabled || !$callDestinationEntries) {
+		if ($incidentState === 'accepted' || !$ruleCallEnabled || !$callDestinationEntries) {
 			return $reservedAny;
 		}
 
@@ -281,7 +306,7 @@ final class IncidentAlertProcessor {
 			'successful_at' => $successfulAt,
 			'next_retry_at' => $nextRetryAt,
 			'failure_detail' => $failureDetail,
-			'repeat_mode' => $repeatMode,
+			'alert_reminder_mode' => $repeatMode,
 			'dedupe_key' => $this->dedupeKey($incidentId, $eventType, $stageN, $actionType, $recipient),
 			'created_at' => $now,
 			'updated_at' => $now,
@@ -315,14 +340,69 @@ final class IncidentAlertProcessor {
 			'summary_caller_value' => (string)$summaryContext['caller'],
 			'summary_did_value' => (string)$summaryContext['did'],
 		];
+		$callerId = !empty($callAlert['alert_call_handle_callerid_upstream']) ? '' : (string)($callAlert['alert_call_callerid'] ?? '');
 
 		return call_user_func(
 			$this->callAlertSender,
 			(string)$callAlert['recipient'],
 			$recordingId,
-			(string)($callAlert['alert_call_callerid'] ?? ''),
+			$callerId,
 			$context
 		);
+	}
+
+	public static function continueImmediateOrderedStage(RepeatCallerRepository $repository, callable $sendAttempt, int $nextHistoryId, string $now, ?int $maxAttempts = null): array {
+		if ($nextHistoryId <= 0) {
+			return ['sent' => false, 'failed_attempts' => 0, 'attempted' => 0, 'stopped' => 'no_next'];
+		}
+
+		if ($maxAttempts === null) {
+			$maxAttempts = $repository->orderedAlertCallStageRecipientCount($nextHistoryId);
+		}
+		$maxAttempts = max(1, (int)$maxAttempts);
+
+		$attempted = 0;
+		$failedAttempts = 0;
+		$currentHistoryId = $nextHistoryId;
+		$visited = [];
+
+		while ($currentHistoryId > 0 && $attempted < $maxAttempts && !isset($visited[$currentHistoryId])) {
+			$visited[$currentHistoryId] = true;
+			$callAlert = $repository->loadDeliverableCallAlertByHistoryId($currentHistoryId, $now);
+			if (!is_array($callAlert)) {
+				return ['sent' => false, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'not_deliverable', 'history_id' => $currentHistoryId];
+			}
+
+			if (!$repository->markCallAlertSending($currentHistoryId, $now)) {
+				return ['sent' => false, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'not_sendable', 'history_id' => $currentHistoryId];
+			}
+
+			if (!$repository->isIncidentActive((int)$callAlert['incident_id'])) {
+				$repository->cancelAlertCallAttempt($currentHistoryId, $now);
+				return ['sent' => false, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'accepted_elsewhere', 'history_id' => $currentHistoryId];
+			}
+
+			$result = $sendAttempt($callAlert);
+			$attempted++;
+
+			if (!empty($result['status'])) {
+				$repository->markCallAlertSent($currentHistoryId, $now);
+				return ['sent' => true, 'failed_attempts' => $failedAttempts, 'attempted' => $attempted, 'stopped' => 'queued', 'history_id' => $currentHistoryId];
+			}
+
+			$error = trim((string)($result['message'] ?? 'Unknown alert call error'));
+			$repository->markCallAlertFailed($currentHistoryId, $error, $now);
+			$failedAttempts++;
+			$currentHistoryId = (int)($repository->reserveNextOrderedAlertCallAttempt($currentHistoryId, $now) ?? 0);
+		}
+
+		return [
+			'sent' => false,
+			'failed_attempts' => $failedAttempts,
+			'attempted' => $attempted,
+			'stopped' => $currentHistoryId > 0 ? 'bounded' : 'completed',
+			'history_id' => $currentHistoryId,
+		];
 	}
 
 	private function buildAlertCallSummaryContext(array $callAlert): array {
@@ -612,8 +692,9 @@ final class IncidentAlertProcessor {
 	}
 
 	private function buildEmailMessage(array $row, string $now): string {
+		$systemIdentifier = $this->getSystemIdentifier();
 		$lines = [];
-		$lines[] = 'Repeat Caller incident alert';
+		$lines[] = 'Repeat Caller incident alert from ' . $systemIdentifier;
 		$lines[] = '';
 		$lines[] = 'Rule: ' . (string)($row['rule_name'] ?? '-');
 		$lines[] = 'Subject: ' . (string)($row['subject_label'] ?? $row['subject_key'] ?? '-');
@@ -623,14 +704,13 @@ final class IncidentAlertProcessor {
 		], '-');
 		$lines[] = 'Stage: ' . (int)($row['stage_n'] ?? 0);
 		$lines[] = 'Mode: ' . $this->formatIncidentModeLabel((string)($row['mode'] ?? ''));
-		$lines[] = 'Rule Repeat Mode: ' . $this->formatRuleRepeatModeLabel(isset($row['rule_repeat_mode_override']) ? (string)$row['rule_repeat_mode_override'] : '');
-		$lines[] = 'Effective Repeat Mode: ' . $this->formatRepeatModeLabel((string)($row['repeat_mode'] ?? ''));
+		$lines[] = 'Alert Reminder: ' . $this->formatRepeatModeLabel((string)($row['alert_reminder_mode'] ?? ''));
 		$lines[] = 'Matched Calls: ' . (int)($row['matched_call_count'] ?? 0);
 		$lines[] = 'First Matched: ' . (string)($row['first_matched_at'] ?? '-');
 		$lines[] = 'Last Matched: ' . (string)($row['last_matched_at'] ?? '-');
 		$lines[] = 'Generated At: ' . $now;
 		$lines[] = '';
-		$lines[] = 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.';
+		$lines[] = 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.';
 
 		return implode("\n", $lines);
 	}
@@ -642,13 +722,16 @@ final class IncidentAlertProcessor {
 		], 'Unknown');
 	}
 
-	private function formatRuleRepeatModeLabel(string $repeatModeOverride): string {
-		$raw = trim($repeatModeOverride);
-		if ($raw === '') {
-			return 'Never';
+	private function getSystemIdentifier(): string {
+		try {
+			$value = trim((string)\FreePBX::Config()->get('FREEPBX_SYSTEM_IDENT'));
+			if ($value !== '') {
+				return preg_replace('/\s+/', ' ', $value) ?? $value;
+			}
+		} catch (\Throwable $e) {
 		}
 
-		return $this->formatRepeatModeLabel($raw);
+		return 'unknown system';
 	}
 
 	private function formatRepeatModeLabel(string $mode): string {
@@ -658,7 +741,6 @@ final class IncidentAlertProcessor {
 			'hourly' => 'Hourly',
 			'daily' => 'Daily',
 			'escalating' => 'Escalating',
-			'fibonacci' => 'Escalating',
 		], 'Never');
 	}
 
@@ -675,27 +757,24 @@ final class IncidentAlertProcessor {
 		return ucwords(str_replace(['_', '-'], ' ', $normalized));
 	}
 
-	private function resolveRepeatMode(?string $ruleOverride): string {
+	private function resolveAlertReminderMode(?string $ruleOverride): string {
 		$candidate = trim((string)$ruleOverride);
 		if ($candidate === '') {
 			$candidate = self::REPEAT_MODE_NEVER;
 		}
-		return $this->normaliseRepeatMode($candidate);
+		return $this->normaliseAlertReminderMode($candidate);
 	}
 
-	private function normaliseRepeatMode(string $mode): string {
+	private function normaliseAlertReminderMode(string $mode): string {
 		$mode = strtolower(trim($mode));
-		if ($mode === self::REPEAT_MODE_FIBONACCI) {
-			return self::REPEAT_MODE_ESCALATING;
-		}
 		if (in_array($mode, [self::REPEAT_MODE_NEVER, self::REPEAT_MODE_FIVE_MINUTES, self::REPEAT_MODE_HOURLY, self::REPEAT_MODE_DAILY, self::REPEAT_MODE_ESCALATING], true)) {
 			return $mode;
 		}
 		return self::REPEAT_MODE_NEVER;
 	}
 
-	private function nextRepeatDueAt(string $lastAlertAt, string $repeatMode, int $remindersSent): ?string {
-		$interval = $this->repeatIntervalSeconds($repeatMode, $remindersSent);
+	private function nextAlertReminderDueAt(string $lastAlertAt, string $repeatMode, int $remindersSent): ?string {
+		$interval = $this->alertReminderIntervalSeconds($repeatMode, $remindersSent);
 		if ($interval === null) {
 			return null;
 		}
@@ -707,8 +786,8 @@ final class IncidentAlertProcessor {
 		return date('Y-m-d H:i:s', $timestamp + $interval);
 	}
 
-	private function repeatIntervalSeconds(string $repeatMode, int $remindersSent): ?int {
-		switch ($this->normaliseRepeatMode($repeatMode)) {
+	private function alertReminderIntervalSeconds(string $repeatMode, int $remindersSent): ?int {
+		switch ($this->normaliseAlertReminderMode($repeatMode)) {
 			case self::REPEAT_MODE_FIVE_MINUTES:
 				return 300;
 			case self::REPEAT_MODE_HOURLY:

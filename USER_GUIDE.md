@@ -41,13 +41,15 @@ Main sections:
 - Alert History
 - Run Now
 
-The top Engine Status section contains the operational controls: Enable Monitoring, Disable Monitoring, Snooze, Resume, and Run Now.
+The top Engine Status section contains the operational controls: Enable All Rules, Disable All Rules, Snooze, Resume All Rules, and Run Now. Enable All Rules turns on the global engine and enables every non-deleted rule, while Disable All Rules turns off the global engine and disables every non-deleted rule.
+
+The Default Country Code field in Global Settings is required before Repeat Caller can enable any rule. This guard applies to enabling an individual rule, creating a rule with Start as Enabled, and using Enable All Rules. Disabled rules may still be created, edited, and saved, but enable attempts are rejected until the field contains a genuine international country calling code of one to three digits, with an optional leading +.
 
 ## First-Time Setup
 
 1. Open Global Settings.
-2. Enable Repeat Caller monitoring.
-3. Set the default country code if needed.
+2. Set Global Settings > Default Country Code to a genuine international country calling code such as 44 or +44.
+3. Select Enable All Rules globally.
 4. Configure incident, alert, and suppression history retention policies.
 5. Configure rule conditions, alert actions, and schedules as required.
 6. Save Global Settings.
@@ -64,7 +66,7 @@ Create an incident when the same caller rings the same inbound route 3 times wit
 Suggested values:
 
 - Rule Name: Repeated Caller
-- Enabled: Yes
+- Start as: Enabled
 - Mode: Repeat
 - Threshold: 3
 - Window: 10
@@ -80,32 +82,53 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 ## Rule Settings Explained
 
 - Rule Name: identifies the rule in tables and alerts.
-- Enabled: turns the rule on or off.
+- Start as: used only when creating a new rule to choose whether the rule
+	starts enabled or disabled. When editing an existing rule, the current
+	state is shown but can only be changed from the main table. Creating a new
+	rule with Start as Enabled still requires Global Settings > Default Country
+	Code to contain a valid international country calling code first.
 - Mode: Repeat or Invert detection logic. Use Repeat for repeated contact attempts; use Invert when you expect activity and need to detect when it does not occur.
 - Threshold: number of matching calls required for rule evaluation.
 - Window: observation period in minutes.
 - Suppression: controls incident lifecycle hold period before expiry/re-arm logic.
-	Leave blank to use the default 24hrs (1440 minutes). Enter 0 to disable
+	Leave blank to use the default 24 hours (1440 minutes). Enter 0 to disable
 	automatic suppression for that rule.
-- Repeat Alerts: reminder timing for active incidents.
+- Alert Reminders: reminder timing for active incidents.
 - Caller Scope: Any caller, withheld-only, or specific callers.
 - Exclude withheld callers: excludes withheld identities from this rule.
-- Caller Includes: callers to include when using specific-caller scope.
-- Caller Excludes: callers to exclude.
-- DID Scope: all inbound routes or selected inbound routes.
-- Inbound Routes: route selector for include/exclude lists.
-- Included Routes: routes monitored when selected-route scope is used.
-- Excluded Routes: routes excluded from this rule.
+- Caller Includes: callers to include when using specific-caller scope. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
+- Caller Excludes: callers to exclude. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
+- DID Scope: All DIDs or Selected DIDs only.
+- Inbound Routes: route selector used for DID include/exclude actions.
+- Included Routes: routes monitored when Selected DIDs only is used.
+- Excluded Routes: routes excluded when All DIDs is used.
 - Schedules: day/time periods when calls count for this rule.
 - GUI: always enabled history action.
 - Alert Call: optional phone-call notifications.
 - Email: optional email notifications.
 - Alert Call Destinations: accepts one or more internal extensions and/or external telephone numbers separated by commas. External numbers should normally be entered in the same national dialling format an administrator would use from a FreePBX extension. The example/placeholder follows the configured Default Country Code.
+- Alert Call destination safeguard: adding an Alert Call destination behaves the same whether you use Add or Enter. It automatically adds the same value to Ignore these callers and shows a one-time warning. Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.
+- Alert Call Caller ID safeguard: when Alert Call is enabled and Caller ID managed elsewhere is off, Repeat Caller may also add the configured Alert Call Caller ID to Ignore these callers as an additional safeguard for external return paths. Administrators can remove the Ignore entry if it is not appropriate.
+
+Alert reminder emails now show one reminder line:
+
+- Alert Reminder: displays the Alert Reminder scheduling actually used for that alert, such as Never, Hourly, Daily, or Escalating.
+
+Alert reminder emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.
 - System Recording: optional recording played before generated message.
-- Alert Call Caller ID: sets the caller ID presented on outbound alert calls. The preferred format is international E.164 with a leading +, for example +447812345678. The example/placeholder follows the configured Default Country Code.
+- Caller ID managed elsewhere: enabled by default for new rules. Repeat Caller will not set the Caller ID for Alert Calls. Caller presentation is managed elsewhere, for example by Outbound Routes, trunks, another module, an SBC, or your network provider. When you tick this option, the Alert Call Caller ID field is cleared immediately, disabled, and its example placeholder disappears.
+- Alert Call Caller ID: sets the caller ID presented on outbound alert calls. The preferred format is international E.164 with a leading +, for example +447812345678. When the field is editable and empty, the example placeholder follows the configured Default Country Code.
+
+If you untick Caller ID managed elsewhere while Alert Call is enabled, Alert Call Caller ID becomes mandatory and the previous unsaved value is restored automatically if one was entered earlier in the session. Saving with Caller ID managed elsewhere still checked persists a blank Caller ID and permanently forgets the prior value.
+
+Internal safeguard note:
+
+- Repeat Caller marks module-originated internal Alert Call legs and excludes those marked internal legs from detection.
+- This marker does not survive an external PSTN leave-and-return path where the call re-enters as a new inbound journey.
+- Carrier rewriting and changed caller presentation may still require administrator judgement.
 
 In the current editor layout, Email Recipients is positioned directly above the
 Save Rule action row.
@@ -124,6 +147,9 @@ In the Rules table, each rule row has three controls:
 
 When Status is active, only the explainer bar is highlighted in light grey.
 The rest of the row is unchanged.
+
+While editing an existing rule, the row actions for that rule are greyed out
+and cannot be used until you save or cancel the edit.
 
 ## Table Row Display
 
@@ -165,10 +191,12 @@ Caller controls:
 
 Route controls:
 
-- All inbound routes
-- Selected inbound routes via Included Routes and Excluded Routes
+- All DIDs with optional Excluded Routes
+- Selected DIDs only via Included Routes
 
-Includes are applied before exclusions. Route scope follows your FreePBX Inbound Routes configuration.
+All DIDs matches every inbound route except routes listed in Excluded Routes.
+Selected DIDs only matches routes listed in Included Routes.
+Route scope follows your FreePBX Inbound Routes configuration.
 
 ## Schedules
 
@@ -177,35 +205,86 @@ Schedules control when calls count for a rule.
 - Any day, 24 hours covers all times.
 - Specific day/time rows limit when matching calls are counted.
 - Calls outside schedule do not count for that rule.
-- Overnight ranges are not supported in 1.0.0 and should be split or avoided.
+- Overnight ranges are not supported in this release and should be split or avoided.
+
+## Threshold Evaluation in Repeat Mode
+
+Repeat mode uses a rolling observation window. The monitor evaluates each
+new call within the most recent N minutes, where N is the configured
+observation window. Each call creates a fresh window evaluation looking back
+N minutes from that call's time.
+
+Example: a 30-minute window rule at 09:11 looks back to 08:41 and sees 3
+matching calls (threshold met). At 09:26, the same caller triggers a fresh
+evaluation: the window looks back to 08:56 and may see more recent calls. At
+09:57, the window looks back to 09:27 and may see fewer calls in that recent
+window.
+
+The threshold latch prevents re-triggering until the rolling call count falls
+below the threshold, the monitor observes that clear state, and new qualifying
+calls occur after the clear is recorded.
 
 ## Suppression
 
 Suppression is an incident-lifecycle control.
 
-Repeat Caller uses a default 24hrs (1440 minutes) suppression period when no
+Repeat Caller uses a default 24 hours (1440 minutes) suppression period when no
 rule override is set.
 
 Rule-level Suppression override replaces that default for the rule.
 
 Rule-level Suppression values behave as follows:
 
-- blank: use the default 24hrs (1440 minutes) suppression period
+- blank: use the default 24 hours (1440 minutes) suppression period
 - numeric value: override the default for the rule
 - 0: disable automatic suppression for that rule
 
-Suppression controls how long Repeat Caller keeps an incident active before it
-may expire or re-arm.
+Suppression determines how long a new qualifying episode for the same rule
+and subject is blocked after the current condition has cleared and the latch
+has re-armed.
+
+Suppression lifecycle timing:
+
+- Suppression starts when an incident is created. The suppression period is
+	calculated from the moment of incident creation and stored immediately on
+	the incident row.
+- Accepting an incident records responsibility and controls further alerts for
+	the existing incident. Acceptance does not start, extend, or reset the
+	suppression period.
+- While the qualifying condition remains true (rolling call count for Repeat,
+	or continuing failed windows for Invert), further matching activity updates
+	the accepted incident and does not create suppression-history rows.
+- The qualifying condition must first clear: the rolling call count must fall
+	below the configured threshold (Repeat), or a window must meet or exceed
+	the threshold (Invert).
+- The monitor must observe that clear state and re-arm the threshold latch.
+- If a new qualifying episode for the same rule and subject occurs after the
+	condition has cleared and the latch has re-armed, but before suppression
+	expires, Repeat Caller blocks that new episode and records it in Suppressed
+	Incidents.
+- The threshold latch is intentional and prevents duplicate suppression rows
+	while one unbroken qualifying condition is still in progress. After clear
+	is observed, new qualifying thresholds can trigger again.
+
+Suppression examples:
+
+- Repeat: a rule triggers at 10:05 with 30-minute suppression. Any new
+	qualifying call sequence between 10:05 and 10:35 (after the rolling count
+	drops and the latch re-arms) is blocked and recorded in Suppressed Incidents.
+- Invert: a rule's first failing window closes at 10:00 with 60-minute
+	suppression. Any new failing window between 10:00 and 11:00 (after a passing
+	window clears the incident and the latch re-arms) is blocked and recorded in
+	Suppressed Incidents.
 
 Comparison:
 
 - Suppression: incident lifecycle timing
-- Repeat Alerts: reminder timing for active incidents
+- Alert Reminders: reminder timing for active incidents
 - Snooze Monitoring: temporary pause for Alert Call and Email delivery
 
-## Repeat Alerts
+## Alert Reminders
 
-Repeat Alerts options:
+Alert Reminders options:
 
 - Never
 - Every 5 Minutes
@@ -217,8 +296,10 @@ These reminders apply to incidents that are already active.
 
 Escalating starts with shorter reminder intervals and gradually increases them up to a daily interval.
 
-Repeat Alerts controls reminder delivery cadence for incidents that are already
-active. It does not change incident retention or prune historical rows.
+Alert Reminders control reminder delivery cadence for incidents that are already
+active. They do not change incident retention or prune historical rows.
+
+One complete Ordered Alert Call progression is one alert cycle. Alert Reminders do not begin while that cycle is still active, pending, or deferred. The reminder interval begins only after the complete cycle finishes without acceptance. Each reminder starts a new complete Ordered sequence from stage 0, so alert cycles never overlap. Ring All follows the same model as a single-stage cycle.
 
 ## Understanding Incidents
 
@@ -232,6 +313,14 @@ Common status meanings:
 - Closed: incident is no longer active.
 
 Further matching calls can continue to update an active incident.
+
+Active Incidents timestamp semantics:
+
+- First Matched: earliest matching call in the tracked window that
+	contributes to that incident.
+- Last Matched: most recent matching call contributing to that incident.
+- Created (in Recent Incidents): incident creation time, which can be later
+	than First Matched when threshold is reached after earlier matching calls.
 
 ## Suppressed Alerts History
 
@@ -285,6 +374,19 @@ needs, and troubleshooting expectations.
 
 Accepting records responsibility. First acceptance wins. Accepted incidents remain visible in history, and later matching calls may continue updating the same incident while its condition remains active.
 
+Acceptance does not start, extend, or reset suppression. Suppression is set
+when the incident is created and scoped to the same rule and subject.
+While the qualifying condition remains active, matching activity continues to
+update the accepted incident and no additional alerts or reminders are sent.
+Once the condition clears and the latch re-arms, any new qualifying episode is
+a separate event: if suppression has not yet expired it is blocked and recorded
+in Suppressed Incidents; if suppression has already expired the new episode
+creates a new incident and follows the normal alert process.
+
+Accepted incidents appear in Suppressed Incidents only when a fresh qualifying
+attempt is blocked during still-active suppression after the monitor has first
+observed a clear in the previous threshold condition.
+
 ## Receiving Email Alerts
 
 Email notifications include practical context such as:
@@ -298,7 +400,7 @@ Email notifications include practical context such as:
 
 Customer-facing notice included in alerts:
 
-This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.
+This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.
 
 A successful handoff to the PBX mailer does not guarantee external delivery.
 
@@ -320,15 +422,21 @@ Operational notes:
 
 - Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.
 - Declining does not close or resolve the incident.
-- Declining excludes that recipient from further Alert Calls for that incident.
-- Keep Trying controls whether unsuccessful destinations remain eligible on later reminders.
-- Ordered advances to the next destination when current attempt ends unaccepted.
-- Ring All contacts all currently eligible destinations.
+- Declining ends the current attempt. It does not accept or close the incident, and later eligibility follows the selected strategy and that destination's Keep Trying setting.
+- Only an explicit ACCEPTED response stops Alert Call progression.
+- Ordered stages add one new destination at a time. Earlier destinations remain eligible in later stages only when their own Keep Trying option is enabled.
+- Each completed Ordered stage pauses for 60 seconds before the next stage, and a multi-destination stage advances only after every attempt in that stage finishes without acceptance.
+- A reminder cannot start until the previous cycle is fully complete. Each new reminder begins a fresh Ordered sequence from stage 0, so cycles do not overlap.
+- Ring All contacts every enabled destination on every cycle. Keep Trying is not applicable to Ring All and is shown unticked and disabled.
+- Ignore Callers affects inbound detection only and does not filter Alert Call destinations.
+- Acceptance cancels pending future attempts and late callbacks cannot restart escalation.
 - No same-recipient rapid retry loop occurs within one reminder point.
 
 ## Snooze Monitoring
 
 Snooze Monitoring is global.
+
+Available Snooze buttons are 5m, 15m, 30m, 1h, 3h, 6h, 12h, and 24h.
 
 While snoozed:
 
@@ -374,6 +482,7 @@ and incident lifecycle data are not deleted.
 
 Use Run Now to trigger the normal monitor process immediately.
 
+- Run Now availability on page load reflects the current monitoring state.
 - It does not replace the scheduled job.
 - Use it after controlled test calls or configuration changes.
 - Review Engine Status and Alert History afterwards.
@@ -457,7 +566,7 @@ Check:
 - Rule Name present
 - valid threshold and window
 - caller includes present for Specific callers
-- route includes present for Selected inbound routes
+- route includes present for Selected DIDs only
 - valid schedule rows
 - no overnight schedule range
 
@@ -465,7 +574,7 @@ Check:
 
 Check:
 
-- Repeat Alerts is not Never
+- Alert Reminders is not Never
 - incident remains active
 - monitoring is not snoozed
 - Alert Call or Email remains enabled for the rule

@@ -70,8 +70,8 @@ $root = dirname(__DIR__);
 
 $moduleXml = simplexml_load_file($root . '/module.xml');
 assert_true($moduleXml !== false, 'module.xml should parse');
-assert_same('1.0.0', (string)$moduleXml->version, 'module.xml version must be 1.0.0 for this release');
-assert_same('1.0.0', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.0');
+assert_same('1.0.1', (string)$moduleXml->version, 'module.xml version must be 1.0.1 for this release');
+assert_same('1.0.1', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.1');
 
 // --- 1-3: AJAX allowlist, dispatcher, and frontend command parity --------
 
@@ -185,11 +185,12 @@ assert_true($viewSource !== false, 'views/main.php should be readable');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-strategy"') !== false, 'rule editor must expose alert_call_strategy selector');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-keep-trying"') === false, 'rule editor should not expose deprecated global alert_call_keep_trying toggle');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-list"') !== false, 'rule editor must expose ordered destination list UI');
+assert_true(strpos($viewSource, 'Selected DIDs only') !== false, 'rule editor DID scope selector should use Selected DIDs only wording');
 
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
-assert_true(strpos($readmeSource, '# Repeat Caller 1.0.0 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.0');
-assert_true(strpos($readmeSource, '**Release date:** 22 July 2026') !== false, 'README should declare the 1.0.0 release date');
+assert_true(strpos($readmeSource, '# Repeat Caller 1.0.1 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.1');
+assert_true(strpos($readmeSource, '**Release date:** 6 August 2026') !== false, 'README should declare the 1.0.1 release date');
 assert_true(strpos($readmeSource, 'Repeat Caller supports two distinct operating modes') !== false, 'README should describe the module in user-facing language');
 assert_true(strpos($readmeSource, 'fwconsole ma installlocal repeatcaller') !== false, 'README must keep installlocal warning text');
 assert_true(strpos($readmeSource, 'git reset --hard FETCH_HEAD') !== false, 'README must keep deterministic update sequence');
@@ -198,6 +199,17 @@ assert_true(strpos($readmeSource, 'USER_GUIDE.md') !== false, 'README should lin
 assert_true(strpos($readmeSource, 'TESTING.md') !== false, 'README should link to TESTING.md');
 assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should include Introduction section');
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
+assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
+assert_true(strpos($readmeSource, '### 1.0.1, patch release, 6 August 2026') !== false, 'README should include the 1.0.1 release history heading');
+assert_true(strpos($readmeSource, 'Rule explanation-row styling is now consistent across enabled, disabled,') !== false && strpos($readmeSource, 'temporary Status, and editing states.') !== false, 'README should record the 1.0.1 explanation-row styling consistency fix');
+assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
+assert_true(strpos($readmeSource, '#### Global controls') !== false && strpos($readmeSource, 'Enable All Rules and Disable All Rules') !== false, 'README release history should document global control wording updates');
+assert_true(strpos($readmeSource, '#### DID scope controls') !== false, 'README release history should include a DID scope controls subsection for 1.0.1');
+assert_true(strpos($readmeSource, 'Allows individual inbound routes to be excluded when All DIDs is selected.') !== false, 'README DID scope release notes should document exclusions in All DIDs mode');
+assert_true(strpos($readmeSource, 'Keeps Selected DIDs only mode limited to explicit route inclusions.') !== false, 'README DID scope release notes should document Selected DIDs include-only behavior');
+assert_true(strpos($readmeSource, 'Clears stale opposite-mode route selections when the DID scope changes.') !== false, 'README DID scope release notes should document stale row cleanup on mode switch');
+assert_true(strpos($readmeSource, '#### Alert Call Caller ID handling') !== false, 'README release history should document the Alert Call Caller ID handling subsection');
+assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is enabled by default for new rules and appears') !== false && strpos($readmeSource, 'directly above Alert Call Caller ID in the rule editor.') !== false, 'README release history should document the current default managed-elsewhere Caller ID handling wording');
 assert_true(strpos($readmeSource, '## Requirements') !== false, 'README should include Requirements section');
 assert_true(strpos($readmeSource, '## Installing') !== false, 'README should include Installing section');
 assert_true(strpos($readmeSource, '## Updating Repeat Caller') !== false, 'README should include Updating Repeat Caller section');
@@ -208,7 +220,7 @@ assert_true(strpos($readmeSource, '## Alerting') !== false, 'README should inclu
 assert_true((bool) preg_match('/Repeat Caller provides incident visibility and two optional notification\s+methods:/', $readmeSource), 'README should use the updated alerts introduction');
 assert_true(strpos($readmeSource, 'GUI incidents, which are always recorded') !== false, 'README should use GUI incidents wording');
 assert_true(strpos($readmeSource, 'Email notifications, which are optional per rule') !== false, 'README should use email notifications wording');
-assert_true(strpos($readmeSource, '## Repeat Alert Modes') !== false, 'README should document repeat alert modes');
+assert_true(strpos($readmeSource, '## Alert Reminder Modes') !== false, 'README should document alert reminder modes');
 assert_true(strpos($readmeSource, 'Initial alert only.') !== false, 'README should describe Never repeat mode as initial alert only');
 assert_true(strpos($readmeSource, 'Repeats every 5 minutes while the incident remains active.') !== false, 'README should describe 5-minute repeat mode');
 assert_true(strpos($readmeSource, 'Repeats every hour while the incident remains active.') !== false, 'README should describe hourly repeat mode');
@@ -219,11 +231,16 @@ assert_true(strpos($readmeSource, 'Capped at 24 hours once the interval reaches 
 assert_true(strpos($readmeSource, "- Never\n  - Initial alert only.\n- Every 5 minutes") !== false, 'README repeat mode bullets should use nested spaces for sub-bullets');
 assert_true(strpos($readmeSource, "- Escalating\n  - Uses a Fibonacci-style escalating backoff schedule") !== false, 'README repeat mode bullets should keep nested spacing on escalating mode');
 assert_true(strpos($readmeSource, "\n- Fibonacci\n") === false && strpos($readmeSource, "\n  - Fibonacci\n") === false, 'README must not present Fibonacci as a selectable repeat mode name');
-assert_true(strpos($readmeSource, 'Stored legacy repeat mode values from earlier builds are treated as Escalating.') !== false, 'README should describe legacy repeat mode compatibility without exposing legacy operator-facing terminology');
+assert_true(strpos($readmeSource, 'Stored legacy reminder values from earlier builds are treated as Escalating.') !== false, 'README should describe legacy alert reminder compatibility using current Alert Reminder terminology');
 assert_true(strpos($readmeSource, '## Suppression') !== false, 'README should include Suppression section');
 assert_true(strpos($readmeSource, '## Data Retention') !== false, 'README should include Data Retention section');
 assert_true(strpos($readmeSource, '## Snooze Monitoring') !== false, 'README should include Snooze Monitoring section');
+assert_true(strpos($readmeSource, 'Snooze Monitoring is a global control in Engine Status.') !== false, 'README should keep Snooze Monitoring terminology for global snooze state');
+assert_true(strpos($readmeSource, 'Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours,') !== false && strpos($readmeSource, '12 hours, and 24 hours.') !== false, 'README should list all supported Snooze Monitoring durations including 30m/3h/6h/12h/24h');
 assert_true(strpos($readmeSource, '## User Interface') !== false, 'README should include User Interface section');
+assert_true(strpos($readmeSource, 'Enable All Rules/Disable All Rules, Snooze, Resume All Rules, Run Now.') !== false, 'README user-interface summary should use Enable All Rules/Disable All Rules terminology');
+assert_true(strpos($readmeSource, 'The Start as control is used only when creating a new rule') !== false, 'README should explain that Start as applies only to new rules');
+assert_true(strpos($readmeSource, 'existing rule is being edited, those row actions are greyed out and cannot be') !== false, 'README should explain that rule row actions are disabled while editing');
 assert_true(strpos($readmeSource, '## Security Model') !== false, 'README should include Security Model section');
 assert_true(strpos($readmeSource, '## Current Limitations') !== false, 'README should include Current Limitations section');
 assert_true(strpos($readmeSource, '## Validation') !== false, 'README should include Validation section');
@@ -235,19 +252,26 @@ assert_true(strpos($readmeSource, 'current public ' . 'release candidate') === f
 assert_true(strpos($readmeSource, 'stage cadence') === false, 'README must not expose internal stage cadence terminology');
 assert_true(strpos($readmeSource, 'email escalation') === false, 'README must not use the old email escalation wording');
 assert_true(strpos($readmeSource, 'Enable monitoring in Global Settings') === false, 'README must not refer to removed Global Settings monitoring enablement');
-assert_true(strpos($readmeSource, "cd /var/www/html/admin/modules/repeatcaller\nfwconsole ma install repeatcaller") !== false, 'README should show the unpacked-directory install command sequence');
-assert_true(strpos($readmeSource, "git clone https://github.com/kierknoby/repeatcaller.git repeatcaller\ncd repeatcaller\nfwconsole ma install repeatcaller") !== false, 'README should show the GitHub install command sequence');
+assert_true(strpos($readmeSource, "Option 1: Install from pre-staged module files") !== false, 'README should describe pre-staged module file installation');
+assert_true(strpos($readmeSource, "cd ~\nfwconsole ma install repeatcaller") !== false, 'README should run fwconsole install commands from a neutral directory');
+assert_true(strpos($readmeSource, "git clone https://github.com/kierknoby/repeatcaller.git repeatcaller\ncd ~\nfwconsole ma install repeatcaller") !== false, 'README should show the GitHub install sequence with neutral-directory fwconsole execution');
+assert_true(strpos($readmeSource, 'Git commands require the modules/repository directory context.') !== false, 'README should explain why Git runs from repository/module paths');
+assert_true(strpos($readmeSource, 'switch back to a neutral directory before running fwconsole commands.') !== false, 'README should explain that fwconsole intentionally runs from a neutral directory after Git operations');
 assert_true(strpos($readmeSource, 'Option 3: Install from a local copy') !== false, 'README should document local-copy installation path');
 assert_true(strpos($readmeSource, 'Option 3: Update from a local copy') !== false, 'README should document local-copy update path');
-assert_true(strpos($readmeSource, 'release history') === false, 'README must not reference release history documentation');
-assert_true(strpos($readmeSource, 'Release History') === false, 'README must not include a release history section');
 assert_true(strpos($readmeSource, 'Release Status') === false, 'README must not include release status section');
 
 $userGuideSource = file_get_contents($root . '/USER_GUIDE.md');
 assert_true($userGuideSource !== false, 'USER_GUIDE.md should exist and be readable');
 assert_true(strpos($userGuideSource, '# Repeat Caller User Guide') !== false, 'USER_GUIDE.md should have the expected title');
 assert_true(strpos($userGuideSource, 'Reports > Repeat Caller') !== false, 'USER_GUIDE.md should include the Reports > Repeat Caller navigation path');
+assert_true(strpos($userGuideSource, 'The Default Country Code field in Global Settings is required before Repeat Caller can enable any rule.') !== false, 'USER_GUIDE.md should explain that Default Country Code is required before any rule can be enabled');
+assert_true(strpos($userGuideSource, 'Disabled rules may still be created, edited, and saved') !== false, 'USER_GUIDE.md should explain that disabled rules can still be created and edited');
+assert_true(strpos($userGuideSource, 'genuine international country calling code of one to three digits') !== false, 'USER_GUIDE.md should explain the expected Default Country Code format');
 assert_true(strpos($userGuideSource, 'Recent Incidents') !== false, 'USER_GUIDE.md should use the current UI label Recent Incidents');
+assert_true(strpos($userGuideSource, 'Start as: Enabled') !== false, 'USER_GUIDE.md should use Start as wording in the example rule settings');
+assert_true(strpos($userGuideSource, 'Start as: used only when creating a new rule to choose whether the rule') !== false, 'USER_GUIDE.md should explain that Start as applies only when creating a new rule');
+assert_true(strpos($userGuideSource, 'While editing an existing rule, the row actions for that rule are greyed out') !== false, 'USER_GUIDE.md should explain that row actions are disabled while editing');
 assert_true(strpos($userGuideSource, 'Suppressed Alerts History') !== false, 'USER_GUIDE.md should explain suppressed alerts history');
 assert_true(strpos($userGuideSource, '## History Pruning') !== false, 'USER_GUIDE.md should include a History Pruning section');
 assert_true(strpos($userGuideSource, '## Clearing Alert History') !== false, 'USER_GUIDE.md should include clear alert history instructions');
@@ -255,13 +279,19 @@ assert_true(strpos($userGuideSource, 'Rule-level Suppression override replaces t
 assert_true(strpos($userGuideSource, 'Clear Alert History is an immediate manual action. Prune Alert History is the') !== false, 'USER_GUIDE.md should distinguish clear alert history from automatic pruning');
 assert_true(strpos($userGuideSource, 'Clear Suppression affects current suppression state for that rule/subject.') !== false, 'USER_GUIDE.md should distinguish clear suppression from suppression-history pruning');
 assert_true((bool) preg_match('/Repeat Caller automatically removes old internal detection records during\s+pruning to prevent unnecessary database growth\./', $userGuideSource), 'USER_GUIDE.md should document automatic internal detection-record cleanup during pruning');
-assert_true(strpos($userGuideSource, 'This alert is currently unaccepted. You will receive a notification once it is accepted by phone or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing unaccepted notification wording');
+assert_true(strpos($userGuideSource, 'All DIDs with optional Excluded Routes') !== false, 'USER_GUIDE.md should document All DIDs as an exclusions-only route model');
+assert_true(strpos($userGuideSource, 'Selected DIDs only via Included Routes') !== false, 'USER_GUIDE.md should document Selected DIDs as an inclusions-only route model');
+assert_true(strpos($userGuideSource, 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing accepted-capability wording');
 assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md should link back to README.md');
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');
 assert_true(strpos($userGuideSource, 'Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.') !== false, 'USER_GUIDE.md should clarify trusted administrator-controlled Alert Call destination and caller ID settings');
+assert_true(strpos($userGuideSource, 'Caller ID managed elsewhere: enabled by default for new rules.') !== false, 'USER_GUIDE.md should explain the default managed-elsewhere Caller ID handling');
+assert_true(strpos($userGuideSource, 'If you untick Caller ID managed elsewhere while Alert Call is enabled, Alert Call Caller ID becomes mandatory and the previous unsaved value is restored automatically if one was entered earlier in the session.') !== false, 'USER_GUIDE.md should explain when Alert Call Caller ID becomes mandatory and restored');
 assert_true(strpos($readmeSource, 'Press 1: accepts the incident') !== false && strpos($readmeSource, 'Press 2: declines that Alert Call attempt') !== false, 'README should describe current Alert Call DTMF controls');
 assert_true(strpos($readmeSource, 'Alert Call destinations and Alert Call caller ID values are administrator-') !== false, 'README should clarify administrator-controlled Alert Call destination and caller ID settings');
 assert_true(strpos($readmeSource, 'Only use trusted values that are appropriate for') !== false, 'README should advise trusted Alert Call destination and caller ID values');
+assert_true(strpos($readmeSource, 'Caller ID managed elsewhere is enabled by default for new rules.') !== false, 'README should explain that managed-elsewhere Caller ID handling is the default for new rules');
+assert_true((bool)preg_match('/Unticking it restores the previous\s+unsaved value and makes Alert Call Caller ID mandatory when Alert Call is\s+enabled\./', $readmeSource), 'README should explain when Alert Call Caller ID becomes mandatory and restored');
 assert_true((bool) preg_match('/No valid response: records an answered-no-response outcome and leaves the\s+incident unaccepted/', $readmeSource), 'README should describe no-response unaccepted outcome');
 assert_true(strpos($readmeSource, 'GUI incidents, which are always recorded') !== false && strpos($readmeSource, 'Email notifications, which are optional per rule') !== false && strpos($readmeSource, 'Alert Call, which is optional per rule and can be answered from the phone') !== false, 'README should document GUI incidents and optional Email/Alert Call behaviour');
 assert_true(strpos($readmeSource, 'Prune Incident History removes old completed incident records.') !== false, 'README should explain incident-history pruning scope');
@@ -273,9 +303,9 @@ assert_true(strpos($readmeSource, 'Never disables automatic pruning.') !== false
 assert_true((bool) preg_match('/Available pruning schedule options are:\s+- Never\s+- Hourly\s+- Daily \(default\)\s+- Weekly\s+- Monthly\s+- Yearly/', $readmeSource), 'README should list the complete pruning schedule options in canonical order');
 assert_true(strpos($userGuideSource, 'Never disables automatic pruning.') !== false, 'USER_GUIDE.md should document that Never disables automatic pruning');
 assert_true((bool) preg_match('/Available pruning schedule options are:\s+- Never\s+- Hourly\s+- Daily \(default\)\s+- Weekly\s+- Monthly\s+- Yearly/', $userGuideSource), 'USER_GUIDE.md should list the complete pruning schedule options in canonical order');
-assert_true(strpos($readmeSource, 'Claimed By') === false, 'README must not use Claimed By terminology');
-assert_true(strpos($readmeSource, 'Accepted and claimed') === false, 'README must not use Accepted and claimed wording');
-assert_true(strpos($readmeSource, 'Press 1 to claim') === false, 'README must not use Press 1 to claim wording');
+assert_true(strpos($readmeSource, 'Accepted By') === false, 'README must not use Accepted By terminology');
+assert_true(strpos($readmeSource, 'Accepted and accepted') === false, 'README must not use Accepted and accepted wording');
+assert_true(strpos($readmeSource, 'Press 1 to accept') === false, 'README must not use Press 1 to accept wording');
 assert_true(strpos($userGuideSource, 'Snooze is not suppression.') !== false, 'USER_GUIDE.md should distinguish snooze from suppression');
 
 $testingSource = file_get_contents($root . '/TESTING.md');

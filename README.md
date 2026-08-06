@@ -1,6 +1,6 @@
-# Repeat Caller 1.0.0 for FreePBX 16 and 17
+# Repeat Caller 1.0.1 for FreePBX 16 and 17
 
-**Release date:** 22 July 2026
+**Release date:** 6 August 2026
 
 ## Introduction
 
@@ -20,7 +20,7 @@ review, optional Alert Call notifications, and optional email notifications on
 FreePBX/PBXact 16 and 17.
 
 Rules support repeat and invert detection modes, caller and DID scoping,
-schedule windows, repeat-notification modes, and suppression controls. The
+schedule windows, Alert Reminder scheduling, and suppression controls. The
 admin page presents active and historical lifecycle views so operators can
 review incidents, acceptances, alerts, and suppression decisions in one place.
 
@@ -31,6 +31,12 @@ Use with FreePBX/PBXact 16 or 17.
 - FreePBX/PBXact 16 and 17
 - PHP 7.4+
 - MariaDB 5.5-compatible schema (utf8/InnoDB key-size compatible)
+
+### Development release compatibility
+
+Repeat Caller 1.0.0 was a development release and should not be used as an
+upgrade source for later releases. Upgrade compatibility guarantees begin with
+the first stable release.
 
 ## Requirements
 
@@ -55,17 +61,26 @@ fwconsole ma installlocal repeatcaller
 ```
 
 Use `fwconsole ma install repeatcaller` with one of the methods below.
+For each method, ensure module files are present at
+`/var/www/html/admin/modules/repeatcaller/` before running the fwconsole
+commands. The fwconsole commands intentionally run from a neutral directory
+(`cd ~`).
 
-Option 1: Install from an unpacked module directory
+Option 1: Install from pre-staged module files
+
+Place the module files in `/var/www/html/admin/modules/repeatcaller/`, then:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
 ```
 
 Option 2: Install from GitHub
+
+Git commands require the modules/repository directory context. After cloning,
+switch back to a neutral directory before running fwconsole commands.
 
 FreePBX 16 / PBXact 16 (CentOS 7)
 
@@ -101,7 +116,7 @@ Then run the following commands as root:
 ```sh
 cd /var/www/html/admin/modules
 git clone https://github.com/kierknoby/repeatcaller.git repeatcaller
-cd repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -110,10 +125,11 @@ fwconsole reload
 Option 3: Install from a local copy
 
 Copy or symlink a local `repeatcaller` directory into
-`/var/www/html/admin/modules/`, then:
+`/var/www/html/admin/modules/repeatcaller/`, then run the fwconsole commands
+from a neutral directory:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -134,12 +150,13 @@ fwconsole ma list | grep -i repeatcaller
 grep "<version>" /var/www/html/admin/modules/repeatcaller/module.xml
 ```
 
-Option 1: Update from an unpacked module directory
+Option 1: Update from pre-staged module files
 
-Replace the module files in `/var/www/html/admin/modules/repeatcaller/`, then:
+Replace the module files in `/var/www/html/admin/modules/repeatcaller/`, then
+run the fwconsole commands from a neutral directory:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -147,10 +164,15 @@ fwconsole reload
 
 Option 2: Update from GitHub
 
+Git commands require the module repository directory context. After fetching
+and resetting, switch back to a neutral directory before running fwconsole
+commands.
+
 ```sh
 cd /var/www/html/admin/modules/repeatcaller
 git fetch origin main
 git reset --hard FETCH_HEAD
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -158,10 +180,12 @@ fwconsole reload
 
 Option 3: Update from a local copy
 
-Re-copy or re-link your local `repeatcaller` directory, then:
+Re-copy or re-link your local `repeatcaller` directory into
+`/var/www/html/admin/modules/repeatcaller/`, then run the fwconsole commands
+from a neutral directory:
 
 ```sh
-cd /var/www/html/admin/modules/repeatcaller
+cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
@@ -197,13 +221,14 @@ webhook sender, or SMS sender.
 Canonical Repeat Caller tables:
 
 - `repeatcaller_settings`: module settings, engine status timestamps, global
-  repeat/suppression/pruning controls, snooze state, and recipients.
+  Alert Reminder, suppression, and pruning controls, snooze state, and recipients.
 - `repeatcaller_rules`: rule definitions, detection mode, thresholds/windows,
-  caller/DID scope, repeat override, suppression override, and alert action
+  caller/DID scope, Alert Reminder override, suppression override, and alert action
   toggles.
 - `repeatcaller_rule_schedules`: per-rule day/time windows.
 - `repeatcaller_rule_callers`: per-rule caller include/exclude lists.
-- `repeatcaller_rule_dids`: per-rule inbound route include/exclude lists.
+- `repeatcaller_rule_dids`: per-rule inbound route scope rows stored by mode
+  (All DIDs uses exclusions, Selected DIDs only uses inclusions).
 - `repeatcaller_seen_calls`: deduplicated inbound call journeys already
   processed.
 - `repeatcaller_rule_subject_state`: per-rule/subject evaluation state,
@@ -221,15 +246,69 @@ Canonical Repeat Caller tables:
 Repeat Caller evaluates inbound journeys collapsed from CDR rows and matches
 them against enabled rules.
 
+Fresh installation boundary: a new Repeat Caller installation starts
+processing calls from the time it is installed. Calls already present in CDR
+data before that time do not retrospectively create incidents, alerts, or
+suppression history. Existing installations and normal upgrades retain their
+current processing continuity.
+
 - Repeat mode: creates an incident when matching call count reaches threshold
   within the configured window.
 - Invert mode: creates an incident when a full configured window completes
   without reaching threshold.
 
+Repeat mode threshold window:
+
+- Repeat mode uses a rolling observation window: the "most recent N minutes"
+  where N is the configured observation window in minutes.
+- Each call evaluated creates a fresh rolling window from that call's time,
+  going back N minutes.
+- Later matching calls do not extend the previous window. Each call gets its
+  own rolling window evaluation.
+- Example rule: Repeat mode, 3 matching calls within 30 minutes, with 24-hour
+  suppression.
+  - Calls at 09:00, 09:05, and 09:10 meet the rule and create an incident.
+  - The incident is accepted.
+  - Further calls at 09:20, 09:25, and 09:30 remain part of the same
+    continuous qualifying episode because there are still at least 3 matching
+    calls in the latest rolling 30-minute window.
+  - Those calls update the accepted incident and do not create additional
+    suppression-history rows.
+  - Once the rolling 30-minute count falls below 3 and the monitor observes
+    that clear state, the rule is re-armed.
+  - If the caller later reaches 3 matching calls within 30 minutes again
+    while the 24-hour suppression period is still active, that new qualifying
+    episode is blocked and recorded in Suppressed Incidents.
+- Calls or observation windows that belong to the same continuous qualifying
+  episode do not create repeated Suppressed Incident rows. Suppression records
+  a later, genuinely new qualifying episode after the original condition has
+  cleared and re-armed.
+
+Invert mode window evaluation:
+
+- Invert mode evaluates fixed, non-rolling observation windows that advance
+  in configured chunks (e.g., 30-minute blocks).
+- When a completed window contains fewer than the configured threshold number
+  of matching calls, the condition is triggered.
+
+Invert activation timing:
+
+- A newly created enabled Invert rule starts its first observation window from
+  when it becomes active, subject to its configured schedule.
+- It does not retrospectively evaluate completed windows from before creation
+  or activation.
+- Re-enabling an Invert rule establishes a new activation boundary.
+- Changing an enabled rule from Repeat to Invert, or changing an enabled
+  Invert rule's observation window or schedule, re-anchors the Invert
+  observation window from the change time.
+- Existing persisted Invert window state is preserved across ordinary monitor
+  runs and upgrades.
+
 Matching can include:
 
-- caller scope (any, withheld-only, specific caller lists)
-- inbound route scope (all routes or selected include/exclude route lists)
+- caller scope (any, withheld-only, specific caller lists). Caller lists accept spaces, commas or new lines as separators and save back as comma-separated values.
+- inbound route scope (all routes with optional exclusions, or selected-route
+  inclusions only)
 - schedule windows (day/time segments)
 
 Subject identity is tracked per rule and matched caller/route context so the
@@ -242,6 +321,12 @@ Incident lifecycle behavior includes:
 - accepting incidents by GUI or Alert Call action
 - closing incidents when condition-clear logic is observed
 - expiring eligible incidents after suppression expiry handling
+
+For repeat incidents, timestamp semantics are:
+
+- First Matched: earliest matching call in the tracked window that
+  contributes to that incident.
+- Last Matched: most recent matching call contributing to that incident.
 
 Processed call journeys are recorded in `repeatcaller_seen_calls` to prevent
 duplicate incident creation from the same journey.
@@ -267,6 +352,23 @@ normally be entered in the same national dialling format an administrator
 would use from a FreePBX extension. The example/placeholder follows the
 configured Default Country Code.
 
+When an Alert Call destination is added in the rule editor, Repeat Caller
+automatically adds the same value to Ignore these callers and shows a one-time
+warning. Alert Call destinations are automatically added to Ignore these
+callers to reduce the risk of self-triggering if an alert call routes back
+through a monitored DID.
+
+When Alert Call is enabled and Caller ID managed elsewhere is disabled, Repeat
+Caller may also add the configured Alert Call Caller ID to Ignore these
+callers as an additional self-trigger safeguard for external return paths.
+Administrators can remove the Ignore entry if it is not appropriate.
+
+Alert reminder emails now show one reminder line:
+
+- Alert Reminder: displays the Alert Reminder schedule used for that alert, such as Never, Hourly, Daily, or Escalating.
+
+Alert reminder emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
+
 Alert Call Caller ID sets the caller ID presented on outbound alert calls. The
 preferred format is international E.164 with a leading +, for example
 +447812345678. The example/placeholder follows the configured Default Country
@@ -276,8 +378,37 @@ Alert Call destinations and Alert Call caller ID values are administrator-
 controlled PBX configuration. Only use trusted values that are appropriate for
 your dialplan, routing, and outbound calling policy.
 
+Alert Call progression follows the selected strategy. Ordered stages add one
+new destination at a time. Earlier destinations remain eligible in later stages
+only when their own Keep Trying option is enabled; for example, destinations
+1/2/3 with settings enabled/disabled/enabled produce 1, then 1+2, then 1+3,
+then 1+3 repeatedly. Each completed stage pauses for 60 seconds before the
+next one. A multi-destination stage advances only after every attempt in that
+stage finishes without acceptance. Only an explicit ACCEPTED response stops
+progression; NOANSWER, BUSY, DECLINED, answered-no-response, unavailable,
+congestion, and failed attempts do not stop progression. Ring All includes
+every enabled destination on every cycle. Keep Trying is not applicable to
+Ring All and is shown unticked and disabled. Ignore Callers applies only to
+inbound detection and never filters Alert Call destinations. Acceptance
+cancels pending future attempts and late callbacks cannot restart escalation.
+
+Repeat Caller also marks internally originated Alert Call legs and excludes
+those marked internal legs from detection. This internal marker is useful for
+on-box call legs only and does not survive a call that leaves through a
+carrier and re-enters as a new inbound journey. Carrier rewriting and caller
+presentation differences may still require administrator judgement.
+
 Alert Call supports optional introductory System Recording playback followed by
 a spoken summary of incident details such as caller and DID where available.
+
+Caller ID managed elsewhere is enabled by default for new rules. While it is
+enabled, Repeat Caller does not set Alert Call Caller ID, leaves the field
+blank and disabled, hides the example placeholder, and keeps any typed value
+only for the current editor session. Unticking it restores the previous
+unsaved value and makes Alert Call Caller ID mandatory when Alert Call is
+enabled. Saving with it checked persists a blank Caller ID and forgets the
+prior value. Caller presentation may still be managed elsewhere by routing,
+trunks, or providers.
 
 DTMF behavior during Alert Call:
 
@@ -288,12 +419,12 @@ DTMF behavior during Alert Call:
   incident unaccepted
 
 Declining affects that call attempt path and does not accept or close the
-incident. Repeat notifications can continue while the incident remains active
-according to repeat mode and eligibility.
+incident. Alert Reminder delivery can continue while the incident remains
+active according to Alert Reminder scheduling and eligibility.
 
-## Repeat Alert Modes
+## Alert Reminder Modes
 
-Repeat Caller lets each rule repeat its alerts using one of these modes:
+Repeat Caller lets each rule schedule Alert Reminders using one of these modes:
 
 - Never
   - Initial alert only.
@@ -312,7 +443,7 @@ Repeat Caller lets each rule repeat its alerts using one of these modes:
 
     Capped at 24 hours once the interval reaches the daily ceiling.
 
-Stored legacy repeat mode values from earlier builds are treated as Escalating.
+Stored legacy reminder values from earlier builds are treated as Escalating.
 
 ## Suppression
 
@@ -330,8 +461,34 @@ Repeat Caller blocks that incident creation and writes a suppression audit row.
 Suppression rows are not future placeholders; they represent prevented,
 qualifying attempts.
 
+Suppression lifecycle timing:
+
+- Suppression starts when an incident is created. The suppression period is
+  calculated from the moment of incident creation and stored immediately on
+  the incident row.
+- Accepting an incident records responsibility and controls further alerts for
+  the existing incident. Acceptance does not start, extend, or reset the
+  suppression period.
+- While the qualifying condition remains true (rolling call count for Repeat,
+  or continuing failed windows for Invert), further matching activity updates
+  the accepted incident and does not create suppression-history rows.
+- The qualifying condition must first clear: the rolling call count must fall
+  below the configured threshold (Repeat), or a window must meet or exceed
+  the threshold (Invert).
+- The monitor must observe that clear state and re-arm the threshold latch.
+- If a new qualifying episode for the same rule and subject occurs after the
+  condition has cleared and the latch has re-armed, but before suppression
+  expires, Repeat Caller blocks that new episode and records it in Suppressed
+  Incidents.
+- The threshold latch is intentional and prevents duplicate suppression rows
+  while one unbroken qualifying condition is still in progress. After clear
+  is observed, new qualifying thresholds can trigger again.
+
 Suppressed Incidents view shows audit rows including matching count, threshold
 window context, suppression expiry, and related incident.
+
+The Suppressed Incidents view shows prevented qualifying incident attempts, not
+every subject that is currently under suppression.
 
 Clear Suppression is available per suppression row. Clearing suppression allows
 immediate retrigger on the next qualifying condition and preserves the audit
@@ -372,9 +529,12 @@ Available pruning schedule options are:
 
 Snooze Monitoring is a global control in Engine Status.
 
+Available durations are 5 minutes, 15 minutes, 30 minutes, 1 hour, 3 hours, 6 hours,
+12 hours, and 24 hours.
+
 - While snoozed, detection and incident lifecycle processing continue.
 - Alert Call and Email deliveries are deferred while snooze is active.
-- Resume can be triggered manually before snooze expiry.
+- Resume All Rules can be triggered manually before snooze expiry.
 - There is no per-rule or per-incident snooze.
 
 ## User Interface
@@ -382,17 +542,23 @@ Snooze Monitoring is a global control in Engine Status.
 Reports > Repeat Caller includes these main sections:
 
 - Engine Status: enabled rules, active incidents, last run, run state, PBX
-  time, Enable/Disable Monitoring, Snooze, Resume, Run Now.
-- Global Settings: country code, lookback, global suppression, global repeat,
-  pruning policies, and maintenance actions.
+  time, Enable All Rules/Disable All Rules, Snooze, Resume All Rules, Run Now.
+- Global Settings: country code, lookback, global suppression, global Alert Reminder default,
+  pruning policies, and maintenance actions. Default Country Code must contain a genuine international country calling code before Repeat Caller can enable any rule, including individual rule enables, Start as Enabled, and Enable All Rules. Disabled rules may still be created and edited.
 - Rules: summary table plus Add Rule editor for mode/threshold/window, caller
-  and route scope, schedules, repeat mode, suppression setting, rule-level
+  and route scope, schedules, Alert Reminder setting, suppression setting, rule-level
   email recipients, and alert actions. Blank suppression uses the default
-  24hrs (1440 minutes) period; 0 disables automatic suppression for that rule.
+  24 hours (1440 minutes) period; 0 disables automatic suppression for that rule.
+  The Start as control is used only when creating a new rule to choose whether
+  it starts enabled or disabled.
   The actions checklist order is GUI, Alert Call, then Email, and the email
   recipient field appears directly above Save Rule. The editor title switches
-  to Editing Rule when modifying an existing rule.
-- Rule controls: each rule row includes Status, Edit, and X (delete).
+  to Editing Rule when modifying an existing rule. DID scope uses a simple
+  model: All DIDs supports optional exclusions, and Selected DIDs only uses
+  explicit inclusions.
+- Rule controls: each rule row includes Status, Edit, and X (delete). While an
+  existing rule is being edited, those row actions are greyed out and cannot be
+  used until editing is cancelled or saved.
 - Rule explanation rows: plain-language explanation beneath each rule row, with
   disabled and edit highlighting. Selecting Status temporarily replaces the
   explainer sentence with a plain-English status summary for that rule. Status
@@ -457,11 +623,14 @@ configuration choice that a PBX administrator may intentionally apply.
 
 ### Incident Acceptance Behaviour
 
-Accepting an incident stops ordinary future reminder stages for the current
-incident state. If a new qualifying call occurs after acceptance, the incident
-can enter the existing re-alert path where that behavior is configured. That is
-intentional: a new qualifying caller event represents new activity, not a
-continuation of the already-accepted alert stage.
+Accepting an incident records responsibility and controls alert delivery for
+that incident. It does not start, extend, or reset the suppression period.
+While the qualifying condition remains active, matching activity continues to
+update the accepted incident and no additional alerts or reminders are sent.
+Once the condition clears and the latch re-arms, any new qualifying episode is
+a separate event: if suppression has not yet expired it is blocked and recorded
+in Suppressed Incidents; if suppression has already expired the new episode
+creates a new incident and follows the normal alert process.
 
 ### Compatibility and Development Notes
 
@@ -506,6 +675,112 @@ Recordings, and administrator-controlled routing.
 - Snooze is global rather than per rule/incident.
 - No webhook or SMS delivery channel is implemented.
 
+## Release History
+
+- 1.0.1 development update: renamed the reminder terminology to Alert Reminders throughout the module, and documented that Alert Reminder scheduling is distinct from Repeat detection mode.
+- 1.0.1 development update: prevented reminder-cycle overlap by blocking new Alert Reminder cycles while an unfinished Ordered Alert Call cycle is still active, pending, or deferred.
+- 1.0.1 development update: documented that each Alert Reminder cycle restarts Ordered Alert Call delivery from stage 0 and that reminder cycles never overlap.
+- 1.0.1 development update: documented that Alert Reminder timing begins only after the previous alert cycle completes without acceptance.
+
+### 1.0.1, patch release, 6 August 2026
+
+- Rule explanation-row styling is now consistent across enabled, disabled,
+  temporary Status, and editing states.
+
+#### Rule editor reliability
+
+- Caller include/exclude lists now save and reload correctly from the rule
+  editor while preserving list semantics.
+- Legacy plain-text caller list entry remains supported for compatibility.
+- Alert Call destination Add now behaves the same whether triggered by Add or
+  Enter.
+- Alert Call destination changes now keep the associated Ignore these callers
+  entry consistent without creating duplicate destinations.
+- Alert Call self-trigger warnings now remain visible for approximately
+  6 seconds without changing global FreePBX toast behavior.
+- Run Now now initializes from the current bootstrap state so initial
+  availability is shown correctly on load.
+
+#### DID scope controls
+
+- Allows individual inbound routes to be excluded when All DIDs is selected.
+- Keeps Selected DIDs only mode limited to explicit route inclusions.
+- Clears stale opposite-mode route selections when the DID scope changes.
+
+#### Accepted incident suppression
+
+- Prevents accepted incidents from reserving or sending further alerts while
+  rule-and-subject suppression remains active.
+- Preserves normal Alert Reminders for active unaccepted incidents.
+- Allows genuinely new qualifying activity after suppression expiry to trigger
+  a fresh alert stage.
+
+#### Snooze controls
+
+- Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.
+
+#### Global controls
+
+- Renames the global Enable Monitoring and Disable Monitoring buttons to
+  Enable All Rules and Disable All Rules for clearer rule-processing terminology.
+- These bulk controls now change both the global Repeat Caller engine state and
+  every non-deleted rule's enabled state.
+
+#### Alert Call self-trigger safeguard
+
+- Adding an Alert Call destination now auto-adds the same value to Ignore
+  these callers as a safe default, with a one-time warning in the editor.
+- Administrators can remove the Ignore entry if needed; it is not silently
+  re-added during save, reload, or normal rendering.
+- When Repeat Caller sets Alert Call Caller ID, that Caller ID may also be
+  added to Ignore these callers as an additional external return-path
+  safeguard.
+- Internal Repeat Caller originated Alert Call legs are marked and excluded
+  from detection; this marker does not survive external PSTN hairpin
+  leave-and-return paths.
+
+#### Alert Call Caller ID handling
+
+- Caller ID managed elsewhere is enabled by default for new rules and appears
+  directly above Alert Call Caller ID in the rule editor.
+- While enabled, Repeat Caller does not set Alert Call Caller ID, leaves the
+  field blank and disabled, and hides the example placeholder.
+- Unticking restores the previous unsaved editor value and makes Alert Call
+  Caller ID mandatory when Alert Call is enabled.
+- Saving while enabled persists a blank Caller ID and forgets the previous
+  value.
+- Caller presentation remains the responsibility of PBX routing, trunks, or
+  providers.
+
+#### Ordered Alert Call progression
+
+- Ordered stages add one new destination at a time.
+- Earlier destinations remain eligible in later stages only when their own
+  Keep Trying option is enabled.
+- Each completed stage pauses for 60 seconds before the next stage.
+- A multi-destination stage advances only after every attempt in that stage
+  finishes without acceptance.
+- Only explicit ACCEPTED responses stop progression; other outcomes do not.
+- Ring All includes every enabled destination on every cycle, while Keep
+  Trying is not applicable and remains unticked and disabled.
+- Ignore Callers applies only to inbound detection and never filters Alert
+  Call destinations.
+- Acceptance cancels pending future attempts and late callbacks cannot restart
+  escalation.
+
+#### Invert activation timing
+
+- Newly created enabled Invert rules begin their first observation window from
+  activation time, subject to schedule.
+- Completed windows from before creation or activation are not retrospectively
+  evaluated.
+- Re-enabling an Invert rule creates a new activation boundary.
+- Changing an enabled rule from Repeat to Invert, or changing an enabled
+  Invert rule's schedule or observation window, re-anchors the Invert
+  observation window from the time of change.
+- Persisted Invert observation state is retained across normal monitor runs
+  and upgrades.
+
 ## Validation
 
 For operator workflows, see [USER_GUIDE.md](USER_GUIDE.md). For test scope and
@@ -547,9 +822,11 @@ tail -f /var/log/asterisk/full | grep -i repeatcaller
 
 Uninstall removes Repeat Caller job registration, Repeat Caller tables, managed
 dialplan include/fragment, and the deployed AGI callback script. Back up first
-if you need existing rules/history.
+if you need existing rules/history. These commands run from a neutral
+directory, and the module path removal uses an absolute path.
 
 ```sh
+cd ~
 fwconsole ma uninstall repeatcaller --force
 rm -rf /var/www/html/admin/modules/repeatcaller
 fwconsole chown

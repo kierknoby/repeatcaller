@@ -161,7 +161,9 @@ function indexesExceedingKeyLimit(string $createStatement, int $bytesPerChar, in
 	return $exceeding;
 }
 
-final class SchemaUpgradePDO extends PDO {
+class SchemaUpgradePDO extends PDO {
+	private string $fixedNow = '2030-01-02 03:04:05';
+
 	public function __construct() {
 		parent::__construct('sqlite::memory:');
 		$this->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -169,10 +171,17 @@ final class SchemaUpgradePDO extends PDO {
 			$this->sqliteCreateFunction('DATABASE', static function (): string {
 				return 'main';
 			}, 0);
+			$this->sqliteCreateFunction('NOW', function (): string {
+				return $this->fixedNow;
+			}, 0);
 		}
 		parent::exec("ATTACH DATABASE ':memory:' AS information_schema");
 		parent::exec('CREATE TABLE information_schema.TABLES (TABLE_SCHEMA TEXT NOT NULL, TABLE_NAME TEXT NOT NULL)');
 		parent::exec('CREATE TABLE information_schema.COLUMNS (TABLE_SCHEMA TEXT NOT NULL, TABLE_NAME TEXT NOT NULL, COLUMN_NAME TEXT NOT NULL, COLUMN_TYPE TEXT NOT NULL)');
+	}
+
+	public function fixedNow(): string {
+		return $this->fixedNow;
 	}
 
 	public function prepare(string $query, array $options = []): PDOStatement|false {
@@ -221,6 +230,23 @@ final class SchemaUpgradePDO extends PDO {
 	}
 }
 
+final class SchemaInstallPathPDO extends SchemaUpgradePDO {
+	private bool $schemaCreated = false;
+
+	public function exec(string $statement): int|false {
+		$trimmed = ltrim($statement);
+		if (stripos($trimmed, 'CREATE TABLE IF NOT EXISTS ') === 0) {
+			if (!$this->schemaCreated) {
+				schemaUpgradeCreateLegacyTables($this);
+				$this->schemaCreated = true;
+			}
+			return 0;
+		}
+
+		return parent::exec($statement);
+	}
+}
+
 function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 	$db->exec('CREATE TABLE repeatcaller_settings (
 		setting_key TEXT PRIMARY KEY,
@@ -237,7 +263,7 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		caller_mode TEXT NOT NULL,
 		did_scope_mode TEXT NOT NULL,
 		exclude_withheld INTEGER NOT NULL DEFAULT 0,
-		repeat_mode_override TEXT,
+		alert_reminder_mode_override TEXT,
 		suppression_minutes_override INTEGER,
 		created_at TEXT,
 		updated_at TEXT
@@ -317,9 +343,9 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		last_matched_at TEXT NOT NULL,
 		matched_call_count INTEGER NOT NULL DEFAULT 0,
 		state TEXT NOT NULL,
-		claimed_by TEXT,
-		claimed_at TEXT,
-		claim_source TEXT,
+		accepted_by TEXT,
+		accepted_at TEXT,
+		accept_source TEXT,
 		suppression_expires_at TEXT,
 		created_at TEXT,
 		updated_at TEXT
@@ -328,7 +354,7 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		incident_id INTEGER NOT NULL,
 		rule_id INTEGER NOT NULL,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		initial_sent_at TEXT,
 		last_alert_at TEXT,
 		reminders_sent INTEGER NOT NULL DEFAULT 0,
@@ -351,7 +377,7 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		successful_at TEXT,
 		next_retry_at TEXT,
 		failure_detail TEXT,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		dedupe_key TEXT NOT NULL UNIQUE,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -416,7 +442,7 @@ assert_true(strpos($installSource, 'Schema::install(') !== false, 'install.php m
 
 $moduleXml = file_get_contents($root . '/module.xml');
 assert_true($moduleXml !== false, 'module.xml should be readable');
-assert_true(strpos($moduleXml, '<version>1.0.0</version>') !== false, 'module version must declare 1.0.0 for the current release');
+assert_true(strpos($moduleXml, '<version>1.0.1</version>') !== false, 'module version must declare 1.0.1 for the current release');
 
 $schemaSource = file_get_contents($root . '/src/Schema.php');
 assert_true($schemaSource !== false, 'src/Schema.php should be readable');
@@ -425,8 +451,12 @@ assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_incid
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_incident_suppression_history\', \'cleared_at\'') !== false, 'guarded migrations must add cleared_at for existing suppression-history rows');
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'alert_call_strategy\'') !== false, 'guarded migrations must add alert_call_strategy for existing installs');
 assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'alert_call_keep_trying\'') !== false, 'guarded migrations must add alert_call_keep_trying for existing installs');
+assert_true(strpos($schemaSource, 'addColumnIfMissing($pdo, \'repeatcaller_rules\', \'enabled_at\'') !== false, 'guarded migrations must add enabled_at for existing installs');
 assert_true(strpos($schemaSource, "alert_call_strategy VARCHAR(20) NOT NULL DEFAULT 'ringall'") !== false, 'fresh schema must default alert_call_strategy to ringall');
 assert_true(strpos($schemaSource, 'alert_call_keep_trying TINYINT(1) NOT NULL DEFAULT 1') !== false, 'fresh schema must default alert_call_keep_trying to enabled');
+assert_true(strpos($schemaSource, 'enabled_at DATETIME NULL') !== false, 'fresh schema must include an enabled_at activation-boundary column for rules');
+assert_true(strpos($schemaSource, "'initial_processing_boundary_at', NOW(), NOW()") !== false, 'fresh install boundary seed must be sourced atomically from the database clock');
+assert_true(strpos($schemaSource, 'databaseNow(') === false, 'schema install should not include a PHP-time boundary fallback helper');
 assert_true(strpos($schemaSource, "'alert_recipients' => ''") === false, 'fresh schema must not define removed global email destinations');
 assert_true(strpos($schemaSource, 'email_recipients TEXT NULL') !== false, 'fresh schema must provide rule-level email recipients');
 assert_true(strpos($schemaSource, 'cleared_at DATETIME NULL') !== false, 'fresh suppression schema must include cleared_at for incident and suppression-history tables');
@@ -438,7 +468,7 @@ assert_true(strpos($schemaSource, 'self::ensureScheduleDayOfWeekIsSigned($pdo);'
 $legacyDb = new SchemaUpgradePDO();
 schemaUpgradeCreateLegacyTables($legacyDb);
 
-$legacyDb->prepare('INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display, withheld_caller, mode, first_matched_at, last_matched_at, matched_call_count, state, claimed_by, claimed_at, claim_source, suppression_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')->execute([
+$legacyDb->prepare('INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display, withheld_caller, mode, first_matched_at, last_matched_at, matched_call_count, state, accepted_by, accepted_at, accept_source, suppression_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')->execute([
 	7,
 	'+441234567890',
 	'active-7',
@@ -491,6 +521,8 @@ $incidentColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_
 assert_true(in_array('cleared_at', $incidentColumnsAfterUpgrade, true), 'upgrade migration must add cleared_at to repeatcaller_incidents');
 $suppressionColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_incident_suppression_history');
 assert_true(in_array('cleared_at', $suppressionColumnsAfterUpgrade, true), 'upgrade migration must add cleared_at to repeatcaller_incident_suppression_history');
+$rulesColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_rules');
+assert_true(in_array('enabled_at', $rulesColumnsAfterUpgrade, true), 'upgrade migration must add enabled_at to repeatcaller_rules');
 
 $legacyIncident = $legacyDb->query('SELECT subject_label, suppression_expires_at, cleared_at FROM repeatcaller_incidents WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
 assert_same('Legacy Incident', (string)$legacyIncident['subject_label'], 'existing incident rows must be preserved during schema upgrade');
@@ -506,6 +538,33 @@ $upgradeModule->install();
 assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_incidents')->fetchColumn(), 'running the schema migration twice must not duplicate existing incident rows');
 assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history')->fetchColumn(), 'running the schema migration twice must not duplicate suppression-history rows');
 
+$freshInstallDb = new SchemaInstallPathPDO();
+Schema::install($freshInstallDb);
+$freshBoundaryRows = $freshInstallDb->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'initial_processing_boundary_at'")->fetchAll(PDO::FETCH_COLUMN);
+assert_same(1, count($freshBoundaryRows), 'fresh install must persist exactly one initial_processing_boundary_at setting row');
+$freshBoundaryValue = trim((string)$freshBoundaryRows[0]);
+assert_true($freshBoundaryValue !== '', 'fresh install initial_processing_boundary_at must be non-empty');
+assert_true((bool)preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $freshBoundaryValue), 'fresh install initial_processing_boundary_at must be persisted as a datetime string');
+assert_true(strtotime($freshBoundaryValue) !== false, 'fresh install initial_processing_boundary_at must be parseable as a valid datetime');
+assert_same($freshInstallDb->fixedNow(), $freshBoundaryValue, 'fresh install initial_processing_boundary_at must be seeded from the database clock source (NOW)');
+
+Schema::install($freshInstallDb);
+$freshBoundaryRowsAfterRerun = $freshInstallDb->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'initial_processing_boundary_at'")->fetchAll(PDO::FETCH_COLUMN);
+assert_same(1, count($freshBoundaryRowsAfterRerun), 're-running install must preserve a single initial_processing_boundary_at row');
+assert_same($freshBoundaryValue, trim((string)$freshBoundaryRowsAfterRerun[0]), 're-running install must not alter initial_processing_boundary_at once seeded');
+
+$upgradeContinuityDb = new SchemaUpgradePDO();
+schemaUpgradeCreateLegacyTables($upgradeContinuityDb);
+$upgradeContinuityDb->prepare('INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute(['enabled', '1', '2026-07-13 09:00:00']);
+Schema::install($upgradeContinuityDb);
+assert_same(0, (int)$upgradeContinuityDb->query("SELECT COUNT(*) FROM repeatcaller_settings WHERE setting_key = 'initial_processing_boundary_at'")->fetchColumn(), 'existing installs without initial_processing_boundary_at must not be backfilled during upgrade install continuity path');
+
+$controllerSource = file_get_contents($root . '/Repeatcaller.class.php');
+assert_true($controllerSource !== false, 'Repeatcaller.class.php should be readable');
+assert_true(strpos($controllerSource, "setSetting('initial_processing_boundary_at'") === false, 'ordinary settings saves must not persist the internal initial_processing_boundary_at key');
+assert_true(strpos($controllerSource, 'astDbGetValue(') !== false && strpos($controllerSource, 'astmanAction(') !== false, 'controller acceptance path must query tracked live channels and issue AMI control actions');
+assert_true(strpos($controllerSource, "'Redirect'") !== false && strpos($controllerSource, "'Hangup'") !== false, 'controller acceptance path must redirect answered playback legs and hang up launch or ringing legs');
+
 assert_true(strpos($installSource, '$astetc . \'/repeatcaller_alert.conf\'') !== false, 'alert-call dialplan must be generated as a module-owned fragment, not by editing a FreePBX-generated file directly');
 assert_true(strpos($installSource, '$astetc . \'/extensions_custom.conf\'') !== false, 'install hook may only add the module-owned include to extensions_custom.conf');
 assert_true(strpos($installSource, 'repeatcallerInstallAgi()') !== false, 'install hook must deploy the module AGI script into the Asterisk AGI directory');
@@ -514,19 +573,15 @@ assert_true(strpos($installSource, "'/repeatcaller_alert_response.php'") !== fal
 assert_true(strpos($installSource, '@copy($sourceAgiPath, $deployedAgiPath)') !== false, 'install hook must copy the AGI source into the Asterisk AGI directory');
 assert_true(strpos($installSource, '@chmod($deployedAgiPath, 0755)') !== false, 'install hook must explicitly enforce executable mode on the deployed AGI script');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}') !== false, 'originate dialplan must route answered calls through the module playback subroutine');
-assert_true(strpos($installSource, 'Set(REPEATCALLER_ATTEMPT=1)') !== false, 'alert-call prompt loop must start at the first playback attempt');
-assert_true(strpos($installSource, 'While($[${REPEATCALLER_ATTEMPT} <= 3])') === false, 'alert-call response loop must be finite without replaying the full incident message through a While structure');
-assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF,,1,,1,10)') !== false, 'alert-call prompt loop must wait 10 seconds for one DTMF digit after each playback');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"="1"]?accepted)') !== false, 'DTMF 1 must stop the retry loop and route to accepted handling');
-assert_true(strpos($installSource, 'GotoIf($["${REPEATCALLER_DTMF}"="2"]?declined)') !== false, 'DTMF 2 must stop the retry loop and route to declined handling');
-assert_true(strpos($installSource, 'Set(REPEATCALLER_RESPONSE_PHASE=recording)') !== false && strpos($installSource, 'Set(REPEATCALLER_RESPONSE_PHASE=summary)') !== false && strpos($installSource, 'Set(REPEATCALLER_RESPONSE_PHASE=menu)') !== false, 'alert-call dialplan must distinguish recording, summary, and menu phases across each full playback attempt');
-assert_true(strpos($installSource, 'Set(REPEATCALLER_ATTEMPT=$[${REPEATCALLER_ATTEMPT} + 1])') !== false, 'invalid or missing DTMF must consume the current attempt before retrying');
-assert_true(strpos($installSource, 'same => n(begin_attempt),Set(REPEATCALLER_DTMF=)') !== false, 'each attempt must restart from the beginning of the full alert');
-assert_true(strpos($installSource, 'GotoIf($[${REPEATCALLER_ATTEMPT} >= 3]?no_response)') !== false, 'the third unsuccessful attempt must terminate through the no-response path instead of looping again');
-assert_true(strpos($installSource, 'same => n,Goto(begin_attempt)') !== false, 'missing or invalid DTMF must restart the complete alert while attempts remain');
-assert_true(strpos($installSource, 'same => n(no_response),AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third unsuccessful attempt, dialplan must record answered_no_response and hang up unclaimed');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},answered_no_response,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_DTMF})') !== false, 'after the third response window expires, dialplan must record answered_no_response and hang up unclaimed via the deployed AGI-bin script');
-assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'accepted, declined, and third-attempt no-response terminal outcomes must play thank-you then goodbye');
+assert_true(strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_channel)=${CHANNEL(name)})') !== false && strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_uniqueid)=${CHANNEL(uniqueid)})') !== false, 'launch dialplan must track live launch channel identifiers for acceptance-time hangup');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12})') !== false, 'answered-call interaction must pass playback target and summary values via ARG parameters that were expanded at Dial() time, not via channel variables that are inaccessible on the a-leg in the U() subroutine');
+assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF') === false, 'answered-call interaction must no longer depend on dialplan Read()');
+assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'remote accepted handling must still play thank-you then goodbye');
+assert_true(strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_channel)=${CHANNEL(name)})') !== false && strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_uniqueid)=${CHANNEL(uniqueid)})') !== false, 'answered playback dialplan must track live playback channel identifiers for immediate remote acceptance redirect');
+assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'answered alert-call legs must have a dedicated remote_accepted redirect target to thank and disconnect the caller');
+assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'playback context must expose a dedicated remote_accepted extension for AMI Redirect');
+assert_true(strpos($installSource, 'exten => h,1,Set(REPEATCALLER_LAUNCH_DB_DELETE=${DB_DELETE(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_channel)})') !== false, 'launch dialplan must clean up tracked launch channels on hangup');
+assert_true(strpos($installSource, 'Set(REPEATCALLER_PLAYBACK_DB_DELETE=${DB_DELETE(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_channel)})') !== false, 'playback dialplan must clean up tracked playback channels on hangup');
 assert_true(strpos($installSource, 'exten => h,1,GotoIf($["${REPEATCALLER_ALERT_COMPLETED}"="1"]?done)') !== false, 'hangup during the prompt loop must be recorded as answered_no_response only when no answered terminal outcome already completed');
 assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},dialstatus,${REPEATCALLER_ALERT_RECIPIENT},${DIALSTATUS},${HANGUPCAUSE})') !== false, 'launch context must pass DIALSTATUS and HANGUPCAUSE to the AGI callback after Dial returns');
 assert_true(strpos($installSource, "str_replace('__REPEATCALLER_AGI_SCRIPT__', \$agiScriptName") !== false, 'generated dialplan must reference the deployed AGI script name used in Asterisk AGI-bin');
@@ -534,14 +589,18 @@ assert_true(strpos($installSource, "str_replace('__REPEATCALLER_AGI_SCRIPT__', \
 $agiSource = file_get_contents($root . '/agi/repeatcaller_alert_response.php');
 assert_true($agiSource !== false, 'alert-call AGI handler should be readable');
 assert_true(strpos($agiSource, 'recordAlertCallDtmfResponse($historyId, $incidentId, $response, $recipient, $digit') !== false, 'AGI handler must route exact alert attempt context to the repository response handler');
+assert_true(strpos($agiSource, 'function repeatcallerAgiCreateTransport()') !== false && strpos($agiSource, 'new class implements \\FreePBX\\modules\\Repeatcaller\\AlertCallAgiTransport') !== false, 'AGI handler must expose a dedicated interactive transport for AGI audio and digit primitives after loading the session interface');
+assert_true(strpos($agiSource, 'STREAM FILE') !== false && strpos($agiSource, 'SAY NUMBER') !== false && strpos($agiSource, 'SAY DIGITS') !== false && strpos($agiSource, 'WAIT FOR DIGIT ') !== false, 'AGI interactive path must use digit-interruptible AGI primitives for recordings, spoken numbers, spoken digits, and menu wait');
+$agiSessionSource = file_get_contents($root . '/src/AlertCallAgiSession.php');
+assert_true($agiSessionSource !== false, 'AlertCallAgiSession.php should be readable');
+assert_true(strpos($agiSessionSource, 'waitForDigit(1)') !== false, 'AGI interactive path must retain a digit entered immediately after answer');
+assert_true(strpos($agiSessionSource, 'waitForDigit(10000)') !== false, 'AGI interactive path must preserve the 10-second response wait after spoken prompts');
 assert_true(strpos($agiSource, 'function repeatcallerTryImmediateOrderedFollowUp(') !== false, 'AGI handler must include a focused immediate ordered follow-up bridge');
-assert_true(strpos($agiSource, 'loadDeliverableCallAlertByHistoryId($nextHistoryId') !== false, 'AGI immediate bridge must load the newly reserved alert-call history row from repository state');
-assert_true(strpos($agiSource, 'markCallAlertSending($nextHistoryId') !== false, 'AGI immediate bridge must reuse existing sending state transition');
+assert_true(strpos($agiSource, 'IncidentAlertProcessor::continueImmediateOrderedStage(') !== false, 'AGI immediate bridge must reuse the shared bounded same-stage continuation helper');
 assert_true(strpos($agiSource, 'sendAlertCall(') !== false, 'AGI immediate bridge must reuse existing module alert-call sender');
-assert_true(strpos($agiSource, 'markCallAlertSent($nextHistoryId') !== false, 'AGI immediate bridge must reuse existing sent state transition on successful originate');
-assert_true(strpos($agiSource, 'markCallAlertSnoozed($nextHistoryId') !== false, 'AGI immediate bridge must keep failed immediate sends deliverable for normal monitor retry');
+assert_true(strpos($agiSource, 'signalIncidentAcceptedForLiveAlertCalls($incidentId, $historyId)') !== false, 'AGI acceptance path must signal live answered alert-call legs when the incident is accepted while excluding the accepting leg');
 assert_true(strpos($agiSource, 'repeatcallerTryImmediateOrderedFollowUp($repository, $moduleRoot, $context, $result, $now);') !== false, 'AGI handler must invoke the immediate ordered follow-up bridge after terminal callback persistence');
-assert_true(strpos($agiSource, "in_array(\$response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus'], true)") !== false, 'AGI handler must allow known DTMF and dialstatus callback actions');
+assert_true(strpos($agiSource, "in_array(\$response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus', 'interactive'], true)") !== false, 'AGI handler must allow known DTMF, interactive, and dialstatus callback actions');
 assert_true(strpos($agiSource, 'function repeatcallerResolveModuleRoot(): ?string') !== false, 'AGI handler must resolve the module root explicitly when executed from Asterisk AGI-bin');
 assert_true(strpos($agiSource, "FreePBX::Config()->get('AMPWEBROOT')") !== false, 'AGI handler must use FreePBX bootstrap configuration to find the installed module path');
 assert_true(strpos($agiSource, 'attempted_roots') !== false, 'AGI handler must log attempted resolver roots on module-path resolution failure');
@@ -588,6 +647,32 @@ $repoStub = "<?php\n"
 	. "    }\n"
 	. "}\n";
 assert_true(file_put_contents($repoStubPath, $repoStub) !== false, 'AGI contract should write a fake RepeatCallerRepository class');
+
+$agiSessionStubPath = $fakeSrcDir . '/AlertCallAgiSession.php';
+$agiSessionStub = '<?php' . "\n"
+	. 'namespace FreePBX\\modules\\Repeatcaller;' . "\n"
+	. 'interface AlertCallAgiTransport {' . "\n"
+	. '    public function setVariable(string $name, string $value): void;' . "\n"
+	. '    public function streamFile(string $file, string $escapeDigits): string;' . "\n"
+	. '    public function sayNumber(int $number, string $escapeDigits): string;' . "\n"
+	. '    public function sayDigits(string $digits, string $escapeDigits): string;' . "\n"
+	. '    public function waitForDigit(int $milliseconds): string;' . "\n"
+	. '}' . "\n"
+	. 'class AlertCallAgiSession {' . "\n"
+	. '    public function run(array $context, AlertCallAgiTransport $transport, callable $isRemotelyAccepted): array {' . "\n"
+	. "        return ['response' => 'accepted', 'digit' => '1', 'accepted' => true];\n"
+	. '    }' . "\n"
+	. '}' . "\n";
+assert_true(file_put_contents($agiSessionStubPath, $agiSessionStub) !== false, 'AGI contract should write a fake AlertCallAgiSession class');
+
+$moduleStubPath = $fakeModuleRoot . '/Repeatcaller.class.php';
+$moduleStub = '<?php' . "\n"
+	. 'namespace FreePBX\\modules;' . "\n"
+	. 'class Repeatcaller {' . "\n"
+	. '    public function __construct($container) {}' . "\n"
+	. '    public function signalIncidentAcceptedForLiveAlertCalls(int $incidentId, ?int $excludeHistoryId = null): void {}' . "\n"
+	. '}' . "\n";
+assert_true(file_put_contents($moduleStubPath, $moduleStub) !== false, 'AGI contract should write a fake Repeatcaller module class for accepted callback signalling');
 
 $runAgi = function (string $scriptPath, string $bootstrap, string $args, ?array &$lines = null): int {
 	$lines = [];

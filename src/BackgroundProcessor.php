@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FreePBX\modules\Repeatcaller;
 
 use PDO;
+use RuntimeException;
 
 final class BackgroundProcessor {
 	private PDO $pdo;
@@ -51,7 +52,11 @@ final class BackgroundProcessor {
 
 		$lookbackMinutes = $this->lookbackMinutes($rules);
 		$scan = $this->scanner->scanRecentInboundJourneys($lookbackMinutes);
-		$newJourneys = $this->reserveNewJourneys($scan['journeys'], (string)($settings['default_country_code'] ?? ''));
+		$eligibleJourneys = $this->filterJourneysByInitialBoundary(
+			$scan['journeys'],
+			trim((string)($settings['initial_processing_boundary_at'] ?? ''))
+		);
+		$newJourneys = $this->reserveNewJourneys($eligibleJourneys, (string)($settings['default_country_code'] ?? ''));
 
 		$summary = [
 			'scanned_rows' => $scan['raw_rows'],
@@ -72,6 +77,32 @@ final class BackgroundProcessor {
 		}
 
 		return $summary;
+	}
+
+	private function filterJourneysByInitialBoundary(array $journeys, string $boundary): array {
+		if ($boundary === '') {
+			return $journeys;
+		}
+
+		$boundaryTs = strtotime($boundary);
+		if ($boundaryTs === false) {
+			return $journeys;
+		}
+
+		$filtered = [];
+		foreach ($journeys as $journey) {
+			$completedAt = trim((string)($journey['call_completed_at'] ?? ($journey['completed_at'] ?? '')));
+			if ($completedAt === '') {
+				continue;
+			}
+			$completedTs = strtotime($completedAt);
+			if ($completedTs === false || $completedTs < $boundaryTs) {
+				continue;
+			}
+			$filtered[] = $journey;
+		}
+
+		return $filtered;
 	}
 
 	private function processRepeatRule(array $rule, array $newJourneys, array &$summary, string $defaultCountryCode): void {
@@ -117,7 +148,8 @@ final class BackgroundProcessor {
 
 			$windowStart = date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) - (((int)$rule['observation_window_minutes']) * 60));
 			$recent = $this->repository->loadRecentSeenCalls($callerSubjectKey, $windowStart, (string)$matched['completed_at']);
-			$currentCount = count($this->filterStoredCallsForRule($recent, $rule, (string)$matched['completed_at'], $routeKey));
+			$matchingRows = $this->filterStoredCallsForRule($recent, $rule, (string)$matched['completed_at'], $routeKey);
+			$currentCount = count($matchingRows);
 			$conditionMet = $currentCount >= (int)$rule['threshold_count'];
 
 			$state['current_window_started_at'] = $windowStart;
@@ -190,7 +222,10 @@ final class BackgroundProcessor {
 				continue;
 			}
 
-			$suppressionExpiresAt = date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) + ($suppressionMinutes * 60));
+			$suppressionExpiresAt = $suppressionMinutes > 0
+				? date('Y-m-d H:i:s', strtotime((string)$matched['completed_at']) + ($suppressionMinutes * 60))
+				: null;
+			[$firstMatchedAt, $lastMatchedAt] = $this->incidentMatchBounds($matchingRows);
 			$incidentId = $this->repository->createIncident([
 				'rule_id' => $ruleId,
 				'subject_key' => $subjectKey,
@@ -201,8 +236,8 @@ final class BackgroundProcessor {
 				'caller_display' => $matched['caller_raw'] !== '' ? $matched['caller_raw'] : ($matched['caller_clid'] ?? null),
 				'withheld_caller' => !empty($matched['withheld']) ? 1 : 0,
 				'mode' => 'repeat',
-				'first_matched_at' => (string)$matched['completed_at'],
-				'last_matched_at' => (string)$matched['completed_at'],
+				'first_matched_at' => $firstMatchedAt,
+				'last_matched_at' => $lastMatchedAt,
 				'matched_call_count' => $currentCount,
 				'state' => 'active',
 				'suppression_expires_at' => $suppressionExpiresAt,
@@ -229,7 +264,11 @@ final class BackgroundProcessor {
 		$suppressionMinutes = $this->ruleSuppressionMinutes($rule);
 		foreach ($subjects as $subject) {
 			$state = $this->repository->loadSubjectState((int)$rule['id'], $subject) ?? [];
-			$currentWindowStart = $state['current_window_started_at'] ?? $this->latestScheduleAnchor($rule['schedules'], $now);
+			$currentWindowStart = trim((string)($state['current_window_started_at'] ?? ''));
+			if ($currentWindowStart === '') {
+				$activationBoundary = $this->invertActivationBoundary($rule, $now);
+				$currentWindowStart = $this->initialInvertWindowStart($rule['schedules'], $activationBoundary);
+			}
 			if ($currentWindowStart === null) {
 				continue;
 			}
@@ -245,39 +284,89 @@ final class BackgroundProcessor {
 				$conditionMet = $currentCount >= (int)$rule['threshold_count'];
 
 				if ($conditionMet) {
-					$state['threshold_met'] = 1;
-					$state['clear_observed_since_trigger'] = 1;
+					$state['threshold_met'] = 0;
+					$state['clear_observed_since_trigger'] = 0;
 					$state['active_incident_id'] = null;
 					$this->repository->markConditionCleared((int)$rule['id'], $subject, $currentWindowEnd);
 				} else {
 					$activeIncident = $this->repository->loadTrackedIncident((int)$rule['id'], $subject);
-					if (!is_array($activeIncident) && (empty($state['threshold_met']) || !empty($state['clear_observed_since_trigger']))) {
-						$suppressionExpiresAt = date('Y-m-d H:i:s', strtotime($currentWindowEnd) + ($suppressionMinutes * 60));
-						$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
-						$incidentId = $this->repository->createIncident([
-							'rule_id' => (int)$rule['id'],
-							'subject_key' => $subject,
-							'subject_label' => $subjectLabel,
-							'threshold_count' => (int)$rule['threshold_count'],
-							'observation_window_minutes' => (int)$rule['observation_window_minutes'],
-							'caller_normalized' => $subject === 'withheld' || $subject === $this->invertAggregateSubject((int)$rule['id']) ? null : $subject,
-							'caller_display' => $subjectLabel,
-							'withheld_caller' => $subject === 'withheld' ? 1 : 0,
-							'mode' => 'invert',
-							'first_matched_at' => $currentWindowEnd,
-							'last_matched_at' => $currentWindowEnd,
-							'matched_call_count' => $currentCount,
-							'state' => 'active',
-							'suppression_expires_at' => $suppressionExpiresAt,
-							'created_at' => $currentWindowEnd,
-							'updated_at' => $currentWindowEnd,
-						]);
-						$state['active_incident_id'] = $incidentId;
-						$state['suppression_expires_at'] = $suppressionExpiresAt;
-						$summary['incidents_created']++;
+					if (is_array($activeIncident)) {
+						// Consecutive failed window within the same episode: update the open incident.
+						$this->repository->updateIncidentWithCall(
+							(int)$activeIncident['id'],
+							$currentWindowEnd,
+							$currentCount
+						);
+						$state['threshold_met'] = 1;
+						$state['clear_observed_since_trigger'] = 0;
+						$state['active_incident_id'] = (int)$activeIncident['id'];
+						$state['suppression_expires_at'] = (string)($activeIncident['suppression_expires_at'] ?? '');
+						$summary['incidents_updated']++;
+					} elseif (empty($state['threshold_met']) || !empty($state['clear_observed_since_trigger'])) {
+						// New qualifying episode: condition has cleared and the latch has re-armed.
+						$suppressionExpiresAtForState = trim((string)($state['suppression_expires_at'] ?? ''));
+						if ($suppressionExpiresAtForState !== '' && strtotime($currentWindowEnd) < strtotime($suppressionExpiresAtForState)) {
+							$referenceIncident = $this->repository->loadMostRecentIncidentForSubject((int)$rule['id'], $subject);
+							if (is_array($referenceIncident) && !empty($referenceIncident['id'])) {
+								$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
+								$this->repository->reserveSuppressedIncidentHistory([
+									'related_incident_id' => (int)$referenceIncident['id'],
+									'rule_id' => (int)$rule['id'],
+									'rule_name' => (string)($rule['name'] ?? ''),
+									'mode' => 'invert',
+									'subject_key' => $subject,
+									'subject_label' => $subjectLabel,
+									'caller_normalized' => $subject === 'withheld' || $subject === $this->invertAggregateSubject((int)$rule['id']) ? null : $subject,
+									'caller_display' => $subjectLabel,
+									'inbound_route_key' => null,
+									'inbound_route_label' => '',
+									'did_value' => null,
+									'matched_call_count' => $currentCount,
+									'threshold_count' => (int)$rule['threshold_count'],
+									'observation_window_minutes' => (int)$rule['observation_window_minutes'],
+									'suppression_source' => isset($rule['suppression_minutes_override']) && $rule['suppression_minutes_override'] !== null && $rule['suppression_minutes_override'] !== '' ? 'rule_override' : 'global_default',
+									'suppression_minutes' => $suppressionMinutes,
+									'suppression_started_at' => (string)($referenceIncident['created_at'] ?? $referenceIncident['first_matched_at'] ?? $currentWindowEnd),
+									'suppression_expires_at' => $suppressionExpiresAtForState,
+									'cleared_at' => null,
+									'related_incident_state' => (string)($referenceIncident['state'] ?? 'active'),
+									'detected_at' => $currentWindowEnd,
+									'created_at' => $currentWindowEnd,
+									'updated_at' => $currentWindowEnd,
+								]);
+							}
+						} else {
+							$suppressionExpiresAt = $suppressionMinutes > 0
+								? date('Y-m-d H:i:s', strtotime($currentWindowEnd) + ($suppressionMinutes * 60))
+								: null;
+							$subjectLabel = $subject === $this->invertAggregateSubject((int)$rule['id']) ? 'Any caller' : $subject;
+							$incidentId = $this->repository->createIncident([
+								'rule_id' => (int)$rule['id'],
+								'subject_key' => $subject,
+								'subject_label' => $subjectLabel,
+								'threshold_count' => (int)$rule['threshold_count'],
+								'observation_window_minutes' => (int)$rule['observation_window_minutes'],
+								'caller_normalized' => $subject === 'withheld' || $subject === $this->invertAggregateSubject((int)$rule['id']) ? null : $subject,
+								'caller_display' => $subjectLabel,
+								'withheld_caller' => $subject === 'withheld' ? 1 : 0,
+								'mode' => 'invert',
+								'first_matched_at' => $currentWindowEnd,
+								'last_matched_at' => $currentWindowEnd,
+								'matched_call_count' => $currentCount,
+								'state' => 'active',
+								'suppression_expires_at' => $suppressionExpiresAt,
+								'created_at' => $currentWindowEnd,
+								'updated_at' => $currentWindowEnd,
+							]);
+							$state['active_incident_id'] = $incidentId;
+							$state['suppression_expires_at'] = $suppressionExpiresAt;
+							$summary['incidents_created']++;
+						}
+						$state['threshold_met'] = 1;
+						$state['clear_observed_since_trigger'] = 0;
 					}
-					$state['threshold_met'] = 0;
-					$state['clear_observed_since_trigger'] = 0;
+					// else: threshold_met=1, clear_observed=0, no tracked incident —
+					// consecutive episode without a prior passing window, nothing to do.
 				}
 
 				$currentWindowStart = $currentWindowEnd;
@@ -290,6 +379,72 @@ final class BackgroundProcessor {
 			$state['last_evaluated_at'] = $now;
 			$this->repository->saveSubjectState((int)$rule['id'], $subject, $state);
 		}
+	}
+
+	private function invertActivationBoundary(array $rule, string $now): string {
+		$enabledAt = trim((string)($rule['enabled_at'] ?? ''));
+		if ($enabledAt !== '' && strtotime($enabledAt) !== false) {
+			return $enabledAt;
+		}
+
+		return $now;
+	}
+
+	private function initialInvertWindowStart(array $schedules, string $activationBoundary): ?string {
+		if (strtotime($activationBoundary) === false) {
+			return null;
+		}
+
+		if (DetectionEngine::callInActiveSchedule($activationBoundary, $schedules)) {
+			return $activationBoundary;
+		}
+
+		return $this->nextScheduleAnchorOnOrAfter($schedules, $activationBoundary);
+	}
+
+	private function nextScheduleAnchorOnOrAfter(array $schedules, string $boundary): ?string {
+		$boundaryTs = strtotime($boundary);
+		if ($boundaryTs === false || !$schedules) {
+			return null;
+		}
+
+		$boundaryDayStartTs = strtotime(date('Y-m-d', $boundaryTs) . ' 00:00:00');
+		if ($boundaryDayStartTs === false) {
+			return null;
+		}
+
+		$earliest = null;
+		for ($offset = 0; $offset <= 7; $offset++) {
+			$dayTs = strtotime('+' . $offset . ' day', $boundaryDayStartTs);
+			$day = (int)date('w', $dayTs);
+			foreach ($schedules as $period) {
+				$periodDay = isset($period['day']) ? (int)$period['day'] : (isset($period['day_of_week']) ? (int)$period['day_of_week'] : null);
+				if ($periodDay === null) {
+					continue;
+				}
+				if ($periodDay !== -1 && $periodDay !== $day) {
+					continue;
+				}
+
+				$startRaw = isset($period['start']) ? (string)$period['start'] : (isset($period['start_time']) ? (string)$period['start_time'] : '');
+				$start = substr(trim($startRaw), 0, 5);
+				if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $start)) {
+					continue;
+				}
+
+				$candidate = date('Y-m-d', $dayTs) . ' ' . $start . ':00';
+				$candidateTs = strtotime($candidate);
+				if ($candidateTs === false || $candidateTs < $boundaryTs) {
+					continue;
+				}
+
+				if ($earliest === null || $candidateTs < strtotime($earliest)) {
+					$earliest = $candidate;
+				}
+			}
+		}
+
+		return $earliest;
 	}
 
 	private function hydrateRules(array $rules): array {
@@ -344,6 +499,50 @@ final class BackgroundProcessor {
 		return $newJourneys;
 	}
 
+	private function incidentMatchBounds(array $matchingRows): array {
+		if (!$matchingRows) {
+			$message = 'Invariant violation: repeat incident creation attempted with an empty contributing match set';
+			$this->logError($message);
+			throw new RuntimeException($message);
+		}
+
+		$firstMatchedAt = '';
+		$lastMatchedAt = '';
+
+		foreach ($matchingRows as $row) {
+			$completedAt = trim((string)($row['call_completed_at'] ?? ''));
+			if ($completedAt === '') {
+				continue;
+			}
+
+			if ($firstMatchedAt === '' || strtotime($completedAt) < strtotime($firstMatchedAt)) {
+				$firstMatchedAt = $completedAt;
+			}
+			if ($lastMatchedAt === '' || strtotime($completedAt) > strtotime($lastMatchedAt)) {
+				$lastMatchedAt = $completedAt;
+			}
+		}
+
+		if ($firstMatchedAt === '' || $lastMatchedAt === '') {
+			$message = 'Invariant violation: contributing matches are missing completion timestamps';
+			$this->logError($message);
+			throw new RuntimeException($message);
+		}
+
+		return [$firstMatchedAt, $lastMatchedAt];
+	}
+
+	private function logError(string $message): void {
+		try {
+			if (is_callable(['\\FreePBX', 'Log'])) {
+				\FreePBX::Log()->error('repeatcaller: ' . $message);
+				return;
+			}
+		} catch (\Throwable $e) {
+		}
+		error_log('repeatcaller: ' . $message);
+	}
+
 	private function filterStoredCallsForRule(array $rows, array $rule, string $asOf, ?string $routeScopeKey = null): array {
 		$matched = [];
 		$routeScopeKey = trim((string)$routeScopeKey);
@@ -361,10 +560,11 @@ final class BackgroundProcessor {
 				continue;
 			}
 			$route = (string)$journey['route_key'];
-			if (($rule['did_scope_mode'] ?? 'all') === 'selected' && !in_array($route, $rule['include_routes'] ?? [], true)) {
+			$didScopeMode = ($rule['did_scope_mode'] ?? 'all') === 'selected' ? 'selected' : 'all';
+			if ($didScopeMode === 'selected' && !in_array($route, $rule['include_routes'] ?? [], true)) {
 				continue;
 			}
-			if (in_array($route, $rule['exclude_routes'] ?? [], true)) {
+			if ($didScopeMode === 'all' && in_array($route, $rule['exclude_routes'] ?? [], true)) {
 				continue;
 			}
 			if ($routeScopeKey !== '' && $route !== $routeScopeKey) {
