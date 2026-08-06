@@ -99,7 +99,7 @@ function assert_same($expected, $actual, string $message): void {
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for alert-call dialplan contract checks');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}^${IF($["${REPEATCALLER_PLAYBACK_LANGUAGE}"=""]?${CHANNEL(language)}:${REPEATCALLER_PLAYBACK_LANGUAGE})}^${REPEATCALLER_ALERT_HISTORY_ID}^${REPEATCALLER_INCIDENT_ID}^${REPEATCALLER_ALERT_RECIPIENT}^${REPEATCALLER_SUMMARY_MODE}^${REPEATCALLER_SUMMARY_CALL_COUNT}^${REPEATCALLER_SUMMARY_THRESHOLD}^${REPEATCALLER_SUMMARY_WINDOW_MINUTES}^${REPEATCALLER_SUMMARY_CALLER_KIND}^${REPEATCALLER_SUMMARY_CALLER_VALUE}^${REPEATCALLER_SUMMARY_DID_VALUE})') !== false, 'called-channel U() invocation must carry mode, count, threshold, window, caller-kind, caller digits, and DID digits into alert playback instead of relying on empty summary arguments');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${REPEATCALLER_PLAYBACK_TARGET},${REPEATCALLER_SUMMARY_MODE},${REPEATCALLER_SUMMARY_CALL_COUNT},${REPEATCALLER_SUMMARY_THRESHOLD},${REPEATCALLER_SUMMARY_WINDOW_MINUTES},${REPEATCALLER_SUMMARY_CALLER_KIND},${REPEATCALLER_SUMMARY_CALLER_VALUE},${REPEATCALLER_SUMMARY_DID_VALUE})') !== false, 'generated alert-playback dialplan must delegate answered-call interaction to the dedicated AGI session');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12})') !== false, 'generated alert-playback dialplan must delegate answered-call interaction to the dedicated AGI session using ARG parameters');
 assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF') === false, 'answered-call interaction must no longer depend on dialplan Read() collection');
 assert_true(strpos($installSource, 'While($[') === false, 'response loop must be finite and must not rely on an unbounded While retry structure');
 assert_true(strpos($installSource, '[repeatcaller-alert-summary]') !== false, 'generated dialplan may retain the summary helper context for compatibility even though answered-call interaction is now AGI-owned');
@@ -272,6 +272,191 @@ $remoteAcceptedResult = $agiSession->run([
 });
 assert_same('remote_accepted', (string)$remoteAcceptedResult['response'], 'remote acceptance must terminate the interactive AGI session cleanly');
 assert_same('1', (string)($remoteAcceptedTransport->variables['REPEATCALLER_ALERT_COMPLETED'] ?? ''), 'remote acceptance must mark the answered call complete before exit audio');
+
+// --- Audio sequence tests ---
+// These prove the exact ordered individual filenames and protect against argument-index
+// regressions (zero values when channel vars are inaccessible on the a-leg).
+
+// Repeat mode: 3 calls, threshold 3, 30 minutes, no caller info, with System Recording.
+$repeatFullTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+(new AlertCallAgiSession())->run([
+	'playback_target' => 'custom/my-intro',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '3',
+	'summary_threshold' => '3',
+	'summary_window_minutes' => '30',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $repeatFullTransport, function (): bool { return false; });
+$rfCalls = $repeatFullTransport->calls;
+assert_same('waitForDigit', (string)$rfCalls[0]['method'], 'session must check for a buffered pre-answer digit as its very first operation');
+assert_same(1, (int)$rfCalls[0]['milliseconds'], 'the immediate buffered-digit check must use a 1ms AGI wait');
+$rfStreamCalls = array_values(array_filter($rfCalls, static function (array $c): bool { return $c['method'] === 'streamFile'; }));
+$rfStreamFiles = array_column($rfStreamCalls, 'file');
+// No &-chained value may survive as a single STREAM FILE argument.
+foreach ($rfStreamFiles as $rfFile) {
+	assert_true(strpos($rfFile, '&') === false, 'no STREAM FILE call may contain & — each prompt must be a separate AGI command; got: ' . $rfFile);
+}
+// System Recording plays first.
+assert_same('custom/my-intro', $rfStreamFiles[0], 'System Recording must be the first audio played when a playback_target is configured');
+// Beep/warning sequence immediately follows as seven individual files.
+assert_same('beep',    $rfStreamFiles[1], 'beep sequence position 1 must be beep');
+assert_same('beep',    $rfStreamFiles[2], 'beep sequence position 2 must be beep');
+assert_same('beep',    $rfStreamFiles[3], 'beep sequence position 3 must be beep');
+assert_same('warning', $rfStreamFiles[4], 'beep sequence position 4 must be warning');
+assert_same('beep',    $rfStreamFiles[5], 'beep sequence position 5 must be beep');
+assert_same('beep',    $rfStreamFiles[6], 'beep sequence position 6 must be beep');
+assert_same('beep',    $rfStreamFiles[7], 'beep sequence position 7 must be beep');
+// Preamble plays as five individual files in exact order.
+assert_same('this',      $rfStreamFiles[8],  'preamble position 1 must be "this"');
+assert_same('alert',     $rfStreamFiles[9],  'preamble position 2 must be "alert"');
+assert_same('has-been',  $rfStreamFiles[10], 'preamble position 3 must be "has-been"');
+assert_same('initiated', $rfStreamFiles[11], 'preamble position 4 must be "initiated"');
+assert_same('for',       $rfStreamFiles[12], 'preamble position 5 must be "for"');
+// Summary values must be spoken as non-zero numbers.
+$rfNumbers = array_filter($rfCalls, static function (array $c): bool { return $c['method'] === 'sayNumber'; });
+$rfNumberValues = array_column(array_values($rfNumbers), 'number');
+assert_true(in_array(3, $rfNumberValues, true), 'call count of 3 must be spoken for a repeat-mode alert');
+assert_true(in_array(30, $rfNumberValues, true), 'window of 30 minutes must be spoken');
+assert_true(!in_array(0, $rfNumberValues, true), 'no spoken number may be zero — zero indicates an argument-index regression');
+assert_true(in_array('calls', $rfStreamFiles, true), 'plural "calls" file must be streamed for a count of 3');
+assert_true(in_array('within', $rfStreamFiles, true), 'window connector "within" must be streamed');
+assert_true(in_array('minutes', $rfStreamFiles, true), 'plural "minutes" file must be streamed for window of 30');
+assert_true(in_array('vqplus-accept', $rfStreamFiles, true), 'DTMF instructions file must be streamed at the end of the summary');
+assert_true(!in_array('less-than', $rfStreamFiles, true), 'repeat-mode alert must not stream the "less-than" invert prefix');
+// Remote acceptance can fire between individual prompt files mid-sequence.
+$rfRemoteChecks = 0;
+$rfRemoteTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+(new AlertCallAgiSession())->run([
+	'playback_target' => 'custom/my-intro',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '3',
+	'summary_threshold' => '3',
+	'summary_window_minutes' => '30',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $rfRemoteTransport, function () use (&$rfRemoteChecks): bool {
+	$rfRemoteChecks++;
+	return $rfRemoteChecks >= 4; // fires partway through the beep sequence
+});
+$rfRemoteStreamFiles = array_column(array_values(array_filter($rfRemoteTransport->calls, static function (array $c): bool { return $c['method'] === 'streamFile'; })), 'file');
+assert_true(count($rfRemoteStreamFiles) < count($rfStreamFiles), 'remote acceptance mid-sequence must terminate playback before all segments are streamed');
+
+// calling/number must be two individual files with DID digits after.
+$callerDidTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+(new AlertCallAgiSession())->run([
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '10',
+	'summary_caller_kind' => 'numeric',
+	'summary_caller_value' => '441234',
+	'summary_did_value' => '0207999',
+], $callerDidTransport, function (): bool { return false; });
+$cdStreams = array_column(array_values(array_filter($callerDidTransport->calls, static function (array $c): bool { return $c['method'] === 'streamFile'; })), 'file');
+foreach ($cdStreams as $cdFile) {
+	assert_true(strpos($cdFile, '&') === false, 'calling/DID sequence must not contain & in any stream file; got: ' . $cdFile);
+}
+assert_true(in_array('calling', $cdStreams, true), '"calling" must be streamed as an individual file');
+assert_true(in_array('number', $cdStreams, true), '"number" must be streamed as an individual file');
+$callingIdx = array_search('calling', $cdStreams, true);
+assert_same('number', $cdStreams[(int)$callingIdx + 1], '"number" must immediately follow "calling" in the stream order');
+
+// Invert mode: threshold 2, window 15 minutes, no caller info, no System Recording.
+$invertFullTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+(new AlertCallAgiSession())->run([
+	'playback_target' => '',
+	'summary_mode' => 'invert',
+	'summary_call_count' => '0',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '15',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $invertFullTransport, function (): bool { return false; });
+$ifCalls = $invertFullTransport->calls;
+$ifStreamCalls = array_values(array_filter($ifCalls, static function (array $c): bool { return $c['method'] === 'streamFile'; }));
+$ifStreamFiles = array_column($ifStreamCalls, 'file');
+foreach ($ifStreamFiles as $ifFile) {
+	assert_true(strpos($ifFile, '&') === false, 'invert-mode stream sequence must not contain & in any single file; got: ' . $ifFile);
+}
+assert_same('waitForDigit', (string)$ifCalls[0]['method'], 'session must still check for a buffered digit first even without a System Recording');
+assert_same('beep', $ifStreamFiles[0], 'beep sequence must be the first audio when no System Recording is configured');
+assert_same('beep',    $ifStreamFiles[1], 'invert beep sequence position 2 must be beep');
+assert_same('beep',    $ifStreamFiles[2], 'invert beep sequence position 3 must be beep');
+assert_same('warning', $ifStreamFiles[3], 'invert beep sequence position 4 must be warning');
+assert_same('beep',    $ifStreamFiles[4], 'invert beep sequence position 5 must be beep');
+assert_same('beep',    $ifStreamFiles[5], 'invert beep sequence position 6 must be beep');
+assert_same('beep',    $ifStreamFiles[6], 'invert beep sequence position 7 must be beep');
+assert_true(in_array('less-than', $ifStreamFiles, true), 'invert-mode alert must stream "less-than" as an individual file before the threshold');
+$ifNumbers = array_filter($ifCalls, static function (array $c): bool { return $c['method'] === 'sayNumber'; });
+$ifNumberValues = array_column(array_values($ifNumbers), 'number');
+assert_true(in_array(2, $ifNumberValues, true), 'invert threshold of 2 must be spoken');
+assert_true(in_array(15, $ifNumberValues, true), 'window of 15 minutes must be spoken');
+assert_true(!in_array(0, $ifNumberValues, true), 'no spoken number may be zero in invert mode either');
+
+// No-response: all three attempts exhaust without a digit → answered_no_response.
+$noResponseTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$noResponseResult = (new AlertCallAgiSession())->run([
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '3',
+	'summary_threshold' => '3',
+	'summary_window_minutes' => '30',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $noResponseTransport, function (): bool { return false; });
+assert_same('answered_no_response', (string)$noResponseResult['response'], 'exhausting all attempts without a digit must record answered_no_response');
+assert_same('1', (string)($noResponseTransport->variables['REPEATCALLER_ALERT_COMPLETED'] ?? ''), 'no-response outcome must mark the call complete before exit audio');
+// sorry/please-try-again must also be individual files with no & in either.
+$sorryTransport = new FakeInteractiveTransport(['9', '9', '9']); // invalid digit on each waitForDigit(1)
+(new AlertCallAgiSession())->run([
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '3',
+	'summary_threshold' => '3',
+	'summary_window_minutes' => '30',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $sorryTransport, function (): bool { return false; });
+$sorryStreamFiles = array_column(array_values(array_filter($sorryTransport->calls, static function (array $c): bool { return $c['method'] === 'streamFile'; })), 'file');
+foreach ($sorryStreamFiles as $sorryFile) {
+	assert_true(strpos($sorryFile, '&') === false, 'sorry/please-try-again retry path must not contain & in any stream file; got: ' . $sorryFile);
+}
+assert_true(in_array('sorry', $sorryStreamFiles, true), '"sorry" must be streamed as an individual file');
+assert_true(in_array('please-try-again', $sorryStreamFiles, true), '"please-try-again" must be streamed as an individual file');
+$sorryIdx = array_search('sorry', $sorryStreamFiles, true);
+assert_same('please-try-again', $sorryStreamFiles[(int)$sorryIdx + 1], '"please-try-again" must immediately follow "sorry"');
+
+// Language: the session does not set the channel language; the dialplan uses ARG2 for
+// Set(CHANNEL(language)=...) before the AGI runs. Language lookup is a dialplan concern.
+
+// ARG-index regression guard: empty summary values produce spoken zeros, which is the
+// exact symptom when the wrong channel var (empty on the a-leg) substitutes for ARG7.
+$zeroCountTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+(new AlertCallAgiSession())->run([
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '',
+	'summary_threshold' => '',
+	'summary_window_minutes' => '',
+	'summary_caller_kind' => 'none',
+	'summary_caller_value' => '',
+	'summary_did_value' => '',
+], $zeroCountTransport, function (): bool { return false; });
+$zcNumbers = array_filter($zeroCountTransport->calls, static function (array $c): bool { return $c['method'] === 'sayNumber'; });
+$zcNumberValues = array_column(array_values($zcNumbers), 'number');
+assert_true(in_array(0, $zcNumberValues, true), 'empty summary values must produce spoken zeros — this is the broken state the ARG fix prevents');
+assert_true(!in_array(3, $zcNumberValues, true), 'correct non-zero values are absent when empty strings are passed — proves zero values are the regression symptom');
+$zcStreamFiles = array_column(array_values(array_filter($zeroCountTransport->calls, static function (array $c): bool { return $c['method'] === 'streamFile'; })), 'file');
+foreach ($zcStreamFiles as $zcFile) {
+	assert_true(strpos($zcFile, '&') === false, 'even the zero-value regression path must emit individual STREAM FILE calls; got: ' . $zcFile);
+}
 
 final class TestClock {
 	public string $now;

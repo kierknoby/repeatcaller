@@ -144,8 +144,18 @@ final class AlertCallAgiSession {
 		$didValue = trim((string)($context['summary_did_value'] ?? ''));
 
 		$segments = [
-			['type' => 'stream', 'value' => 'beep&beep&beep&warning&beep&beep&beep'],
-			['type' => 'stream', 'value' => 'this&alert&has-been&initiated&for'],
+			['type' => 'stream', 'value' => 'beep'],
+			['type' => 'stream', 'value' => 'beep'],
+			['type' => 'stream', 'value' => 'beep'],
+			['type' => 'stream', 'value' => 'warning'],
+			['type' => 'stream', 'value' => 'beep'],
+			['type' => 'stream', 'value' => 'beep'],
+			['type' => 'stream', 'value' => 'beep'],
+			['type' => 'stream', 'value' => 'this'],
+			['type' => 'stream', 'value' => 'alert'],
+			['type' => 'stream', 'value' => 'has-been'],
+			['type' => 'stream', 'value' => 'initiated'],
+			['type' => 'stream', 'value' => 'for'],
 		];
 
 		if ($mode === 'invert') {
@@ -169,7 +179,8 @@ final class AlertCallAgiSession {
 		}
 
 		if ($didValue !== '') {
-			$segments[] = ['type' => 'stream', 'value' => 'calling&number'];
+			$segments[] = ['type' => 'stream', 'value' => 'calling'];
+			$segments[] = ['type' => 'stream', 'value' => 'number'];
 			$segments[] = ['type' => 'digits', 'value' => $didValue];
 		}
 
@@ -206,7 +217,18 @@ final class AlertCallAgiSession {
 			return $result;
 		}
 
-		$digit = $transport->streamFile('sorry&please-try-again', self::ESCAPE_DIGITS);
+		$digit = $transport->streamFile('sorry', self::ESCAPE_DIGITS);
+		$result = $this->handleDigit($digit, $transport, $isRemotelyAccepted, $lastInvalidDigit);
+		if ($result !== null && $result['response'] !== 'invalid') {
+			return $result;
+		}
+
+		$result = $this->checkRemoteAccepted($transport, $isRemotelyAccepted);
+		if ($result !== null) {
+			return $result;
+		}
+
+		$digit = $transport->streamFile('please-try-again', self::ESCAPE_DIGITS);
 		$result = $this->handleDigit($digit, $transport, $isRemotelyAccepted, $lastInvalidDigit);
 		if ($result !== null && $result['response'] !== 'invalid') {
 			return $result;
