@@ -43,11 +43,13 @@ Main sections:
 
 The top Engine Status section contains the operational controls: Enable All Rules, Disable All Rules, Snooze, Resume All Rules, and Run Now. Enable All Rules turns on the global engine and enables every non-deleted rule, while Disable All Rules turns off the global engine and disables every non-deleted rule.
 
+The Default Country Code field in Global Settings is required before Repeat Caller can enable any rule. This guard applies to enabling an individual rule, creating a rule with Start as Enabled, and using Enable All Rules. Disabled rules may still be created, edited, and saved, but enable attempts are rejected until the field contains a genuine international country calling code of one to three digits, with an optional leading +.
+
 ## First-Time Setup
 
 1. Open Global Settings.
-2. Select Enable All Rules globally.
-3. Set the default country code if needed.
+2. Set Global Settings > Default Country Code to a genuine international country calling code such as 44 or +44.
+3. Select Enable All Rules globally.
 4. Configure incident, alert, and suppression history retention policies.
 5. Configure rule conditions, alert actions, and schedules as required.
 6. Save Global Settings.
@@ -82,7 +84,9 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Rule Name: identifies the rule in tables and alerts.
 - Start as: used only when creating a new rule to choose whether the rule
 	starts enabled or disabled. When editing an existing rule, the current
-	state is shown but can only be changed from the main table.
+	state is shown but can only be changed from the main table. Creating a new
+	rule with Start as Enabled still requires Global Settings > Default Country
+	Code to contain a valid international country calling code first.
 - Mode: Repeat or Invert detection logic. Use Repeat for repeated contact attempts; use Invert when you expect activity and need to detect when it does not occur.
 - Threshold: number of matching calls required for rule evaluation.
 - Window: observation period in minutes.

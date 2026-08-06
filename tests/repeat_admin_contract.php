@@ -704,6 +704,217 @@ $bulkRuleAResponse = current(array_values(array_filter($bulkEnableResponse['rule
 assert_true(is_array($bulkRuleAResponse), 'bulk enable response should include the newly enabled rule');
 assert_same('1', (string)($bulkRuleAResponse['enabled'] ?? '0'), 'bulk enable response should expose the updated rule state');
 
+$countryGuardSaveGlobalMethod = new ReflectionMethod($controller, 'rcHandleSaveGlobalSettings');
+$countryGuardSaveGlobalMethod->setAccessible(true);
+$countryGuardSetSettingMethod = new ReflectionMethod($controller, 'setSetting');
+$countryGuardSetSettingMethod->setAccessible(true);
+$countryGuardRuleEnableMethod = new ReflectionMethod($controller, 'rcHandleSetRuleEnabled');
+$countryGuardRuleEnableMethod->setAccessible(true);
+$countryGuardSaveRuleMethod = new ReflectionMethod($controller, 'rcHandleSaveRule');
+$countryGuardSaveRuleMethod->setAccessible(true);
+$countryGuardRules = [
+	['name' => 'Country Guard Rule', 'enabled' => 0],
+	['name' => 'Single Rule Guard', 'enabled' => 0],
+];
+$invalidCountryCodes = ['', '   ', '0', '00', '000', '123', '999', 'test', 'none', '+', '+0', '.', '1234', '+1234'];
+foreach ($invalidCountryCodes as $invalidCountryCode) {
+	$invalidDb = make_db();
+	FreePBX::setDatabase($invalidDb);
+	$invalidController = new \FreePBX\modules\Repeatcaller(new stdClass());
+	$invalidSetSettingMethod = new ReflectionMethod($invalidController, 'setSetting');
+	$invalidSetSettingMethod->setAccessible(true);
+	$invalidSetSettingMethod->invoke($invalidController, 'enabled', '0');
+	$invalidSetSettingMethod->invoke($invalidController, 'default_country_code', '');
+	$invalidDb->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES ('Country Guard Rule', 0, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+	$invalidRuleId = (int)$invalidDb->lastInsertId();
+	$_REQUEST = [
+		'enabled' => '1',
+		'default_country_code' => $invalidCountryCode,
+		'incident_history_prune_policy' => 'daily',
+		'alert_history_prune_policy' => 'daily',
+		'suppression_history_prune_policy' => 'daily',
+	];
+	$invalidResponse = $countryGuardSaveGlobalMethod->invoke($invalidController);
+	assert_true(($invalidResponse['status'] ?? false) === false, 'Enable All Rules should be rejected for invalid country code ' . var_export($invalidCountryCode, true));
+	$invalidEngineState = (string)$invalidDb->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'enabled'")->fetchColumn();
+	assert_same('0', $invalidEngineState, 'Enable All Rules must leave the engine disabled when the country code is invalid');
+	$invalidRuleState = $invalidDb->query("SELECT enabled FROM repeatcaller_rules WHERE id = {$invalidRuleId}")->fetch(PDO::FETCH_ASSOC);
+	assert_same('0', (string)($invalidRuleState['enabled'] ?? '0'), 'Enable All Rules must leave existing rule states unchanged for invalid country code ' . var_export($invalidCountryCode, true));
+	assert_true(strpos((string)($invalidResponse['message'] ?? ''), 'Global Settings > Default Country Code') !== false, 'Enable All Rules rejection must point the user to Global Settings > Default Country Code');
+}
+
+foreach ($countryGuardRules as $countryGuardRuleDefinition) {
+	$countryGuardRuleDb = make_db();
+	FreePBX::setDatabase($countryGuardRuleDb);
+	$countryGuardRuleController = new \FreePBX\modules\Repeatcaller(new stdClass());
+	$countryGuardRuleSetSettingMethod = new ReflectionMethod($countryGuardRuleController, 'setSetting');
+	$countryGuardRuleSetSettingMethod->setAccessible(true);
+	$countryGuardRuleSetSettingMethod->invoke($countryGuardRuleController, 'default_country_code', '');
+	$countryGuardRuleDb->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES ('{$countryGuardRuleDefinition['name']}', 0, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+	$countryGuardRuleId = (int)$countryGuardRuleDb->lastInsertId();
+	$_REQUEST = ['rule_id' => (string)$countryGuardRuleId, 'enabled' => '1'];
+	$countryGuardRuleResponse = $countryGuardRuleEnableMethod->invoke($countryGuardRuleController);
+	assert_true(($countryGuardRuleResponse['status'] ?? false) === false, 'individual rule enable should be rejected when the country code is missing');
+	$countryGuardRuleState = $countryGuardRuleDb->query("SELECT enabled FROM repeatcaller_rules WHERE id = {$countryGuardRuleId}")->fetch(PDO::FETCH_ASSOC);
+	assert_same('0', (string)($countryGuardRuleState['enabled'] ?? '0'), 'individual rule enable must leave the existing rule state unchanged when the country code is missing');
+	assert_true(strpos((string)($countryGuardRuleResponse['message'] ?? ''), 'Global Settings > Default Country Code') !== false, 'individual rule enable rejection must point the user to Global Settings > Default Country Code');
+}
+
+$countryGuardCreateDb = make_db();
+FreePBX::setDatabase($countryGuardCreateDb);
+$countryGuardCreateController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$countryGuardCreateSetSettingMethod = new ReflectionMethod($countryGuardCreateController, 'setSetting');
+$countryGuardCreateSetSettingMethod->setAccessible(true);
+$countryGuardCreateSetSettingMethod->invoke($countryGuardCreateController, 'default_country_code', '');
+$countryGuardCreateCountBefore = (int)$countryGuardCreateDb->query('SELECT COUNT(*) FROM repeatcaller_rules')->fetchColumn();
+$_REQUEST = [
+	'rule_id' => '0',
+	'name' => 'Start Enabled Guard Rule',
+	'enabled' => '1',
+	'email_enabled' => '0',
+	'alert_call_enabled' => '0',
+	'alert_call_destinations' => '',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => '1',
+	'alert_call_recording_id' => '',
+	'mode' => 'repeat',
+	'threshold_count' => '2',
+	'observation_window_minutes' => '60',
+	'caller_mode' => 'any',
+	'exclude_withheld' => '0',
+	'did_scope_mode' => 'all',
+	'alert_reminder_mode_override' => 'never',
+	'email_recipients' => '',
+	'suppression_minutes_override' => '',
+	'schedules' => '[]',
+	'callers' => '[]',
+	'dids' => '[]',
+];
+$countryGuardCreateResponse = $countryGuardSaveRuleMethod->invoke($countryGuardCreateController);
+assert_true(($countryGuardCreateResponse['status'] ?? false) === false, 'saving a rule with Start as Enabled should be rejected when the country code is missing');
+$countryGuardCreateCountAfter = (int)$countryGuardCreateDb->query('SELECT COUNT(*) FROM repeatcaller_rules')->fetchColumn();
+assert_same($countryGuardCreateCountBefore, $countryGuardCreateCountAfter, 'rule creation with Start as Enabled must not create a new rule when the country code is missing');
+assert_true(strpos((string)($countryGuardCreateResponse['message'] ?? ''), 'Global Settings > Default Country Code') !== false, 'Start as Enabled rejection must point the user to Global Settings > Default Country Code');
+
+$countryGuardDisabledController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$countryGuardDisabledMethod = new ReflectionMethod($countryGuardDisabledController, 'rcHandleSaveRule');
+$countryGuardDisabledMethod->setAccessible(true);
+$countryGuardDisabledDb = make_db();
+FreePBX::setDatabase($countryGuardDisabledDb);
+$countryGuardDisabledDb->prepare('INSERT OR REPLACE INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute(['default_country_code', '', '2026-07-13 09:00:00']);
+$_REQUEST = [
+	'rule_id' => '0',
+	'name' => 'Disabled Rule Guard',
+	'enabled' => '0',
+	'email_enabled' => '0',
+	'alert_call_enabled' => '0',
+	'alert_call_destinations' => '',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => '1',
+	'alert_call_recording_id' => '',
+	'mode' => 'repeat',
+	'threshold_count' => '2',
+	'observation_window_minutes' => '60',
+	'caller_mode' => 'any',
+	'exclude_withheld' => '0',
+	'did_scope_mode' => 'all',
+	'alert_reminder_mode_override' => 'never',
+	'email_recipients' => '',
+	'suppression_minutes_override' => '',
+	'schedules' => '[]',
+	'callers' => '[]',
+	'dids' => '[]',
+];
+$countryGuardDisabledCreate = $countryGuardDisabledMethod->invoke($countryGuardDisabledController);
+assert_true(($countryGuardDisabledCreate['status'] ?? false) === true, 'creating a disabled rule should still succeed when the country code is missing');
+$countryGuardDisabledRuleId = (int)($countryGuardDisabledCreate['rule']['id'] ?? 0);
+assert_same(0, (int)($countryGuardDisabledCreate['rule']['enabled'] ?? 1), 'disabled rules should remain disabled when created without a country code');
+$_REQUEST = [
+	'rule_id' => (string)$countryGuardDisabledRuleId,
+	'name' => 'Disabled Rule Guard Updated',
+	'enabled' => '0',
+	'email_enabled' => '0',
+	'alert_call_enabled' => '0',
+	'alert_call_destinations' => '',
+	'alert_call_strategy' => 'ringall',
+	'alert_call_keep_trying' => '1',
+	'alert_call_recording_id' => '',
+	'mode' => 'repeat',
+	'threshold_count' => '2',
+	'observation_window_minutes' => '60',
+	'caller_mode' => 'any',
+	'exclude_withheld' => '0',
+	'did_scope_mode' => 'all',
+	'alert_reminder_mode_override' => 'never',
+	'email_recipients' => '',
+	'suppression_minutes_override' => '',
+	'schedules' => '[]',
+	'callers' => '[]',
+	'dids' => '[]',
+];
+$countryGuardDisabledEdit = $countryGuardDisabledMethod->invoke($countryGuardDisabledController);
+assert_true(($countryGuardDisabledEdit['status'] ?? false) === true, 'editing a disabled rule should still succeed when the country code is missing');
+assert_same('Disabled Rule Guard Updated', (string)($countryGuardDisabledEdit['rule']['name'] ?? ''), 'editing a disabled rule should persist the updated name without enabling it');
+assert_same(0, (int)($countryGuardDisabledEdit['rule']['enabled'] ?? 1), 'editing a disabled rule should keep it disabled without a country code');
+
+foreach (['44', '+44'] as $validCountryCode) {
+	$validCountryDb = make_db();
+	FreePBX::setDatabase($validCountryDb);
+	$validCountryController = new \FreePBX\modules\Repeatcaller(new stdClass());
+	$validCountrySetSettingMethod = new ReflectionMethod($validCountryController, 'setSetting');
+	$validCountrySetSettingMethod->setAccessible(true);
+	$validCountrySetSettingMethod->invoke($validCountryController, 'enabled', '0');
+	$validCountrySetSettingMethod->invoke($validCountryController, 'default_country_code', '');
+	$validCountryDb->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES ('Valid Country Rule', 0, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+	$_REQUEST = [
+		'enabled' => '1',
+		'default_country_code' => $validCountryCode,
+		'incident_history_prune_policy' => 'daily',
+		'alert_history_prune_policy' => 'daily',
+		'suppression_history_prune_policy' => 'daily',
+	];
+	$validCountryResponse = $countryGuardSaveGlobalMethod->invoke($validCountryController);
+	assert_true(($validCountryResponse['status'] ?? false) === true, 'Enable All Rules should succeed once a valid country code is saved');
+	assert_same('44', (string)$validCountryDb->query("SELECT setting_value FROM repeatcaller_settings WHERE setting_key = 'default_country_code'")->fetchColumn(), 'valid country code should be stored in digits-only form');
+	$validRuleDb = $validCountryDb;
+	FreePBX::setDatabase($validRuleDb);
+	$validRuleController = new \FreePBX\modules\Repeatcaller(new stdClass());
+	$validRuleDb->exec("INSERT INTO repeatcaller_rules (name, enabled, email_enabled, alert_call_enabled, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, created_at, updated_at) VALUES ('Valid Single Rule', 0, 0, 0, 'repeat', 2, 10, 'any', 0, 'all', '2026-07-13 11:00:00', '2026-07-13 11:00:00')");
+	$validRuleId = (int)$validRuleDb->lastInsertId();
+	$_REQUEST = ['rule_id' => (string)$validRuleId, 'enabled' => '1'];
+	$validRuleResponse = $countryGuardRuleEnableMethod->invoke($validRuleController);
+	assert_true(($validRuleResponse['status'] ?? false) === true, 'individual rule enable should succeed once a valid country code is saved');
+	$validSaveRuleDb = $validCountryDb;
+	FreePBX::setDatabase($validSaveRuleDb);
+	$validSaveRuleController = new \FreePBX\modules\Repeatcaller(new stdClass());
+	$_REQUEST = [
+		'rule_id' => '0',
+		'name' => 'Valid Start Enabled Rule',
+		'enabled' => '1',
+		'email_enabled' => '0',
+		'alert_call_enabled' => '0',
+		'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => '1',
+		'alert_call_recording_id' => '',
+		'mode' => 'repeat',
+		'threshold_count' => '2',
+		'observation_window_minutes' => '60',
+		'caller_mode' => 'any',
+		'exclude_withheld' => '0',
+		'did_scope_mode' => 'all',
+		'alert_reminder_mode_override' => 'never',
+		'email_recipients' => '',
+		'suppression_minutes_override' => '',
+		'schedules' => '[]',
+		'callers' => '[]',
+		'dids' => '[]',
+	];
+	$validSaveRuleResponse = $countryGuardSaveRuleMethod->invoke($validSaveRuleController);
+	assert_true(($validSaveRuleResponse['status'] ?? false) === true, 'Start as Enabled should succeed once a valid country code is saved');
+}
+
+FreePBX::setDatabase($db);
 $_REQUEST = [
 	'rule_id' => (string)$bulkRuleAId,
 	'enabled' => '0',

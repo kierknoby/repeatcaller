@@ -544,7 +544,7 @@ Reports > Repeat Caller includes these main sections:
 - Engine Status: enabled rules, active incidents, last run, run state, PBX
   time, Enable All Rules/Disable All Rules, Snooze, Resume All Rules, Run Now.
 - Global Settings: country code, lookback, global suppression, global Alert Reminder default,
-  pruning policies, and maintenance actions.
+  pruning policies, and maintenance actions. Default Country Code must contain a genuine international country calling code before Repeat Caller can enable any rule, including individual rule enables, Start as Enabled, and Enable All Rules. Disabled rules may still be created and edited.
 - Rules: summary table plus Add Rule editor for mode/threshold/window, caller
   and route scope, schedules, Alert Reminder setting, suppression setting, rule-level
   email recipients, and alert actions. Blank suppression uses the default
