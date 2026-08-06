@@ -1455,6 +1455,76 @@ assert_true((string)$orderedNoAnswerRows[2]['next_retry_at'] !== '', 'new next-s
 assert_true(strtotime((string)$orderedNoAnswerRows[1]['next_retry_at']) > strtotime('2026-07-13 13:41:10'), 'next-stage retained destination should not be deliverable immediately');
 assert_true(strtotime((string)$orderedNoAnswerRows[2]['next_retry_at']) > strtotime('2026-07-13 13:41:10'), 'next-stage new destination should not be deliverable immediately');
 
+// Single-destination ordered NOANSWER: covers the exact live failure path.
+// Row 8 equivalent: history row starts sent, NOANSWER updates it to no_answer, a deferred
+// next-stage row is reserved, and the processor delivers it after 60 seconds regardless of
+// repeat_mode=never. CANCEL (the fallback when DIALSTATUS is empty after h-extension hangup)
+// also produces a terminal outcome and reserves the next stage.
+$orderedSingleNoAnswerClock = new TestClock('2026-07-13 14:00:00');
+$orderedSingleNoAnswerSender = new FakeCallSender();
+[$orderedSingleDb, $orderedSingleProcessor] = create_alert_environment($orderedSingleNoAnswerClock, new FakeEmailSender(), $orderedSingleNoAnswerSender);
+$orderedSingleRule = insert_rule($orderedSingleDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '2001|1',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedSingleIncident = insert_incident($orderedSingleDb, ['rule_id' => $orderedSingleRule, 'subject_key' => 'ordered-single-noanswer', 'first_matched_at' => '2026-07-13 14:00:00', 'suppression_expires_at' => '2026-07-13 15:00:00']);
+$orderedSingleProcessor->run(settings());
+assert_same(1, count($orderedSingleNoAnswerSender->calls), 'ordered single-destination initial stage should originate exactly one call');
+assert_same('2001', (string)$orderedSingleNoAnswerSender->calls[0]['destination'], 'ordered single-destination should call the configured destination');
+$orderedSingleHistoryId = (int)$orderedSingleDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedSingleIncident} AND recipient = '2001' AND stage_n = 0 LIMIT 1")->fetchColumn();
+assert_true($orderedSingleHistoryId > 0, 'ordered single-destination should have a stage-0 history row for recipient 2001');
+$orderedSingleStatusBefore = (string)$orderedSingleDb->query("SELECT delivery_status FROM repeatcaller_incident_alert_history WHERE id = {$orderedSingleHistoryId}")->fetchColumn();
+assert_same('sent', $orderedSingleStatusBefore, 'ordered single-destination initial row should be sent before dialstatus callback');
+// Simulate the AGI dialstatus callback (from the h extension in the fixed dialplan) after NOANSWER.
+$orderedSingleRepo = new RepeatCallerRepository($orderedSingleDb);
+$orderedSingleResult = $orderedSingleRepo->recordAlertCallDialDisposition($orderedSingleHistoryId, $orderedSingleIncident, '2001', 'NOANSWER', '19', '2026-07-13 14:00:30');
+assert_true(!empty($orderedSingleResult['status']), 'NOANSWER dialstatus callback must succeed for single-destination ordered row');
+$orderedSingleStatusAfter = (string)$orderedSingleDb->query("SELECT delivery_status FROM repeatcaller_incident_alert_history WHERE id = {$orderedSingleHistoryId}")->fetchColumn();
+assert_same('no_answer', $orderedSingleStatusAfter, 'NOANSWER dialstatus must update the single-destination row from sent to no_answer');
+$orderedSingleAllRows = $orderedSingleDb->query("SELECT recipient, stage_n, delivery_status, next_retry_at FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedSingleIncident} AND action_type = 'alert_call' ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+assert_same(2, count($orderedSingleAllRows), 'NOANSWER on single-destination ordered should reserve one next-stage row for the same destination');
+assert_same('2001', (string)$orderedSingleAllRows[1]['recipient'], 'retained ordered destination must carry into the next stage after NOANSWER');
+assert_same('1', (string)$orderedSingleAllRows[1]['stage_n'], 'next-stage row must be assigned stage number 1');
+assert_same('pending', (string)$orderedSingleAllRows[1]['delivery_status'], 'next-stage ordered destination must be reserved as pending');
+assert_true((string)$orderedSingleAllRows[1]['next_retry_at'] !== '', 'next-stage ordered destination must carry a deferred retry timestamp');
+assert_true(strtotime((string)$orderedSingleAllRows[1]['next_retry_at']) > strtotime('2026-07-13 14:00:30'), 'next-stage ordered destination must not be deliverable immediately after NOANSWER');
+// Verify the 60-second pause: processor before pause must not deliver the next stage.
+$orderedSingleProcessor->run(settings());
+assert_same(1, count($orderedSingleNoAnswerSender->calls), 'ordered single-destination stage-2 row must not be sent before the 60-second deferred retry time');
+// Advance past the 60-second pause and confirm delivery even with repeat_mode=never.
+$orderedSingleNoAnswerClock->now = '2026-07-13 14:01:31';
+$orderedSingleProcessor->run(settings());
+assert_same(2, count($orderedSingleNoAnswerSender->calls), 'ordered single-destination stage-2 row must be sent after the 60-second deferred retry time regardless of repeat_mode=never');
+assert_same('2001', (string)$orderedSingleNoAnswerSender->calls[1]['destination'], 'ordered stage-2 delivery must target the retained destination');
+
+// CANCEL fallback: when the h extension fires with no DIALSTATUS (originate interrupted),
+// an empty DIALSTATUS maps to CANCEL which records as failed and still advances Ordered.
+$orderedCancelClock = new TestClock('2026-07-13 14:02:00');
+$orderedCancelSender = new FakeCallSender();
+[$orderedCancelDb, $orderedCancelProcessor] = create_alert_environment($orderedCancelClock, new FakeEmailSender(), $orderedCancelSender);
+$orderedCancelRule = insert_rule($orderedCancelDb, [
+	'alert_call_enabled' => 1,
+	'alert_call_destinations' => '2001|1',
+	'alert_call_strategy' => 'ordered',
+	'alert_call_keep_trying' => 1,
+	'alert_call_recording_id' => 55,
+	'repeat_mode_override' => 'never',
+]);
+$orderedCancelIncident = insert_incident($orderedCancelDb, ['rule_id' => $orderedCancelRule, 'subject_key' => 'ordered-cancel', 'first_matched_at' => '2026-07-13 14:02:00', 'suppression_expires_at' => '2026-07-13 15:02:00']);
+$orderedCancelProcessor->run(settings());
+$orderedCancelHistoryId = (int)$orderedCancelDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$orderedCancelIncident} AND recipient = '2001' AND stage_n = 0 LIMIT 1")->fetchColumn();
+$orderedCancelRepo = new RepeatCallerRepository($orderedCancelDb);
+// CANCEL = the DIALSTATUS substituted by the h-extension fallback when DIALSTATUS is empty.
+$orderedCancelResult = $orderedCancelRepo->recordAlertCallDialDisposition($orderedCancelHistoryId, $orderedCancelIncident, '2001', 'CANCEL', '', '2026-07-13 14:02:30');
+assert_true(!empty($orderedCancelResult['status']), 'CANCEL dialstatus callback from h-extension fallback must succeed');
+$orderedCancelStatus = (string)$orderedCancelDb->query("SELECT delivery_status FROM repeatcaller_incident_alert_history WHERE id = {$orderedCancelHistoryId}")->fetchColumn();
+assert_same('failed', $orderedCancelStatus, 'CANCEL dialstatus must record the attempt as failed');
+assert_true(!empty($orderedCancelResult['next_history_id']), 'CANCEL dialstatus must still advance the Ordered stage so progression is not permanently stuck');
+
 $orderedNoKeepTryingClock = new TestClock('2026-07-13 13:42:20');
 $orderedNoKeepTryingSender = new FakeCallSender();
 [$orderedNoKeepTryingDb, $orderedNoKeepTryingProcessor] = create_alert_environment($orderedNoKeepTryingClock, new FakeEmailSender(), $orderedNoKeepTryingSender);
