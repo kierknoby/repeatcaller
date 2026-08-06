@@ -108,7 +108,7 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 
 Alert reminder emails now show one reminder line:
 
-- Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
+- Alert Reminder: displays the Alert Reminder scheduling actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 
 Alert reminder emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 - Ring All: attempts all currently eligible destinations for that reminder point.
@@ -292,8 +292,10 @@ These reminders apply to incidents that are already active.
 
 Escalating starts with shorter reminder intervals and gradually increases them up to a daily interval.
 
-Alert Reminders controls reminder delivery cadence for incidents that are already
-active. It does not change incident retention or prune historical rows.
+Alert Reminders control reminder delivery cadence for incidents that are already
+active. They do not change incident retention or prune historical rows.
+
+One complete Ordered Alert Call progression is one alert cycle. Alert Reminders do not begin while that cycle is still active, pending, or deferred. The reminder interval begins only after the complete cycle finishes without acceptance. Each reminder starts a new complete Ordered sequence from stage 0, so alert cycles never overlap. Ring All follows the same model as a single-stage cycle.
 
 ## Understanding Incidents
 
@@ -420,6 +422,7 @@ Operational notes:
 - Only an explicit ACCEPTED response stops Alert Call progression.
 - Ordered stages add one new destination at a time. Earlier destinations remain eligible in later stages only when their own Keep Trying option is enabled.
 - Each completed Ordered stage pauses for 60 seconds before the next stage, and a multi-destination stage advances only after every attempt in that stage finishes without acceptance.
+- A reminder cannot start until the previous cycle is fully complete. Each new reminder begins a fresh Ordered sequence from stage 0, so cycles do not overlap.
 - Ring All contacts every enabled destination on every cycle. Keep Trying is not applicable to Ring All and is shown unticked and disabled.
 - Ignore Callers affects inbound detection only and does not filter Alert Call destinations.
 - Acceptance cancels pending future attempts and late callbacks cannot restart escalation.

@@ -20,7 +20,7 @@ review, optional Alert Call notifications, and optional email notifications on
 FreePBX/PBXact 16 and 17.
 
 Rules support repeat and invert detection modes, caller and DID scoping,
-schedule windows, repeat-notification modes, and suppression controls. The
+schedule windows, Alert Reminder scheduling, and suppression controls. The
 admin page presents active and historical lifecycle views so operators can
 review incidents, acceptances, alerts, and suppression decisions in one place.
 
@@ -223,7 +223,7 @@ Canonical Repeat Caller tables:
 - `repeatcaller_settings`: module settings, engine status timestamps, global
   repeat/suppression/pruning controls, snooze state, and recipients.
 - `repeatcaller_rules`: rule definitions, detection mode, thresholds/windows,
-  caller/DID scope, repeat override, suppression override, and alert action
+  caller/DID scope, Alert Reminder override, suppression override, and alert action
   toggles.
 - `repeatcaller_rule_schedules`: per-rule day/time windows.
 - `repeatcaller_rule_callers`: per-rule caller include/exclude lists.
@@ -365,7 +365,7 @@ Administrators can remove the Ignore entry if it is not appropriate.
 
 Alert reminder emails now show one reminder line:
 
-- Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
+- Alert Reminder: displays the Alert Reminder scheduling actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 
 Alert reminder emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 
@@ -419,12 +419,12 @@ DTMF behavior during Alert Call:
   incident unaccepted
 
 Declining affects that call attempt path and does not accept or close the
-incident. Repeat notifications can continue while the incident remains active
-according to repeat mode and eligibility.
+incident. Alert Reminder delivery can continue while the incident remains
+active according to Alert Reminder scheduling and eligibility.
 
 ## Alert Reminder Modes
 
-Repeat Caller lets each rule repeat its alerts using one of these modes:
+Repeat Caller lets each rule schedule Alert Reminders using one of these modes:
 
 - Never
   - Initial alert only.
@@ -443,7 +443,7 @@ Repeat Caller lets each rule repeat its alerts using one of these modes:
 
     Capped at 24 hours once the interval reaches the daily ceiling.
 
-Stored legacy repeat mode values from earlier builds are treated as Escalating.
+Stored legacy reminder values from earlier builds are treated as Escalating.
 
 ## Suppression
 
@@ -543,10 +543,10 @@ Reports > Repeat Caller includes these main sections:
 
 - Engine Status: enabled rules, active incidents, last run, run state, PBX
   time, Enable All Rules/Disable All Rules, Snooze, Resume All Rules, Run Now.
-- Global Settings: country code, lookback, global suppression, global repeat,
+- Global Settings: country code, lookback, global suppression, global Alert Reminder default,
   pruning policies, and maintenance actions.
 - Rules: summary table plus Add Rule editor for mode/threshold/window, caller
-  and route scope, schedules, repeat mode, suppression setting, rule-level
+  and route scope, schedules, Alert Reminder setting, suppression setting, rule-level
   email recipients, and alert actions. Blank suppression uses the default
   24 hours (1440 minutes) period; 0 disables automatic suppression for that rule.
   The Start as control is used only when creating a new rule to choose whether
@@ -676,6 +676,11 @@ Recordings, and administrator-controlled routing.
 - No webhook or SMS delivery channel is implemented.
 
 ## Release History
+
+- 1.0.1 development update: renamed the reminder terminology to Alert Reminders throughout the module, and documented that Alert Reminder scheduling is distinct from Repeat detection mode.
+- 1.0.1 development update: prevented reminder-cycle overlap by blocking new Alert Reminder cycles while an unfinished Ordered Alert Call cycle is still active, pending, or deferred.
+- 1.0.1 development update: documented that each Alert Reminder cycle restarts Ordered Alert Call delivery from stage 0 and that reminder cycles never overlap.
+- 1.0.1 development update: documented that Alert Reminder timing begins only after the previous alert cycle completes without acceptance.
 
 ### 1.0.1, patch release, 6 August 2026
 
