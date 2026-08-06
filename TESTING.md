@@ -57,7 +57,7 @@ Expected v1 fresh-install tables include:
 	- GUI incident creation
 	- Alert Call when enabled and configured
 	- Email when enabled and recipients are valid
-13. Confirm reminder timing for the selected Repeat Alerts mode and configured alert actions. In repeat alert emails, confirm the reminder line is shown as `Alert Reminder: <mode>`, the older `Rule Repeat Mode` / `Effective Repeat Mode` lines are no longer present, and the opening line includes the FreePBX System Identifier when available.
+13. Confirm reminder timing for the selected Alert Reminders mode and configured alert actions. In alert reminder emails, confirm the reminder line is shown as `Alert Reminder: <mode>`, the older `Rule Repeat Mode` / `Effective Repeat Mode` lines are no longer present, and the opening line includes the FreePBX System Identifier when available.
 14. Ensure an active incident is available for acceptance testing.
 15. Accept an active incident using the GUI and confirm it moves to accepted history/state.
 16. If Alert Call is enabled, answer the Alert Call, press 1, and confirm the incident is accepted.

@@ -166,8 +166,8 @@ final class IncidentAlertProcessor {
 		$ruleId = (int)$incident['rule_id'];
 		$incidentState = strtolower(trim((string)($incident['state'] ?? 'active')));
 		$recipients = $this->normaliseRecipients((string)($incident['email_recipients'] ?? ''));
-		$repeatMode = $this->resolveRepeatMode(
-			isset($incident['repeat_mode_override']) ? (string)$incident['repeat_mode_override'] : null
+		$repeatMode = $this->resolveAlertReminderMode(
+			isset($incident['alert_reminder_mode_override']) ? (string)$incident['alert_reminder_mode_override'] : null
 		);
 		$firstDueAt = (string)$incident['first_matched_at'];
 		$lastMatchedAt = trim((string)($incident['last_matched_at'] ?? ''));
@@ -182,10 +182,11 @@ final class IncidentAlertProcessor {
 
 			$remindersSent = max(0, (int)($state['reminders_sent'] ?? 0));
 			$reminderN = $remindersSent + 1;
-			if (!$this->reserveStageEvents($incident, $repeatMode, 'reminder', $reminderN, $recipients, $summary, $now)) {
+			$reminderEventType = 'reminder_' . $reminderN;
+			if (!$this->reserveStageEvents($incident, $repeatMode, $reminderEventType, 0, $recipients, $summary, $now)) {
 				return;
 			}
-			$nextDue = $this->nextRepeatDueAt($now, $repeatMode, $reminderN);
+			$nextDue = $this->nextAlertReminderDueAt($now, $repeatMode, $reminderN);
 			$this->repository->markReminderAlertSent($incidentId, $remindersSent, $reminderN, $now, $nextDue, $now);
 			$summary['reminder_events']++;
 			return;
@@ -200,7 +201,7 @@ final class IncidentAlertProcessor {
 			if (!$this->reserveStageEvents($incident, $repeatMode, 'initial', 0, $recipients, $summary, $now)) {
 				return;
 			}
-			$nextDue = $this->nextRepeatDueAt($now, $repeatMode, 0);
+			$nextDue = $this->nextAlertReminderDueAt($now, $repeatMode, 0);
 			$this->repository->markInitialAlertSent($incidentId, $now, $nextDue, $now);
 			$summary['initial_events']++;
 			return;
@@ -215,12 +216,18 @@ final class IncidentAlertProcessor {
 			return;
 		}
 
-		$remindersSent = max(0, (int)($state['reminders_sent'] ?? 0));
-		$reminderN = $remindersSent + 1;
-		if (!$this->reserveStageEvents($incident, $repeatMode, 'reminder', $reminderN, $recipients, $summary, $now)) {
+		// Guard: don't start a new reminder cycle while an alert-call stage is still active.
+		if ($this->repository->hasActiveCycleAlertCalls($incidentId)) {
 			return;
 		}
-		$nextDue = $this->nextRepeatDueAt($now, $repeatMode, $reminderN);
+
+		$remindersSent = max(0, (int)($state['reminders_sent'] ?? 0));
+		$reminderN = $remindersSent + 1;
+		$reminderEventType = 'reminder_' . $reminderN;
+		if (!$this->reserveStageEvents($incident, $repeatMode, $reminderEventType, 0, $recipients, $summary, $now)) {
+			return;
+		}
+		$nextDue = $this->nextAlertReminderDueAt($now, $repeatMode, $reminderN);
 		$this->repository->markReminderAlertSent($incidentId, $remindersSent, $reminderN, $now, $nextDue, $now);
 		$summary['reminder_events']++;
 	}
@@ -300,7 +307,7 @@ final class IncidentAlertProcessor {
 			'successful_at' => $successfulAt,
 			'next_retry_at' => $nextRetryAt,
 			'failure_detail' => $failureDetail,
-			'repeat_mode' => $repeatMode,
+			'alert_reminder_mode' => $repeatMode,
 			'dedupe_key' => $this->dedupeKey($incidentId, $eventType, $stageN, $actionType, $recipient),
 			'created_at' => $now,
 			'updated_at' => $now,
@@ -698,7 +705,7 @@ final class IncidentAlertProcessor {
 		], '-');
 		$lines[] = 'Stage: ' . (int)($row['stage_n'] ?? 0);
 		$lines[] = 'Mode: ' . $this->formatIncidentModeLabel((string)($row['mode'] ?? ''));
-		$lines[] = 'Alert Reminder: ' . $this->formatRepeatModeLabel((string)($row['repeat_mode'] ?? ''));
+		$lines[] = 'Alert Reminder: ' . $this->formatRepeatModeLabel((string)($row['alert_reminder_mode'] ?? ''));
 		$lines[] = 'Matched Calls: ' . (int)($row['matched_call_count'] ?? 0);
 		$lines[] = 'First Matched: ' . (string)($row['first_matched_at'] ?? '-');
 		$lines[] = 'Last Matched: ' . (string)($row['last_matched_at'] ?? '-');
@@ -752,15 +759,15 @@ final class IncidentAlertProcessor {
 		return ucwords(str_replace(['_', '-'], ' ', $normalized));
 	}
 
-	private function resolveRepeatMode(?string $ruleOverride): string {
+	private function resolveAlertReminderMode(?string $ruleOverride): string {
 		$candidate = trim((string)$ruleOverride);
 		if ($candidate === '') {
 			$candidate = self::REPEAT_MODE_NEVER;
 		}
-		return $this->normaliseRepeatMode($candidate);
+		return $this->normaliseAlertReminderMode($candidate);
 	}
 
-	private function normaliseRepeatMode(string $mode): string {
+	private function normaliseAlertReminderMode(string $mode): string {
 		$mode = strtolower(trim($mode));
 		if ($mode === self::REPEAT_MODE_FIBONACCI) {
 			return self::REPEAT_MODE_ESCALATING;
@@ -771,8 +778,8 @@ final class IncidentAlertProcessor {
 		return self::REPEAT_MODE_NEVER;
 	}
 
-	private function nextRepeatDueAt(string $lastAlertAt, string $repeatMode, int $remindersSent): ?string {
-		$interval = $this->repeatIntervalSeconds($repeatMode, $remindersSent);
+	private function nextAlertReminderDueAt(string $lastAlertAt, string $repeatMode, int $remindersSent): ?string {
+		$interval = $this->alertReminderIntervalSeconds($repeatMode, $remindersSent);
 		if ($interval === null) {
 			return null;
 		}
@@ -784,8 +791,8 @@ final class IncidentAlertProcessor {
 		return date('Y-m-d H:i:s', $timestamp + $interval);
 	}
 
-	private function repeatIntervalSeconds(string $repeatMode, int $remindersSent): ?int {
-		switch ($this->normaliseRepeatMode($repeatMode)) {
+	private function alertReminderIntervalSeconds(string $repeatMode, int $remindersSent): ?int {
+		switch ($this->normaliseAlertReminderMode($repeatMode)) {
 			case self::REPEAT_MODE_FIVE_MINUTES:
 				return 300;
 			case self::REPEAT_MODE_HOURLY:

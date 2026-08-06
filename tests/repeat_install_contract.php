@@ -263,7 +263,7 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		caller_mode TEXT NOT NULL,
 		did_scope_mode TEXT NOT NULL,
 		exclude_withheld INTEGER NOT NULL DEFAULT 0,
-		repeat_mode_override TEXT,
+		alert_reminder_mode_override TEXT,
 		suppression_minutes_override INTEGER,
 		created_at TEXT,
 		updated_at TEXT
@@ -354,7 +354,7 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		incident_id INTEGER NOT NULL,
 		rule_id INTEGER NOT NULL,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		initial_sent_at TEXT,
 		last_alert_at TEXT,
 		reminders_sent INTEGER NOT NULL DEFAULT 0,
@@ -377,7 +377,7 @@ function schemaUpgradeCreateLegacyTables(SchemaUpgradePDO $db): void {
 		successful_at TEXT,
 		next_retry_at TEXT,
 		failure_detail TEXT,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		dedupe_key TEXT NOT NULL UNIQUE,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL

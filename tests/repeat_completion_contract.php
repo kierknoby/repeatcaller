@@ -125,7 +125,7 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		caller_mode TEXT NOT NULL,
 		exclude_withheld INTEGER NOT NULL DEFAULT 0,
 		did_scope_mode TEXT NOT NULL,
-		repeat_mode_override TEXT,
+		alert_reminder_mode_override TEXT,
 		suppression_minutes_override INTEGER,
 		created_at TEXT,
 		updated_at TEXT
@@ -244,7 +244,7 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		incident_id INTEGER NOT NULL UNIQUE,
 		rule_id INTEGER NOT NULL,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		initial_sent_at TEXT,
 		last_alert_at TEXT,
 		reminders_sent INTEGER NOT NULL DEFAULT 0,
@@ -267,7 +267,7 @@ function create_env(string $dbPath, MutableClock $clock): array {
 		successful_at TEXT,
 		next_retry_at TEXT,
 		failure_detail TEXT,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		dedupe_key TEXT NOT NULL UNIQUE,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -287,7 +287,7 @@ function insert_route(PDO $db, string $did, string $description = 'Main'): void 
 }
 
 function insert_rule(PDO $db, array $rule): int {
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, is_deleted, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, is_deleted, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			$rule['name'],
 			$rule['enabled'] ?? 1,
@@ -302,7 +302,7 @@ function insert_rule(PDO $db, array $rule): int {
 			$rule['caller_mode'] ?? 'any',
 			$rule['exclude_withheld'] ?? 0,
 			$rule['did_scope_mode'] ?? 'all',
-			$rule['repeat_mode_override'] ?? null,
+			$rule['alert_reminder_mode_override'] ?? null,
 			$rule['suppression_minutes_override'] ?? 30,
 			$rule['created_at'] ?? '2026-07-13 09:00:00',
 			$rule['updated_at'] ?? '2026-07-13 09:00:00',
@@ -355,7 +355,7 @@ try {
 		'alert_call_enabled' => 1,
 		'alert_call_destinations' => '201',
 		'alert_call_recording_id' => 55,
-		'repeat_mode_override' => '5m',
+		'alert_reminder_mode_override' => '5m',
 		'suppression_minutes_override' => 30,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
@@ -397,13 +397,13 @@ try {
 	$acceptedAfterDifferentRoute = $db->query('SELECT matched_call_count FROM repeatcaller_incidents WHERE id = ' . $incidentId)->fetch(PDO::FETCH_ASSOC);
 	assert_same(3, (int)$acceptedAfterDifferentRoute['matched_call_count'], 'a call on a different route must not attach to the accepted incident');
 	assert_same(1, (int)$db->query('SELECT COUNT(*) FROM repeatcaller_incidents WHERE rule_id = 1')->fetchColumn(), 'a different-route call below threshold must not create or attach to the accepted incident');
-	$beforeReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder'")->fetchColumn();
-	$beforeEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'email'")->fetchColumn();
-	$beforeCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'alert_call'")->fetchColumn();
+	$beforeReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
+	$beforeEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'email'")->fetchColumn();
+	$beforeCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'")->fetchColumn();
 	$alerts->run(['alert_enabled' => '1', 'alert_history_prune_policy' => 'never']);
-	$afterReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder'")->fetchColumn();
-	$afterEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'email'")->fetchColumn();
-	$afterCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'alert_call'")->fetchColumn();
+	$afterReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
+	$afterEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'email'")->fetchColumn();
+	$afterCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'")->fetchColumn();
 	assert_same($beforeReminderCount, $afterReminderCount, 'GUI-accepted incidents should not reserve reminder rows while suppression remains active');
 	assert_same($beforeEmailReminderCount, $afterEmailReminderCount, 'GUI-accepted incidents should not reserve email reminder rows while suppression remains active');
 	assert_same($beforeCallReminderCount, $afterCallReminderCount, 'GUI-accepted incidents should not reserve alert_call reminder rows while suppression remains active');
@@ -417,9 +417,9 @@ try {
 	assert_same(0, $summaryAfterSuppression['incidents_created'], 'post-suppression qualifying activity should continue updating the same accepted incident');
 	$beforePostExpiryEmailSends = count($sender->calls);
 	$alerts->run(['alert_enabled' => '1', 'alert_history_prune_policy' => 'never']);
-	$afterPostExpiryReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder'")->fetchColumn();
-	$afterPostExpiryEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'email'")->fetchColumn();
-	$afterPostExpiryCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type = 'reminder' AND action_type = 'alert_call'")->fetchColumn();
+	$afterPostExpiryReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
+	$afterPostExpiryEmailReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'email'")->fetchColumn();
+	$afterPostExpiryCallReminderCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'")->fetchColumn();
 	// Accepted incidents receive GUI + email reminder rows only; Alert Call reminders are not reserved for accepted incidents.
 	assert_same($beforeReminderCount + 2, $afterPostExpiryReminderCount, 'GUI-accepted incidents should reserve gui and email reminder rows after suppression expires and new activity occurs');
 	assert_same($beforeEmailReminderCount + 1, $afterPostExpiryEmailReminderCount, 'GUI-accepted incidents should reserve exactly one fresh email reminder after suppression expires and new activity occurs');
@@ -443,7 +443,7 @@ try {
 	$ruleDeleteId = insert_rule($db, [
 		'name' => 'Delete Rule',
 		'email_enabled' => 1,
-		'repeat_mode_override' => '5m',
+		'alert_reminder_mode_override' => '5m',
 		'suppression_minutes_override' => 30,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
@@ -464,7 +464,7 @@ try {
 	assert_true(!isset($deletedState['active_incident_id']) || $deletedState['active_incident_id'] === null || (int)$deletedState['active_incident_id'] === 0, 'deleted rule should clear subject active link');
 	$clock->now = '2026-07-13 14:10:00';
 	$alerts->run(['alert_enabled' => '1', 'alert_history_prune_policy' => 'never']);
-	$deletedReminders = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$deleteIncidentId} AND event_type = 'reminder'")->fetchColumn();
+	$deletedReminders = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$deleteIncidentId} AND event_type LIKE 'reminder_%'")->fetchColumn();
 	assert_same(0, $deletedReminders, 'deleted rules must not emit reminders');
 	insert_cdr($db, ['linkedid' => 'D3', 'calldate' => '2026-07-13 14:11:00', 'src' => '01230000001', 'clid' => '01230000001']);
 	$summaryDeletedRule = $runtime->run(['enabled' => '1', 'default_country_code' => '44']);
@@ -492,7 +492,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => '',
+		'alert_reminder_mode_override' => '',
 		'suppression_minutes_override' => 30,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 		'callers' => [],

@@ -187,7 +187,7 @@ $assetVer = max(
 							</div>
 							<div class="row rc-row-gap">
 									<div class="col-sm-3"><label><?php echo _('Suppression'); ?></label><input type="number" id="rc-rule-suppression" class="form-control" min="0" placeholder="<?php echo _('Default 24hrs'); ?>"><p class="help-block"><?php echo _('Leave blank to use Default 24hrs suppression period or enter 0 to disable.'); ?></p></div>
-								<div class="col-sm-3"><label><?php echo _('Repeat Alerts'); ?></label><select id="rc-rule-repeat" class="form-control"><?php foreach ($repeatModes as $value => $label): ?><option value="<?php echo htmlspecialchars($value, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></option><?php endforeach; ?></select></div>
+								<div class="col-sm-3"><label><?php echo _('Alert Reminders'); ?></label><select id="rc-rule-alert-reminder" class="form-control"><?php foreach ($repeatModes as $value => $label): ?><option value="<?php echo htmlspecialchars($value, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?></option><?php endforeach; ?></select></div>
 								<div class="col-sm-3"><label><?php echo _('Caller Scope'); ?></label><select id="rc-rule-caller-mode" class="form-control"><option value="any"><?php echo _('Any caller'); ?></option><option value="withheld_only"><?php echo _('Withheld only'); ?></option><option value="specific_only"><?php echo _('Specific callers'); ?></option></select></div>
 								<div class="col-sm-3" style="margin-top: 32px;"><label><input type="checkbox" id="rc-rule-exclude-withheld"> <?php echo _('Exclude withheld callers'); ?></label></div>
 							</div>

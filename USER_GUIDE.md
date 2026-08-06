@@ -89,7 +89,7 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Suppression: controls incident lifecycle hold period before expiry/re-arm logic.
 	Leave blank to use the default 24 hours (1440 minutes). Enter 0 to disable
 	automatic suppression for that rule.
-- Repeat Alerts: reminder timing for active incidents.
+- Alert Reminders: reminder timing for active incidents.
 - Caller Scope: Any caller, withheld-only, or specific callers.
 - Exclude withheld callers: excludes withheld identities from this rule.
 - Caller Includes: callers to include when using specific-caller scope. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
@@ -106,11 +106,11 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Alert Call destination safeguard: adding an Alert Call destination behaves the same whether you use Add or Enter. It automatically adds the same value to Ignore these callers and shows a one-time warning. Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.
 - Alert Call Caller ID safeguard: when Alert Call is enabled and Caller ID managed elsewhere is off, Repeat Caller may also add the configured Alert Call Caller ID to Ignore these callers as an additional safeguard for external return paths. Administrators can remove the Ignore entry if it is not appropriate.
 
-Repeat alert emails now show one reminder line:
+Alert reminder emails now show one reminder line:
 
 - Alert Reminder: displays the repeat cadence actually used for that alert, such as Never, Hourly, Daily, or Escalating.
 
-Repeat alert emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
+Alert reminder emails also start with the FreePBX System Identifier when it is available, for example: Repeat Caller incident alert from MY-PBX-NAME. If the identifier is unavailable, the email uses a sensible fallback.
 - Ring All: attempts all currently eligible destinations for that reminder point.
 - Ordered: attempts destinations in saved order, moving forward when unaccepted.
 - Keep Trying: controls whether unsuccessful destinations remain eligible later.
@@ -275,12 +275,12 @@ Suppression examples:
 Comparison:
 
 - Suppression: incident lifecycle timing
-- Repeat Alerts: reminder timing for active incidents
+- Alert Reminders: reminder timing for active incidents
 - Snooze Monitoring: temporary pause for Alert Call and Email delivery
 
-## Repeat Alerts
+## Alert Reminders
 
-Repeat Alerts options:
+Alert Reminders options:
 
 - Never
 - Every 5 Minutes
@@ -292,7 +292,7 @@ These reminders apply to incidents that are already active.
 
 Escalating starts with shorter reminder intervals and gradually increases them up to a daily interval.
 
-Repeat Alerts controls reminder delivery cadence for incidents that are already
+Alert Reminders controls reminder delivery cadence for incidents that are already
 active. It does not change incident retention or prune historical rows.
 
 ## Understanding Incidents
@@ -567,7 +567,7 @@ Check:
 
 Check:
 
-- Repeat Alerts is not Never
+- Alert Reminders is not Never
 - incident remains active
 - monitoring is not snoozed
 - Alert Call or Email remains enabled for the rule

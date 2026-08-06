@@ -1193,8 +1193,8 @@
 		return '';
 	}
 
-	function repeatDescription(rule) {
-		var rawRepeat = normalizeCode(rule.repeat_mode_override || 'never');
+	function alertReminderDescription(rule) {
+		var rawRepeat = normalizeCode(rule.alert_reminder_mode_override || 'never');
 		if (rawRepeat === '') {
 			rawRepeat = 'never';
 		}
@@ -1229,7 +1229,7 @@
 		}
 		var windowPhrase = formatCountUnit(rule.observation_window_minutes, 'minute', 'minutes');
 		var schedulePhrase = scheduleDescription(rule);
-		var repeatPhrase = repeatDescription(rule);
+		var repeatPhrase = alertReminderDescription(rule);
 
 		if (mode === 'invert') {
 			var callWord = threshold === 1 ? 'call' : 'calls';
@@ -1292,7 +1292,7 @@
 			if (modeLabel === 'Unknown') {
 				modeLabel = titleizeFallback(rule.mode) || 'Unknown';
 			}
-			var repeatLabel = repeatModeLabel(rule.repeat_mode_override || 'never');
+			var repeatLabel = repeatModeLabel(rule.alert_reminder_mode_override || 'never');
 			var ruleClass = parseInt(rule.enabled || 0, 10) ? '' : ' class="rc-rule-disabled"';
 			rows.push('<tr data-rule-id="' + parseInt(rule.id, 10) + '"' + ruleClass + '>'
 				+ '<td>' + esc(rule.name) + '</td>'
@@ -2051,7 +2051,7 @@
 		$('#rc-rule-threshold').val('2');
 		$('#rc-rule-window').val('60');
 		$('#rc-rule-suppression').val('');
-		$('#rc-rule-repeat').val('never');
+		$('#rc-rule-alert-reminder').val('never');
 		$('#rc-rule-email-recipients').val('');
 		$('#rc-rule-caller-mode').val('any');
 		$('#rc-rule-exclude-withheld').prop('checked', false);
@@ -2497,7 +2497,7 @@
 			threshold_count: $('#rc-rule-threshold').val(),
 			observation_window_minutes: $('#rc-rule-window').val(),
 			suppression_minutes_override: $('#rc-rule-suppression').val(),
-			repeat_mode_override: $('#rc-rule-repeat').val(),
+			alert_reminder_mode_override: $('#rc-rule-alert-reminder').val(),
 			email_recipients: emailRecipients.join(', '),
 			caller_mode: $('#rc-rule-caller-mode').val(),
 			exclude_withheld: $('#rc-rule-exclude-withheld').is(':checked') ? 1 : 0,
@@ -2547,7 +2547,7 @@
 			} else {
 				$('#rc-rule-suppression').val(rule.suppression_minutes_override);
 			}
-			$('#rc-rule-repeat').val(rule.repeat_mode_override || 'never');
+			$('#rc-rule-alert-reminder').val(rule.alert_reminder_mode_override || 'never');
 			$('#rc-rule-email-recipients').val(rule.email_recipients || '');
 			$('#rc-rule-caller-mode').val(rule.caller_mode || 'any');
 			$('#rc-rule-exclude-withheld').prop('checked', parseInt(rule.exclude_withheld || 0, 10) === 1);

@@ -69,7 +69,7 @@ function make_db(): PDO {
 		caller_mode TEXT NOT NULL,
 		exclude_withheld INTEGER NOT NULL DEFAULT 0,
 		did_scope_mode TEXT NOT NULL,
-		repeat_mode_override TEXT,
+		alert_reminder_mode_override TEXT,
 		suppression_minutes_override INTEGER,
 		created_at TEXT,
 		updated_at TEXT
@@ -161,7 +161,7 @@ function make_db(): PDO {
 		successful_at TEXT,
 		next_retry_at TEXT,
 		failure_detail TEXT,
-		repeat_mode TEXT NOT NULL,
+		alert_reminder_mode TEXT NOT NULL,
 		dedupe_key TEXT NOT NULL UNIQUE,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -259,7 +259,7 @@ $_REQUEST = [
 	'caller_mode' => 'specific_only',
 	'exclude_withheld' => '0',
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 	'email_recipients' => '',
 	'suppression_minutes_override' => '',
 	'schedules' => '[]',
@@ -305,7 +305,7 @@ $mixedListRuleId = $parserRepo->saveRule([
 	'caller_mode' => 'specific_only',
 	'exclude_withheld' => 0,
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => '',
+	'alert_reminder_mode_override' => '',
 	'suppression_minutes_override' => null,
 	'schedules' => [],
 	'callers' => $mixedCallers,
@@ -329,7 +329,7 @@ $independentCallerRuleId = $parserRepo->saveRule([
 	'caller_mode' => 'specific_only',
 	'exclude_withheld' => 0,
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => '',
+	'alert_reminder_mode_override' => '',
 	'suppression_minutes_override' => null,
 	'schedules' => [],
 	'callers' => [
@@ -359,7 +359,7 @@ $ruleId = $repo->saveRule([
 	'caller_mode' => 'specific_only',
 	'exclude_withheld' => 1,
 	'did_scope_mode' => 'selected',
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 	'suppression_minutes_override' => 120,
 	'schedules' => [
 		['day' => 1, 'start' => '09:00', 'end' => '12:00'],
@@ -420,7 +420,7 @@ assert_same('Main DID', (string)($specificRule['did_lists']['include'][0]['route
 $rule = $repo->loadRule($ruleId);
 assert_true(is_array($rule), 'rule should be persisted and reloadable');
 assert_same('Main Rule', $rule['name'], 'rule name should persist');
-assert_same('never', $rule['repeat_mode_override'], 'explicit never override must persist distinctly');
+assert_same('never', $rule['alert_reminder_mode_override'], 'explicit never override must persist distinctly');
 assert_same(2, count($rule['schedules']), 'multiple schedules should persist');
 assert_same(1, count($rule['caller_lists']['include']), 'caller include list should persist');
 assert_same(1, count($rule['caller_lists']['exclude']), 'caller exclude list should persist');
@@ -449,7 +449,7 @@ $repo->saveRule([
 	'caller_mode' => 'any',
 	'exclude_withheld' => 0,
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => '',
+	'alert_reminder_mode_override' => '',
 	'suppression_minutes_override' => null,
 	'schedules' => [
 		['day' => 5, 'start' => '10:00', 'end' => '11:00'],
@@ -460,7 +460,7 @@ $repo->saveRule([
 
 $updated = $repo->loadRule($ruleId);
 assert_same('Main Rule Updated', $updated['name'], 'rule updates should persist');
-assert_same('', (string)$updated['repeat_mode_override'], 'global default mode must remain distinct from explicit never');
+assert_same('', (string)$updated['alert_reminder_mode_override'], 'global default mode must remain distinct from explicit never');
 assert_same(1, count($updated['schedules']), 'schedule replacement should overwrite old schedules');
 assert_same('ringall', (string)$updated['alert_call_strategy'], 'alert call strategy update should persist');
 assert_same(1, (int)$updated['alert_call_keep_trying'], 'alert call keep-trying update should persist');
@@ -478,7 +478,7 @@ $disabledSuppressionRuleId = $repo->saveRule([
 	'caller_mode' => 'any',
 	'exclude_withheld' => 0,
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => '',
+	'alert_reminder_mode_override' => '',
 	'suppression_minutes_override' => 0,
 	'schedules' => [],
 	'callers' => [],
@@ -501,7 +501,7 @@ $continuousRuleId = $repo->saveRule([
 	'caller_mode' => 'any',
 	'exclude_withheld' => 0,
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => '',
+	'alert_reminder_mode_override' => '',
 	'suppression_minutes_override' => null,
 	'schedules' => [
 		['day' => 2, 'start' => '09:00', 'end' => '10:00'],
@@ -542,7 +542,7 @@ $controllerPathRuleId = $repo->saveRule([
 	'caller_mode' => 'any',
 	'exclude_withheld' => 0,
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => '',
+	'alert_reminder_mode_override' => '',
 	'suppression_minutes_override' => null,
 	'schedules' => $parsedControllerSchedules,
 	'callers' => [],
@@ -578,7 +578,7 @@ $_REQUEST = [
 	'caller_mode' => 'any',
 	'exclude_withheld' => '0',
 	'did_scope_mode' => 'all',
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 	'email_recipients' => '',
 	'suppression_minutes_override' => '',
 	'schedules' => '[]',
@@ -616,7 +616,7 @@ assert_same('admin', $incident['accepted_by'], 'accept user should persist');
 $subjectState = $db->query("SELECT active_incident_id FROM repeatcaller_rule_subject_state WHERE rule_id = {$ruleId} AND subject_key = '+441111111111'")->fetch(PDO::FETCH_ASSOC);
 assert_same($incidentId, (int)$subjectState['active_incident_id'], 'accepted incident must remain linked in subject state until clear');
 
-$db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES ({$incidentId}, {$ruleId}, '+441111111111', '+441111111111', 'gui', 'initial', 0, NULL, 'recorded', 'never', 'k1', '2026-07-13 10:00:00', '2026-07-13 10:00:00')");
+$db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES ({$incidentId}, {$ruleId}, '+441111111111', '+441111111111', 'gui', 'initial', 0, NULL, 'recorded', 'never', 'k1', '2026-07-13 10:00:00', '2026-07-13 10:00:00')");
 $history = $repo->loadIncidentAlertHistory();
 assert_same('gui', $history[0]['action_type'], 'alert history should read from incident alert-history table');
 assert_same('any', (string)$history[0]['caller_mode'], 'alert history rows should include caller scope mode for subject presentation');
@@ -629,8 +629,8 @@ assert_same('all', (string)$acceptedIncidents[0]['did_scope_mode'], 'incident ro
 
 $db->exec("INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, mode, first_matched_at, last_matched_at, matched_call_count, state, created_at, updated_at) VALUES ({$ruleId}, 'closed-1', NULL, 'closed-1', 'repeat', '2026-07-01 00:00:00', '2026-07-01 00:00:00', 3, 'closed', '2026-07-01 00:00:00', '2026-07-01 00:00:00')");
 $closedId = (int)$db->lastInsertId();
-$db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES ({$closedId}, {$ruleId}, 'closed-1', 'closed-1', 'gui', 'initial', 0, NULL, 'recorded', 'never', 'k2', '2026-07-01 00:00:00', '2026-07-01 00:00:00')");
-$db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES ({$incidentId}, {$ruleId}, '+441111111111', '+441111111111', 'gui', 'reminder', 1, NULL, 'recorded', 'never', 'k3', '2026-07-01 00:00:00', '2026-07-01 00:00:00')");
+$db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES ({$closedId}, {$ruleId}, 'closed-1', 'closed-1', 'gui', 'initial', 0, NULL, 'recorded', 'never', 'k2', '2026-07-01 00:00:00', '2026-07-01 00:00:00')");
+$db->exec("INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES ({$incidentId}, {$ruleId}, '+441111111111', '+441111111111', 'gui', 'reminder', 1, NULL, 'recorded', 'never', 'k3', '2026-07-01 00:00:00', '2026-07-01 00:00:00')");
 $deletedClosedHistory = $repo->pruneIncidentAlertHistory('2026-07-10 00:00:00');
 assert_true($deletedClosedHistory >= 1, 'pruning should remove eligible old closed incident history');
 $activeHistoryCount = (int)$db->query("SELECT COUNT(*) FROM repeatcaller_incident_alert_history WHERE incident_id = {$incidentId}")->fetchColumn();
@@ -1404,7 +1404,7 @@ createGeneric('rc-rule-mode', 'select');
 createGeneric('rc-rule-threshold', 'input');
 createGeneric('rc-rule-window', 'input');
 createGeneric('rc-rule-suppression', 'input');
-createGeneric('rc-rule-repeat', 'select');
+createGeneric('rc-rule-alert-reminder', 'select');
 createGeneric('rc-rule-email-recipients', 'input');
 createGeneric('rc-rule-caller-mode', 'select');
 createCheckbox('rc-rule-exclude-withheld');
@@ -1992,7 +1992,7 @@ context.window.__testAjaxInterceptor = function (command, payload, done) {
 			caller_mode: payload.caller_mode || 'any',
 			exclude_withheld: parseInt(payload.exclude_withheld || 0, 10),
 			did_scope_mode: payload.did_scope_mode || 'all',
-			repeat_mode_override: payload.repeat_mode_override || 'never',
+			alert_reminder_mode_override: payload.alert_reminder_mode_override || 'never',
 			email_recipients: payload.email_recipients || '',
 			caller_lists: { include: [], exclude: [] },
 			did_lists: { include: [], exclude: [] },
@@ -2306,14 +2306,14 @@ assert_true(strpos($jsSource, "'5m': 'Every 5 Minutes'") !== false, 'repeat-mode
 assert_true(strpos($jsSource, "fibonacci: 'Escalating'") !== false, 'repeat-mode mapping should present legacy fibonacci values as Escalating');
 assert_true(strpos($jsSource, "function repeatModeLabel(rawRepeatMode) {") !== false, 'Rules table should use dedicated repeat mode label helper');
 assert_true(strpos($jsSource, 'var modeLabel = detectionModeLabel(rule.mode || \'repeat\');') !== false, 'Rules table mode should be rendered through the shared detection mode formatter');
-assert_true(strpos($jsSource, "var repeatLabel = repeatModeLabel(rule.repeat_mode_override || 'never');") !== false, 'Rules table repeat mode should be rendered through repeatModeLabel helper');
+assert_true(strpos($jsSource, "var repeatLabel = repeatModeLabel(rule.alert_reminder_mode_override || 'never');") !== false, 'Rules table repeat mode should be rendered through repeatModeLabel helper');
 assert_true(strpos($jsSource, "items.push('Alert Call');") !== false, 'Rules table actions should render Alert Call as implemented');
 assert_true(strpos($jsSource, 'Alert Call (planned)') === false, 'Rules table should not render stale Alert Call (planned) suffix');
 assert_true(strpos($jsSource, "mode: $('#rc-rule-mode').val(),") !== false, 'rule save payload should continue persisting canonical mode values');
-assert_true(strpos($jsSource, "repeat_mode_override: $('#rc-rule-repeat').val(),") !== false, 'rule save payload should continue persisting canonical repeat mode override values');
+assert_true(strpos($jsSource, "alert_reminder_mode_override: $('#rc-rule-alert-reminder').val(),") !== false, 'rule save payload should continue persisting canonical repeat mode override values');
 assert_true((bool)preg_match('/detectionModeLabel\(i\.mode\)/', $jsSource), 'incident tables should render detection mode from incident mode field');
 assert_true((bool)preg_match('/detectionModeLabel\(h\.incident_mode\)/', $jsSource), 'alert history should render detection mode from originating incident mode field');
-assert_true(strpos($jsSource, 'detectionModeLabel(h.repeat_mode)') === false, 'alert repeat cadence must not be used for detection mode display');
+assert_true(strpos($jsSource, 'detectionModeLabel(h.alert_reminder_mode)') === false, 'alert repeat cadence must not be used for detection mode display');
 assert_true((bool)preg_match('/var statusLabels = \{[\s\S]*\};/', $jsSource), 'shared status label mapping table should exist');
 assert_true(substr_count($jsSource, 'var statusLabels = {') === 1, 'status mapping table must not be duplicated');
 assert_true(strpos($jsSource, "open: 'Open'") !== false, 'shared status mapping should include open -> Open');

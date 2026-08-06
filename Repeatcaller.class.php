@@ -146,7 +146,7 @@ class Repeatcaller implements \BMO {
 						'caller_mode' => (string)($rule['caller_mode'] ?? 'any'),
 						'exclude_withheld' => !empty($rule['exclude_withheld']) ? 1 : 0,
 						'did_scope_mode' => (string)($rule['did_scope_mode'] ?? 'all'),
-						'repeat_mode_override' => (string)($rule['repeat_mode_override'] ?? ''),
+						'alert_reminder_mode_override' => (string)($rule['alert_reminder_mode_override'] ?? ''),
 						'suppression_minutes_override' => $rule['suppression_minutes_override'] !== null && $rule['suppression_minutes_override'] !== ''
 							? (int)$rule['suppression_minutes_override']
 							: null,
@@ -500,7 +500,7 @@ class Repeatcaller implements \BMO {
 				'caller_mode' => (string)($_REQUEST['caller_mode'] ?? 'any'),
 				'exclude_withheld' => !empty($_REQUEST['exclude_withheld']) ? 1 : 0,
 				'did_scope_mode' => (string)($_REQUEST['did_scope_mode'] ?? 'all'),
-				'repeat_mode_override' => (string)($_REQUEST['repeat_mode_override'] ?? self::REPEAT_MODE_NEVER),
+				'alert_reminder_mode_override' => (string)($_REQUEST['alert_reminder_mode_override'] ?? self::REPEAT_MODE_NEVER),
 				'email_recipients' => implode(', ', $this->normaliseRecipients((string)($_REQUEST['email_recipients'] ?? ''))),
 				'suppression_minutes_override' => ($_REQUEST['suppression_minutes_override'] ?? '') !== ''
 					? $this->boundedDigits((string)$_REQUEST['suppression_minutes_override'], 0, 525600, 1440)
@@ -549,8 +549,8 @@ class Repeatcaller implements \BMO {
 				return ['status' => false, 'message' => _('Alert Call Caller ID must contain digits only, optionally prefixed with +.')];
 			}
 		}
-		$override = strtolower(trim((string)$payload['repeat_mode_override']));
-		$payload['repeat_mode_override'] = $this->normaliseRepeatMode($override);
+		$override = strtolower(trim((string)$payload['alert_reminder_mode_override']));
+		$payload['alert_reminder_mode_override'] = $this->normaliseAlertReminderMode($override);
 		if ($payload['caller_mode'] === 'specific_only') {
 			$hasIncludedCaller = false;
 			foreach ($payload['callers'] as $caller) {
@@ -1474,7 +1474,7 @@ class Repeatcaller implements \BMO {
 		return count($nonEmpty) >= 3;
 	}
 
-	private function normaliseRepeatMode(?string $mode): string {
+	private function normaliseAlertReminderMode(?string $mode): string {
 		$mode = strtolower(trim((string)$mode));
 		if ($mode === self::REPEAT_MODE_FIBONACCI) {
 			return self::REPEAT_MODE_ESCALATING;

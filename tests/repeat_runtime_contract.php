@@ -81,7 +81,7 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			caller_mode TEXT NOT NULL,
 			exclude_withheld INTEGER NOT NULL DEFAULT 0,
 			did_scope_mode TEXT NOT NULL,
-			repeat_mode_override TEXT,
+			alert_reminder_mode_override TEXT,
 			suppression_minutes_override INTEGER,
 			created_at TEXT,
 			updated_at TEXT
@@ -162,7 +162,7 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			incident_id INTEGER NOT NULL UNIQUE,
 			rule_id INTEGER NOT NULL,
-			repeat_mode TEXT NOT NULL,
+			alert_reminder_mode TEXT NOT NULL,
 			initial_sent_at TEXT,
 			last_alert_at TEXT,
 			reminders_sent INTEGER NOT NULL DEFAULT 0,
@@ -187,7 +187,7 @@ function create_runtime_environment(string $dbPath, string $now): array {
 			successful_at TEXT,
 			next_retry_at TEXT,
 			failure_detail TEXT,
-			repeat_mode TEXT NOT NULL,
+			alert_reminder_mode TEXT NOT NULL,
 			dedupe_key TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -263,7 +263,7 @@ function insert_route(PDO $db, string $did, string $cid = '', string $descriptio
 }
 
 function insert_rule(PDO $db, array $rule): int {
-	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([
 			$rule['name'],
 			$rule['enabled'] ?? 1,
@@ -281,7 +281,7 @@ function insert_rule(PDO $db, array $rule): int {
 			$rule['caller_mode'] ?? 'any',
 			$rule['exclude_withheld'] ?? 0,
 			$rule['did_scope_mode'] ?? 'all',
-			$rule['repeat_mode_override'] ?? null,
+			$rule['alert_reminder_mode_override'] ?? null,
 			$rule['suppression_minutes_override'] ?? 30,
 			$rule['created_at'] ?? '2026-07-13 09:00:00',
 			$rule['updated_at'] ?? '2026-07-13 09:00:00',
@@ -891,7 +891,7 @@ try {
 		throw new RuntimeException('Unable to create continuous-schedule invert runtime contract SQLite file');
 	}
 	[$db3Continuous, $repository3Continuous, $scanner3Continuous, $processor3Continuous] = create_runtime_environment($dbPath3Continuous, '2026-07-13 10:30:00');
-	$db3Continuous->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db3Continuous->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute(['Invert Continuous Schedule Rule', 1, '2026-07-13 09:00:00', 0, 0, null, null, 'invert', 3, 60, 'any', 0, 'all', null, null, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$continuousRuleId = (int)$db3Continuous->lastInsertId();
 	$db3Continuous->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -996,7 +996,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => null,
 		'schedules' => [['day' => -1, 'start' => '00:00', 'end' => '24:00']],
 		'callers' => [],
@@ -1605,7 +1605,7 @@ try {
 		'alert_call_enabled' => 1,
 		'alert_call_destinations' => '100,200',
 		'alert_call_recording_id' => 42,
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
 	$ruleCallDisabled = insert_rule($db3Call, [
@@ -1619,7 +1619,7 @@ try {
 		'alert_call_enabled' => 0,
 		'alert_call_destinations' => '300',
 		'alert_call_recording_id' => 77,
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
 	insert_cdr($db3Call, ['linkedid' => 'CA1', 'calldate' => '2026-07-13 10:00:00', 'src' => '01234567890', 'clid' => '01234567890']);
@@ -1661,7 +1661,7 @@ try {
 	}
 	[$db7Default, $repository7Default, $scanner7Default, $processor7Default] = create_runtime_environment($dbPath7Default, '2026-07-13 09:20:00');
 	insert_route($db7Default, '18005550001', '', 'Main');
-	$db7Default->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db7Default->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute(['Default Suppression Rule', 1, '2026-07-13 09:00:00', 0, 0, null, null, 'repeat', 2, 60, 'any', 0, 'all', null, null, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$defaultSuppressionRuleId = (int)$db7Default->lastInsertId();
 	$db7Default->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -1683,7 +1683,7 @@ try {
 	}
 	[$db7Disabled, $repository7Disabled, $scanner7Disabled, $processor7Disabled] = create_runtime_environment($dbPath7Disabled, '2026-07-13 09:20:00');
 	insert_route($db7Disabled, '18005550001', '', 'Main');
-	$db7Disabled->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db7Disabled->prepare('INSERT INTO repeatcaller_rules (name, enabled, enabled_at, email_enabled, alert_call_enabled, alert_call_destinations, alert_call_recording_id, mode, threshold_count, observation_window_minutes, caller_mode, exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute(['Disabled Suppression Rule', 1, '2026-07-13 09:00:00', 0, 0, null, null, 'repeat', 2, 60, 'any', 0, 'all', null, 0, '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
 	$disabledSuppressionRuleId = (int)$db7Disabled->lastInsertId();
 	$db7Disabled->prepare('INSERT INTO repeatcaller_rule_schedules (rule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -1887,7 +1887,7 @@ try {
 		'alert_call_enabled' => 1,
 		'alert_call_destinations' => '100',
 		'alert_call_recording_id' => 42,
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
 	insert_cdr($dbClearWorkflow, ['linkedid' => 'CSW1', 'calldate' => '2026-07-13 09:00:00', 'src' => '01234567898', 'clid' => '01234567898']);
@@ -2409,7 +2409,7 @@ assert_true($repositoryClearWorkflow->clearSuppressedIncidentHistory((int)$secon
 	assert_true(strpos($alertSource, 'Repeat Caller incident alert pass:') === false, 'alert processor must not emit the removed routine alert summary string');
 	assert_true(strpos($alertSource, 'function __construct(RepeatCallerRepository $repository') !== false, 'alert processor should keep a single repository-driven constructor without unused PDO/logger wiring');
 	assert_true(strpos($alertSource, 'reserveStageEvents($incident, $repeatMode, \'initial\'') !== false, 'initial stage scheduling must flow through reserveStageEvents');
-	assert_true(strpos($alertSource, 'reserveStageEvents($incident, $repeatMode, \'reminder\'') !== false, 'reminder stage scheduling must flow through reserveStageEvents');
+	assert_true(strpos($alertSource, 'reserveStageEvents($incident, $repeatMode, $reminderEventType') !== false, 'reminder stage scheduling must flow through reserveStageEvents');
 	assert_true(strpos($alertSource, 'private function reserveTransportEvent(') !== false, 'GUI/email/alert_call stage reservations should share one transport reservation helper');
 	assert_true(strpos($alertSource, 'private function log(') === false, 'dead alert-processor logger helper should be removed');
 

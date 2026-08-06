@@ -562,7 +562,7 @@ function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?Fa
 			caller_mode TEXT NOT NULL,
 			exclude_withheld INTEGER NOT NULL DEFAULT 0,
 			did_scope_mode TEXT NOT NULL,
-			repeat_mode_override TEXT,
+			alert_reminder_mode_override TEXT,
 			suppression_minutes_override INTEGER,
 			created_at TEXT,
 			updated_at TEXT
@@ -599,7 +599,7 @@ function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?Fa
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			incident_id INTEGER NOT NULL UNIQUE,
 			rule_id INTEGER NOT NULL,
-			repeat_mode TEXT NOT NULL,
+			alert_reminder_mode TEXT NOT NULL,
 			initial_sent_at TEXT,
 			last_alert_at TEXT,
 			reminders_sent INTEGER NOT NULL DEFAULT 0,
@@ -676,7 +676,7 @@ function create_alert_environment(TestClock $clock, FakeEmailSender $sender, ?Fa
 			successful_at TEXT,
 			next_retry_at TEXT,
 			failure_detail TEXT,
-			repeat_mode TEXT NOT NULL,
+			alert_reminder_mode TEXT NOT NULL,
 			dedupe_key TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -717,7 +717,7 @@ function insert_rule(PDO $db, array $rule): int {
 	$stmt = $db->prepare(
 		'INSERT INTO repeatcaller_rules
 			(name, enabled, email_enabled, email_recipients, alert_call_enabled, alert_call_destinations, alert_call_strategy, alert_call_keep_trying, alert_call_recording_id, alert_call_handle_callerid_upstream, alert_call_callerid, mode, threshold_count, observation_window_minutes, caller_mode,
-			 exclude_withheld, did_scope_mode, repeat_mode_override, suppression_minutes_override, created_at, updated_at)
+			 exclude_withheld, did_scope_mode, alert_reminder_mode_override, suppression_minutes_override, created_at, updated_at)
 		 VALUES
 			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)' 
 	);
@@ -739,7 +739,7 @@ function insert_rule(PDO $db, array $rule): int {
 		$rule['caller_mode'] ?? 'any',
 		$rule['exclude_withheld'] ?? 0,
 		$rule['did_scope_mode'] ?? 'all',
-		$rule['repeat_mode_override'] ?? null,
+		$rule['alert_reminder_mode_override'] ?? null,
 		$rule['suppression_minutes_override'] ?? null,
 		$rule['created_at'] ?? '2026-07-13 09:00:00',
 		$rule['updated_at'] ?? '2026-07-13 09:00:00',
@@ -857,8 +857,8 @@ assert_same('en_GB', (string)$languageResolver->invoke($repeatcaller, ''), 'miss
 $clock = new TestClock('2026-07-13 10:00:00');
 $sender = new FakeEmailSender();
 [$db, $processor] = create_alert_environment($clock, $sender);
-$ruleEmail = insert_rule($db, ['name' => 'Email Rule', 'email_enabled' => 1, 'repeat_mode_override' => 'never']);
-$ruleNoEmail = insert_rule($db, ['name' => 'GUI Rule', 'email_enabled' => 0, 'repeat_mode_override' => 'never']);
+$ruleEmail = insert_rule($db, ['name' => 'Email Rule', 'email_enabled' => 1, 'alert_reminder_mode_override' => 'never']);
+$ruleNoEmail = insert_rule($db, ['name' => 'GUI Rule', 'email_enabled' => 0, 'alert_reminder_mode_override' => 'never']);
 $incidentA = insert_incident($db, [
 	'rule_id' => $ruleEmail,
 	'subject_key' => '+441234500001',
@@ -896,7 +896,7 @@ assert_true(strpos($emailMessage, 'Alert Call follows the same normal stage cade
 $invertEmailClock = new TestClock('2026-07-13 10:05:00');
 $invertEmailSender = new FakeEmailSender();
 [$invertEmailDb, $invertEmailProcessor] = create_alert_environment($invertEmailClock, $invertEmailSender);
-$invertEmailRule = insert_rule($invertEmailDb, ['name' => 'Invert Email Rule', 'email_enabled' => 1, 'mode' => 'invert', 'threshold_count' => 2, 'observation_window_minutes' => 3, 'repeat_mode_override' => 'never']);
+$invertEmailRule = insert_rule($invertEmailDb, ['name' => 'Invert Email Rule', 'email_enabled' => 1, 'mode' => 'invert', 'threshold_count' => 2, 'observation_window_minutes' => 3, 'alert_reminder_mode_override' => 'never']);
 insert_incident($invertEmailDb, [
 	'rule_id' => $invertEmailRule,
 	'subject_key' => '+441234500099',
@@ -912,7 +912,7 @@ assert_same('Repeat Caller: incident started [Invert Email Rule] Fewer than 2 ca
 $clockGlobalEmail = new TestClock('2026-07-13 10:10:00');
 $senderGlobalEmail = new FakeEmailSender();
 [$dbGlobalEmail, $processorGlobalEmail] = create_alert_environment($clockGlobalEmail, $senderGlobalEmail);
-$ruleGlobalEmail = insert_rule($dbGlobalEmail, ['name' => 'Rule Email Mode', 'email_enabled' => 1, 'repeat_mode_override' => '5m']);
+$ruleGlobalEmail = insert_rule($dbGlobalEmail, ['name' => 'Rule Email Mode', 'email_enabled' => 1, 'alert_reminder_mode_override' => '5m']);
 $incidentGlobalEmail = insert_incident($dbGlobalEmail, [
 	'rule_id' => $ruleGlobalEmail,
 	'subject_key' => '+441234599999',
@@ -931,7 +931,7 @@ FreePBX::$config = [];
 $fallbackClock = new TestClock('2026-07-13 10:12:00');
 $fallbackSender = new FakeEmailSender();
 [$fallbackDb, $fallbackProcessor] = create_alert_environment($fallbackClock, $fallbackSender);
-$fallbackRule = insert_rule($fallbackDb, ['name' => 'Fallback Email Rule', 'email_enabled' => 1, 'repeat_mode_override' => 'never']);
+$fallbackRule = insert_rule($fallbackDb, ['name' => 'Fallback Email Rule', 'email_enabled' => 1, 'alert_reminder_mode_override' => 'never']);
 insert_incident($fallbackDb, [
 	'rule_id' => $fallbackRule,
 	'subject_key' => '+441234511111',
@@ -961,7 +961,7 @@ $callRule = insert_rule($callDb, [
 	'alert_call_recording_id' => 55,
 	'alert_call_handle_callerid_upstream' => 0,
 	'alert_call_callerid' => '5551234',
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $callIncident = insert_incident($callDb, [
 	'rule_id' => $callRule,
@@ -986,7 +986,7 @@ $upstreamRule = insert_rule($upstreamDb, [
 	'alert_call_recording_id' => 55,
 	'alert_call_handle_callerid_upstream' => 1,
 	'alert_call_callerid' => '5559999',
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $upstreamIncident = insert_incident($upstreamDb, [
 	'rule_id' => $upstreamRule,
@@ -1028,7 +1028,7 @@ $noRecordingRule = insert_rule($noRecordingDb, [
 	'did_scope_mode' => 'selected',
 	'threshold_count' => 3,
 	'observation_window_minutes' => 5,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($noRecordingDb, [
 	'rule_id' => $noRecordingRule,
@@ -1063,7 +1063,7 @@ $didOnlyRule = insert_rule($didOnlyDb, [
 	'did_scope_mode' => 'selected',
 	'threshold_count' => 4,
 	'observation_window_minutes' => 5,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($didOnlyDb, [
 	'rule_id' => $didOnlyRule,
@@ -1100,7 +1100,7 @@ $callerOnlyRule = insert_rule($callerOnlyDb, [
 	'caller_mode' => 'specific_only',
 	'did_scope_mode' => 'all',
 	'observation_window_minutes' => 1,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($callerOnlyDb, [
 	'rule_id' => $callerOnlyRule,
@@ -1141,7 +1141,7 @@ $invertRule = insert_rule($invertDb, [
 	'did_scope_mode' => 'selected',
 	'threshold_count' => 1,
 	'observation_window_minutes' => 1,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($invertDb, [
 	'rule_id' => $invertRule,
@@ -1163,7 +1163,7 @@ insert_seen_call($invertDb, [
 	'call_completed_at' => '2026-07-13 15:00:50',
 ]);
 $invertProcessor->run(settings());
-assert_same('repeat', (string)$invertSender->calls[0]['context']['summary_mode'], 'invert alerts must use the same generated playback mode path as repeat alerts');
+assert_same('repeat', (string)$invertSender->calls[0]['context']['summary_mode'], 'invert alerts must use the same generated playback mode path as alert reminders');
 assert_same(55, (int)$invertSender->calls[0]['recordingId'], 'invert alerts must pass configured System Recording ID to call transport');
 assert_same('0', (string)$invertSender->calls[0]['context']['summary_call_count'], 'invert alerts may carry the observed incident count but must not speak it as the threshold condition');
 assert_same('1', (string)$invertSender->calls[0]['context']['summary_threshold'], 'invert alerts must carry the configured threshold for less-than wording');
@@ -1186,7 +1186,7 @@ $invertFallbackRule = insert_rule($invertFallbackDb, [
 	'did_scope_mode' => 'selected',
 	'threshold_count' => 1,
 	'observation_window_minutes' => 1,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $sendAlertCallMethod = new ReflectionMethod(IncidentAlertProcessor::class, 'sendAlertCall');
 $sendAlertCallMethod->setAccessible(true);
@@ -1227,7 +1227,7 @@ $invertAggregateRule = insert_rule($invertAggregateDb, [
 	'did_scope_mode' => 'all',
 	'threshold_count' => 1,
 	'observation_window_minutes' => 1,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($invertAggregateDb, [
 	'rule_id' => $invertAggregateRule,
@@ -1257,7 +1257,7 @@ $unknownRule = insert_rule($unknownDb, [
 	'alert_call_recording_id' => 55,
 	'caller_mode' => 'withheld_only',
 	'did_scope_mode' => 'selected',
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($unknownDb, [
 	'rule_id' => $unknownRule,
@@ -1295,7 +1295,7 @@ $distinctRule = insert_rule($distinctDb, [
 	'did_scope_mode' => 'selected',
 	'threshold_count' => 3,
 	'observation_window_minutes' => 5,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($distinctDb, [
 	'rule_id' => $distinctRule,
@@ -1330,7 +1330,7 @@ $multiCallerRule = insert_rule($multiCallerDb, [
 	'alert_call_destinations' => '992',
 	'alert_call_recording_id' => 55,
 	'observation_window_minutes' => 5,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($multiCallerDb, [
 	'rule_id' => $multiCallerRule,
@@ -1371,7 +1371,7 @@ $multiUnknownRule = insert_rule($multiUnknownDb, [
 	'alert_call_destinations' => '993',
 	'alert_call_recording_id' => 55,
 	'observation_window_minutes' => 5,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($multiUnknownDb, [
 	'rule_id' => $multiUnknownRule,
@@ -1411,7 +1411,7 @@ $multiDidRule = insert_rule($multiDidDb, [
 	'alert_call_destinations' => '994',
 	'alert_call_recording_id' => 55,
 	'observation_window_minutes' => 5,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 insert_incident($multiDidDb, [
 	'rule_id' => $multiDidRule,
@@ -1467,7 +1467,7 @@ $acceptedRepeatRule = insert_rule($acceptedRepeatDb, [
 	'alert_call_enabled' => 1,
 	'alert_call_destinations' => '400',
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => '5m',
+	'alert_reminder_mode_override' => '5m',
 ]);
 $acceptedRepeatIncident = insert_incident($acceptedRepeatDb, [
 	'rule_id' => $acceptedRepeatRule,
@@ -1482,20 +1482,20 @@ assert_true($acceptedRepeatHistoryId > 0, 'accepted repeat scenario should creat
 $acceptedRepeatDb->prepare('UPDATE repeatcaller_incidents SET last_matched_at = ?, matched_call_count = ? WHERE id = ?')->execute(['2026-07-13 10:03:00', 3, $acceptedRepeatIncident]);
 $acceptedRepeatClock->now = '2026-07-13 10:05:00';
 $acceptedRepeatProcessor->run(settings());
-assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND action_type = 'gui'"), 'DTMF-accepted incidents should not reserve GUI reminders while suppression remains active');
-assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND action_type = 'email'"), 'DTMF-accepted incidents should not reserve email reminders while suppression remains active');
-assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND action_type = 'alert_call'"), 'DTMF-accepted incidents should not reserve alert_call reminders while suppression remains active');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type LIKE 'reminder_%' AND action_type = 'gui'"), 'DTMF-accepted incidents should not reserve GUI reminders while suppression remains active');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type LIKE 'reminder_%' AND action_type = 'email'"), 'DTMF-accepted incidents should not reserve email reminders while suppression remains active');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type LIKE 'reminder_%' AND action_type = 'alert_call'"), 'DTMF-accepted incidents should not reserve alert_call reminders while suppression remains active');
 $acceptedRepeatStateSuppressed = $acceptedRepeatDb->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedRepeatIncident}")->fetch(PDO::FETCH_ASSOC);
 assert_same('2026-07-13 10:00:00', (string)$acceptedRepeatStateSuppressed['last_alert_at'], 'DTMF-accepted incidents should keep the original last-alert checkpoint while suppression remains active');
 assert_same(0, (int)$acceptedRepeatStateSuppressed['reminders_sent'], 'DTMF-accepted incidents should not advance reminder count while suppression remains active');
 $acceptedRepeatDb->prepare('UPDATE repeatcaller_incidents SET last_matched_at = ?, matched_call_count = ?, suppression_expires_at = ? WHERE id = ?')->execute(['2026-07-13 11:05:00', 4, '2026-07-13 11:00:00', $acceptedRepeatIncident]);
 $acceptedRepeatClock->now = '2026-07-13 11:05:00';
 $acceptedRepeatProcessor->run(settings());
-assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'gui'"), 'DTMF-accepted incidents should reserve one fresh GUI reminder after suppression expiry and new activity');
-assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'email'"), 'DTMF-accepted incidents should reserve one fresh email reminder after suppression expiry and new activity');
-assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 1 AND action_type = 'alert_call'"), 'DTMF-accepted incidents should not restart Alert Call activity after acceptance, even after suppression expiry and new activity');
-assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder' AND stage_n = 2"), 'DTMF-accepted incidents should restart reminder stages at the first fresh post-suppression stage');
-assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND action_type = 'email' AND event_type = 'reminder' AND delivery_status = 'sent'"), 'DTMF-accepted incidents should deliver email once the fresh post-suppression reminder is reserved');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder_1' AND stage_n = 0 AND action_type = 'gui'"), 'DTMF-accepted incidents should reserve one fresh GUI reminder after suppression expiry and new activity');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder_1' AND stage_n = 0 AND action_type = 'email'"), 'DTMF-accepted incidents should reserve one fresh email reminder after suppression expiry and new activity');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder_1' AND stage_n = 0 AND action_type = 'alert_call'"), 'DTMF-accepted incidents should not restart Alert Call activity after acceptance, even after suppression expiry and new activity');
+assert_same(0, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND event_type = 'reminder_2'"), 'DTMF-accepted incidents should restart reminder stages at the first fresh post-suppression stage');
+assert_same(1, count_history($acceptedRepeatDb, "incident_id = {$acceptedRepeatIncident} AND action_type = 'email' AND event_type LIKE 'reminder_%' AND delivery_status = 'sent'"), 'DTMF-accepted incidents should deliver email once the fresh post-suppression reminder is reserved');
 $acceptedRepeatStateExpired = $acceptedRepeatDb->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedRepeatIncident}")->fetch(PDO::FETCH_ASSOC);
 assert_same('2026-07-13 11:05:00', (string)$acceptedRepeatStateExpired['last_alert_at'], 'DTMF-accepted incidents should advance the reminder checkpoint once suppression has expired and a fresh reminder is reserved');
 assert_same(1, (int)$acceptedRepeatStateExpired['reminders_sent'], 'DTMF-accepted incidents should advance the reminder count once suppression has expired and a fresh reminder is reserved');
@@ -1503,7 +1503,7 @@ assert_same(1, (int)$acceptedRepeatStateExpired['reminders_sent'], 'DTMF-accepte
 $declineClock = new TestClock('2026-07-13 11:00:00');
 $declineSender = new FakeCallSender();
 [$declineDb, $declineProcessor] = create_alert_environment($declineClock, new FakeEmailSender(), $declineSender);
-$declineRule = insert_rule($declineDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '200', 'alert_call_recording_id' => 55, 'repeat_mode_override' => '5m']);
+$declineRule = insert_rule($declineDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '200', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => '5m']);
 $declineIncident = insert_incident($declineDb, ['rule_id' => $declineRule, 'subject_key' => 'decline-subject', 'first_matched_at' => '2026-07-13 11:00:00', 'suppression_expires_at' => '2026-07-13 12:00:00']);
 $declineProcessor->run(settings());
 $declineHistoryId = (int)$declineDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$declineIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
@@ -1518,14 +1518,14 @@ $declineSameStageRows = count_history($declineDb, "incident_id = {$declineIncide
 $declineCallAttemptsBefore = count($declineSender->calls);
 $declineClock->now = '2026-07-13 11:05:00';
 $declineProcessor->run(settings());
-assert_same(1, count_history($declineDb, "incident_id = {$declineIncident} AND action_type = 'gui' AND event_type = 'reminder'"), 'declined incidents should continue normal GUI reminder progression');
+assert_same(1, count_history($declineDb, "incident_id = {$declineIncident} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'declined incidents should continue normal GUI reminder progression');
 assert_same($declineSameStageRows, count_history($declineDb, "incident_id = {$declineIncident} AND action_type = 'alert_call' AND event_type = 'initial' AND stage_n = 0"), 'declined calls must not retry the same alert_call stage');
 assert_same($declineCallAttemptsBefore, count($declineSender->calls), 'declined recipient must be permanently excluded for the incident');
 
 $timeoutClock = new TestClock('2026-07-13 12:00:00');
 $timeoutSender = new FakeCallSender();
 [$timeoutDb, $timeoutProcessor] = create_alert_environment($timeoutClock, new FakeEmailSender(), $timeoutSender);
-$timeoutRule = insert_rule($timeoutDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '300', 'alert_call_recording_id' => 55, 'repeat_mode_override' => '5m']);
+$timeoutRule = insert_rule($timeoutDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '300', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => '5m']);
 $timeoutIncident = insert_incident($timeoutDb, ['rule_id' => $timeoutRule, 'subject_key' => 'timeout-subject', 'first_matched_at' => '2026-07-13 12:00:00', 'suppression_expires_at' => '2026-07-13 13:00:00']);
 $timeoutProcessor->run(settings());
 $timeoutHistoryId = (int)$timeoutDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$timeoutIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
@@ -1540,14 +1540,14 @@ $timeoutSameStageRows = count_history($timeoutDb, "incident_id = {$timeoutIncide
 $timeoutCallAttemptsBefore = count($timeoutSender->calls);
 $timeoutClock->now = '2026-07-13 12:05:00';
 $timeoutProcessor->run(settings());
-assert_same(1, count_history($timeoutDb, "incident_id = {$timeoutIncident} AND action_type = 'gui' AND event_type = 'reminder'"), 'unanswered calls should remain eligible for normal escalation');
+assert_same(1, count_history($timeoutDb, "incident_id = {$timeoutIncident} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'unanswered calls should remain eligible for normal escalation');
 assert_same($timeoutSameStageRows, count_history($timeoutDb, "incident_id = {$timeoutIncident} AND action_type = 'alert_call' AND event_type = 'initial' AND stage_n = 0"), 'timed-out calls must not retry the same alert_call stage');
 assert_true(count($timeoutSender->calls) > $timeoutCallAttemptsBefore, 'timed-out calls should generate a new call only when the next normal reminder stage becomes due');
 
 $invalidClock = new TestClock('2026-07-13 13:00:00');
 $invalidSender = new FakeCallSender();
 [$invalidDb, $invalidProcessor] = create_alert_environment($invalidClock, new FakeEmailSender(), $invalidSender);
-$invalidRule = insert_rule($invalidDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '400', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
+$invalidRule = insert_rule($invalidDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '400', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => 'never']);
 $invalidIncident = insert_incident($invalidDb, ['rule_id' => $invalidRule, 'subject_key' => 'invalid-subject', 'first_matched_at' => '2026-07-13 13:00:00', 'suppression_expires_at' => '2026-07-13 14:00:00']);
 $invalidProcessor->run(settings());
 $invalidHistoryId = (int)$invalidDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$invalidIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
@@ -1561,7 +1561,7 @@ assert_true(strpos((string)$invalidHistory['failure_detail'], 'last digit: 9') !
 
 $hangupClock = new TestClock('2026-07-13 13:30:00');
 [$hangupDb, $hangupProcessor] = create_alert_environment($hangupClock, new FakeEmailSender(), new FakeCallSender());
-$hangupRule = insert_rule($hangupDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '450', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
+$hangupRule = insert_rule($hangupDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '450', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => 'never']);
 $hangupIncident = insert_incident($hangupDb, ['rule_id' => $hangupRule, 'subject_key' => 'hangup-subject', 'first_matched_at' => '2026-07-13 13:30:00', 'suppression_expires_at' => '2026-07-13 14:30:00']);
 $hangupProcessor->run(settings());
 $hangupHistoryId = (int)$hangupDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$hangupIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
@@ -1583,7 +1583,7 @@ $orderedRule = insert_rule($orderedDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedIncident = insert_incident($orderedDb, ['rule_id' => $orderedRule, 'subject_key' => 'ordered-subject', 'first_matched_at' => '2026-07-13 13:40:00', 'suppression_expires_at' => '2026-07-13 14:40:00']);
 $orderedProcessor->run(settings());
@@ -1619,7 +1619,7 @@ $orderedNoAnswerRule = insert_rule($orderedNoAnswerDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedNoAnswerIncident = insert_incident($orderedNoAnswerDb, ['rule_id' => $orderedNoAnswerRule, 'subject_key' => 'ordered-no-answer', 'first_matched_at' => '2026-07-13 13:41:00', 'suppression_expires_at' => '2026-07-13 14:41:00']);
 $orderedNoAnswerProcessor->run(settings());
@@ -1643,7 +1643,7 @@ assert_true(strtotime((string)$orderedNoAnswerRows[2]['next_retry_at']) > strtot
 // Single-destination ordered NOANSWER: covers the exact live failure path.
 // Row 8 equivalent: history row starts sent, NOANSWER updates it to no_answer, a deferred
 // next-stage row is reserved, and the processor delivers it after 60 seconds regardless of
-// repeat_mode=never. CANCEL (the fallback when DIALSTATUS is empty after h-extension hangup)
+// alert_reminder_mode=never. CANCEL (the fallback when DIALSTATUS is empty after h-extension hangup)
 // also produces a terminal outcome and reserves the next stage.
 $orderedSingleNoAnswerClock = new TestClock('2026-07-13 14:00:00');
 $orderedSingleNoAnswerSender = new FakeCallSender();
@@ -1654,7 +1654,7 @@ $orderedSingleRule = insert_rule($orderedSingleDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedSingleIncident = insert_incident($orderedSingleDb, ['rule_id' => $orderedSingleRule, 'subject_key' => 'ordered-single-noanswer', 'first_matched_at' => '2026-07-13 14:00:00', 'suppression_expires_at' => '2026-07-13 15:00:00']);
 $orderedSingleProcessor->run(settings());
@@ -1680,10 +1680,10 @@ assert_true(strtotime((string)$orderedSingleAllRows[1]['next_retry_at']) > strto
 // Verify the 60-second pause: processor before pause must not deliver the next stage.
 $orderedSingleProcessor->run(settings());
 assert_same(1, count($orderedSingleNoAnswerSender->calls), 'ordered single-destination stage-2 row must not be sent before the 60-second deferred retry time');
-// Advance past the 60-second pause and confirm delivery even with repeat_mode=never.
+// Advance past the 60-second pause and confirm delivery even with alert_reminder_mode=never.
 $orderedSingleNoAnswerClock->now = '2026-07-13 14:01:31';
 $orderedSingleProcessor->run(settings());
-assert_same(2, count($orderedSingleNoAnswerSender->calls), 'ordered single-destination stage-2 row must be sent after the 60-second deferred retry time regardless of repeat_mode=never');
+assert_same(2, count($orderedSingleNoAnswerSender->calls), 'ordered single-destination stage-2 row must be sent after the 60-second deferred retry time regardless of alert_reminder_mode=never');
 assert_same('2001', (string)$orderedSingleNoAnswerSender->calls[1]['destination'], 'ordered stage-2 delivery must target the retained destination');
 
 // CANCEL fallback: when the h extension fires with no DIALSTATUS (originate interrupted),
@@ -1697,7 +1697,7 @@ $orderedCancelRule = insert_rule($orderedCancelDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedCancelIncident = insert_incident($orderedCancelDb, ['rule_id' => $orderedCancelRule, 'subject_key' => 'ordered-cancel', 'first_matched_at' => '2026-07-13 14:02:00', 'suppression_expires_at' => '2026-07-13 15:02:00']);
 $orderedCancelProcessor->run(settings());
@@ -1719,7 +1719,7 @@ $orderedNoKeepTryingRule = insert_rule($orderedNoKeepTryingDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedNoKeepTryingIncident = insert_incident($orderedNoKeepTryingDb, ['rule_id' => $orderedNoKeepTryingRule, 'subject_key' => 'ordered-no-keep-trying', 'first_matched_at' => '2026-07-13 13:42:20', 'suppression_expires_at' => '2026-07-13 14:42:20']);
 $orderedNoKeepTryingProcessor->run(settings());
@@ -1748,7 +1748,7 @@ $orderedStageTwoRule = insert_rule($orderedStageTwoDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedStageTwoIncident = insert_incident($orderedStageTwoDb, ['rule_id' => $orderedStageTwoRule, 'subject_key' => 'ordered-stage-two', 'first_matched_at' => '2026-07-13 13:43:00', 'suppression_expires_at' => '2026-07-13 14:43:00']);
 $orderedStageTwoProcessor->run(settings());
@@ -1783,7 +1783,7 @@ $orderedOriginateFailRule = insert_rule($orderedOriginateFailDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedOriginateFailIncident = insert_incident($orderedOriginateFailDb, ['rule_id' => $orderedOriginateFailRule, 'subject_key' => 'ordered-originate-fail', 'first_matched_at' => '2026-07-13 13:45:00', 'suppression_expires_at' => '2026-07-13 14:45:00']);
 $orderedOriginateFailProcessor->run(settings());
@@ -1808,7 +1808,7 @@ $orderedMultiFailRule = insert_rule($orderedMultiFailDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedMultiFailIncident = insert_incident($orderedMultiFailDb, ['rule_id' => $orderedMultiFailRule, 'subject_key' => 'ordered-multi-fail', 'first_matched_at' => '2026-07-13 13:46:00', 'suppression_expires_at' => '2026-07-13 14:46:00']);
 $orderedMultiFailSummary = $orderedMultiFailProcessor->run(settings());
@@ -1835,7 +1835,7 @@ $orderedFinalFailRule = insert_rule($orderedFinalFailDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedFinalFailIncident = insert_incident($orderedFinalFailDb, ['rule_id' => $orderedFinalFailRule, 'subject_key' => 'ordered-final-fail', 'first_matched_at' => '2026-07-13 13:47:00', 'suppression_expires_at' => '2026-07-13 14:47:00']);
 $orderedFinalFailProcessor->run(settings());
@@ -1856,7 +1856,7 @@ $orderedAcceptAfterFailRule = insert_rule($orderedAcceptAfterFailDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedAcceptAfterFailIncident = insert_incident($orderedAcceptAfterFailDb, ['rule_id' => $orderedAcceptAfterFailRule, 'subject_key' => 'ordered-accept-after-fail', 'first_matched_at' => '2026-07-13 13:48:00', 'suppression_expires_at' => '2026-07-13 14:48:00']);
 $orderedAcceptAfterFailProcessor->run(settings());
@@ -1874,7 +1874,7 @@ $orderedChainRule = insert_rule($orderedChainDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $orderedChainIncident = insert_incident($orderedChainDb, ['rule_id' => $orderedChainRule, 'subject_key' => 'ordered-chain', 'first_matched_at' => '2026-07-13 13:49:00', 'suppression_expires_at' => '2026-07-13 14:49:00']);
 $orderedChainProcessor->run(settings());
@@ -1949,7 +1949,7 @@ $parallelAcceptRule = insert_rule($parallelAcceptDb, [
 	'alert_call_strategy' => 'ringall',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $parallelAcceptIncident = insert_incident($parallelAcceptDb, ['rule_id' => $parallelAcceptRule, 'subject_key' => 'parallel-accept', 'first_matched_at' => '2026-07-13 13:49:00', 'suppression_expires_at' => '2026-07-13 14:49:00']);
 $parallelAcceptSender->afterCall = function (string $destination) use ($parallelAcceptDb, $parallelAcceptIncident): void {
@@ -1985,7 +1985,7 @@ $lateCallbackRule = insert_rule($lateCallbackDb, [
 	'alert_call_strategy' => 'ringall',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => '5m',
+	'alert_reminder_mode_override' => '5m',
 ]);
 $lateCallbackIncident = insert_incident($lateCallbackDb, ['rule_id' => $lateCallbackRule, 'subject_key' => 'late-callback', 'first_matched_at' => '2026-07-13 13:49:30', 'suppression_expires_at' => '2026-07-13 14:49:30']);
 $lateCallbackProcessor->run(settings());
@@ -2003,7 +2003,7 @@ $idempotentAcceptRule = insert_rule($idempotentAcceptDb, [
 	'alert_call_strategy' => 'ringall',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => '5m',
+	'alert_reminder_mode_override' => '5m',
 ]);
 $idempotentAcceptIncident = insert_incident($idempotentAcceptDb, ['rule_id' => $idempotentAcceptRule, 'subject_key' => 'idempotent-accept', 'first_matched_at' => '2026-07-13 13:49:45', 'suppression_expires_at' => '2026-07-13 14:49:45']);
 $idempotentAcceptProcessor->run(settings());
@@ -2026,7 +2026,7 @@ $ignoredCallerOrderedRule = insert_rule($ignoredCallerOrderedDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $ignoredCallerOrderedDb->prepare('INSERT INTO repeatcaller_rule_callers (rule_id, list_type, raw_value, normalized_value, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ignoredCallerOrderedRule, 'exclude', '810', '810', '2026-07-13 13:50:00']);
 $ignoredCallerOrderedIncident = insert_incident($ignoredCallerOrderedDb, ['rule_id' => $ignoredCallerOrderedRule, 'subject_key' => 'ignored-caller-ordered', 'first_matched_at' => '2026-07-13 13:50:00', 'suppression_expires_at' => '2026-07-13 14:50:00']);
@@ -2044,7 +2044,7 @@ $ignoredCallerRingAllRule = insert_rule($ignoredCallerRingAllDb, [
 	'alert_call_strategy' => 'ringall',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $ignoredCallerRingAllDb->prepare('INSERT INTO repeatcaller_rule_callers (rule_id, list_type, raw_value, normalized_value, created_at) VALUES (?, ?, ?, ?, ?)')->execute([$ignoredCallerRingAllRule, 'exclude', '820', '820', '2026-07-13 13:51:00']);
 $ignoredCallerRingAllIncident = insert_incident($ignoredCallerRingAllDb, ['rule_id' => $ignoredCallerRingAllRule, 'subject_key' => 'ignored-caller-ringall', 'first_matched_at' => '2026-07-13 13:51:00', 'suppression_expires_at' => '2026-07-13 14:51:00']);
@@ -2061,7 +2061,7 @@ $orderedNoRetryRule = insert_rule($orderedNoRetryDb, [
 	'alert_call_strategy' => 'ordered',
 	'alert_call_keep_trying' => 1,
 	'alert_call_recording_id' => 55,
-	'repeat_mode_override' => '5m',
+	'alert_reminder_mode_override' => '5m',
 ]);
 $orderedNoRetryIncident = insert_incident($orderedNoRetryDb, ['rule_id' => $orderedNoRetryRule, 'subject_key' => 'ordered-no-retry', 'first_matched_at' => '2026-07-13 13:52:00', 'suppression_expires_at' => '2026-07-13 14:52:00']);
 $orderedNoRetryProcessor->run(settings());
@@ -2073,7 +2073,7 @@ assert_same(1, count($orderedNoRetrySender->calls), 'destination-scoped keep-try
 
 $dialMapClock = new TestClock('2026-07-13 14:10:00');
 [$dialMapDb, $dialMapProcessor] = create_alert_environment($dialMapClock, new FakeEmailSender(), new FakeCallSender());
-$dialMapRule = insert_rule($dialMapDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '720', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
+$dialMapRule = insert_rule($dialMapDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '720', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => 'never']);
 $dialMapIncident = insert_incident($dialMapDb, ['rule_id' => $dialMapRule, 'subject_key' => 'dial-map', 'first_matched_at' => '2026-07-13 14:10:00', 'suppression_expires_at' => '2026-07-13 15:10:00']);
 $dialMapProcessor->run(settings());
 $dialMapHistoryId = (int)$dialMapDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$dialMapIncident} AND recipient = '720' LIMIT 1")->fetchColumn();
@@ -2092,7 +2092,7 @@ assert_same('failed', (string)$dialRow['delivery_status'], 'unknown non-ANSWER d
 
 $answerPreserveClock = new TestClock('2026-07-13 14:20:00');
 [$answerPreserveDb, $answerPreserveProcessor] = create_alert_environment($answerPreserveClock, new FakeEmailSender(), new FakeCallSender());
-$answerPreserveRule = insert_rule($answerPreserveDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '730', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
+$answerPreserveRule = insert_rule($answerPreserveDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '730', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => 'never']);
 $answerPreserveIncident = insert_incident($answerPreserveDb, ['rule_id' => $answerPreserveRule, 'subject_key' => 'answer-preserve', 'first_matched_at' => '2026-07-13 14:20:00', 'suppression_expires_at' => '2026-07-13 15:20:00']);
 $answerPreserveProcessor->run(settings());
 $answerPreserveHistoryId = (int)$answerPreserveDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$answerPreserveIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
@@ -2104,7 +2104,7 @@ assert_same('declined', (string)$answerRow['delivery_status'], 'ANSWER dialstatu
 
 $existingAcceptClock = new TestClock('2026-07-13 14:00:00');
 [$existingAcceptDb, $existingAcceptProcessor] = create_alert_environment($existingAcceptClock, new FakeEmailSender(), new FakeCallSender());
-$existingAcceptRule = insert_rule($existingAcceptDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '500', 'alert_call_recording_id' => 55, 'repeat_mode_override' => 'never']);
+$existingAcceptRule = insert_rule($existingAcceptDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '500', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => 'never']);
 $existingAcceptIncident = insert_incident($existingAcceptDb, ['rule_id' => $existingAcceptRule, 'subject_key' => 'already-accepted', 'first_matched_at' => '2026-07-13 14:00:00', 'suppression_expires_at' => '2026-07-13 15:00:00']);
 $existingAcceptProcessor->run(settings());
 $existingAcceptHistoryId = (int)$existingAcceptDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$existingAcceptIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
@@ -2126,7 +2126,7 @@ $callRuleFail = insert_rule($callDbFail, [
 	'alert_call_enabled' => 1,
 	'alert_call_destinations' => '101',
 	'alert_call_recording_id' => 77,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $callIncidentFail = insert_incident($callDbFail, [
 	'rule_id' => $callRuleFail,
@@ -2158,7 +2158,7 @@ $disabledCallRule = insert_rule($disabledCallDb, [
 	'alert_call_enabled' => 0,
 	'alert_call_destinations' => '200',
 	'alert_call_recording_id' => 88,
-	'repeat_mode_override' => 'never',
+	'alert_reminder_mode_override' => 'never',
 ]);
 $disabledCallIncident = insert_incident($disabledCallDb, [
 	'rule_id' => $disabledCallRule,
@@ -2192,7 +2192,7 @@ assert_same(1, count_history($db, "incident_id = {$incidentA} AND action_type = 
 $clock5 = new TestClock('2026-07-13 12:00:00');
 $sender5 = new FakeEmailSender();
 [$db5, $processor5] = create_alert_environment($clock5, $sender5);
-$rule5 = insert_rule($db5, ['email_enabled' => 0, 'repeat_mode_override' => '5m']);
+$rule5 = insert_rule($db5, ['email_enabled' => 0, 'alert_reminder_mode_override' => '5m']);
 $incident5 = insert_incident($db5, [
 	'rule_id' => $rule5,
 	'subject_key' => '+441200000005',
@@ -2202,16 +2202,16 @@ $incident5 = insert_incident($db5, [
 $processor5->run(settings());
 $clock5->now = '2026-07-13 12:04:59';
 $processor5->run(settings());
-assert_same(0, count_history($db5, "incident_id = {$incident5} AND action_type = 'gui' AND event_type = 'reminder'"), '5m mode should not emit reminder before five minutes');
+assert_same(0, count_history($db5, "incident_id = {$incident5} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), '5m mode should not emit reminder before five minutes');
 $clock5->now = '2026-07-13 12:05:00';
 $processor5->run(settings());
-assert_same(1, count_history($db5, "incident_id = {$incident5} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), '5m mode should emit one reminder at five-minute eligibility');
+assert_same(1, count_history($db5, "incident_id = {$incident5} AND action_type = 'gui' AND event_type = 'reminder_1' AND stage_n = 0"), '5m mode should emit one reminder at five-minute eligibility');
 
 // 9: hourly
 $clockH = new TestClock('2026-07-13 14:00:00');
 $senderH = new FakeEmailSender();
 [$dbH, $processorH] = create_alert_environment($clockH, $senderH);
-$ruleH = insert_rule($dbH, ['email_enabled' => 0, 'repeat_mode_override' => 'hourly']);
+$ruleH = insert_rule($dbH, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'hourly']);
 $incidentH = insert_incident($dbH, [
 	'rule_id' => $ruleH,
 	'subject_key' => '+441200000006',
@@ -2221,16 +2221,16 @@ $incidentH = insert_incident($dbH, [
 $processorH->run(settings());
 $clockH->now = '2026-07-13 14:59:59';
 $processorH->run(settings());
-assert_same(0, count_history($dbH, "incident_id = {$incidentH} AND action_type = 'gui' AND event_type = 'reminder'"), 'hourly mode should not alert before one hour');
+assert_same(0, count_history($dbH, "incident_id = {$incidentH} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'hourly mode should not alert before one hour');
 $clockH->now = '2026-07-13 15:00:00';
 $processorH->run(settings());
-assert_same(1, count_history($dbH, "incident_id = {$incidentH} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'hourly mode should alert at one hour');
+assert_same(1, count_history($dbH, "incident_id = {$incidentH} AND action_type = 'gui' AND event_type = 'reminder_1' AND stage_n = 0"), 'hourly mode should alert at one hour');
 
 // 10: daily
 $clockD = new TestClock('2026-07-13 00:00:00');
 $senderD = new FakeEmailSender();
 [$dbD, $processorD] = create_alert_environment($clockD, $senderD);
-$ruleD = insert_rule($dbD, ['email_enabled' => 0, 'repeat_mode_override' => 'daily']);
+$ruleD = insert_rule($dbD, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'daily']);
 $incidentD = insert_incident($dbD, [
 	'rule_id' => $ruleD,
 	'subject_key' => '+441200000007',
@@ -2240,16 +2240,16 @@ $incidentD = insert_incident($dbD, [
 $processorD->run(settings());
 $clockD->now = '2026-07-13 23:59:59';
 $processorD->run(settings());
-assert_same(0, count_history($dbD, "incident_id = {$incidentD} AND action_type = 'gui' AND event_type = 'reminder'"), 'daily mode should not alert before one day');
+assert_same(0, count_history($dbD, "incident_id = {$incidentD} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'daily mode should not alert before one day');
 $clockD->now = '2026-07-14 00:00:00';
 $processorD->run(settings());
-assert_same(1, count_history($dbD, "incident_id = {$incidentD} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'daily mode should alert at one day');
+assert_same(1, count_history($dbD, "incident_id = {$incidentD} AND action_type = 'gui' AND event_type = 'reminder_1' AND stage_n = 0"), 'daily mode should alert at one day');
 
 // 11: escalating sequence (5m, 5m, 10m)
 $clockE = new TestClock('2026-07-13 08:00:00');
 $senderE = new FakeEmailSender();
 [$dbE, $processorE] = create_alert_environment($clockE, $senderE);
-$ruleE = insert_rule($dbE, ['email_enabled' => 0, 'repeat_mode_override' => 'escalating']);
+$ruleE = insert_rule($dbE, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'escalating']);
 $incidentE = insert_incident($dbE, [
 	'rule_id' => $ruleE,
 	'subject_key' => '+441200000008',
@@ -2259,7 +2259,7 @@ $incidentE = insert_incident($dbE, [
 $processorE->run(settings());
 $clockE->now = '2026-07-13 08:04:59';
 $processorE->run(settings());
-assert_same(0, count_history($dbE, "incident_id = {$incidentE} AND action_type = 'gui' AND event_type = 'reminder'"), 'escalating should not alert before first 5m interval');
+assert_same(0, count_history($dbE, "incident_id = {$incidentE} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'escalating should not alert before first 5m interval');
 $clockE->now = '2026-07-13 08:05:00';
 $processorE->run(settings());
 $clockE->now = '2026-07-13 08:09:59';
@@ -2268,10 +2268,10 @@ $clockE->now = '2026-07-13 08:10:00';
 $processorE->run(settings());
 $clockE->now = '2026-07-13 08:19:59';
 $processorE->run(settings());
-assert_same(2, count_history($dbE, "incident_id = {$incidentE} AND action_type = 'gui' AND event_type = 'reminder'"), 'escalating should emit two reminders by 10 minutes (5m + 5m)');
+assert_same(2, count_history($dbE, "incident_id = {$incidentE} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'escalating should emit two reminders by 10 minutes (5m + 5m)');
 $clockE->now = '2026-07-13 08:20:00';
 $processorE->run(settings());
-assert_same(3, count_history($dbE, "incident_id = {$incidentE} AND action_type = 'gui' AND event_type = 'reminder'"), 'escalating third reminder should occur after the next 10-minute interval');
+assert_same(3, count_history($dbE, "incident_id = {$incidentE} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'escalating third reminder should occur after the next 10-minute interval');
 
 // 11b: shared stage scheduler across GUI/email/alert_call transports
 $clockShared = new TestClock('2026-07-13 16:00:00');
@@ -2284,7 +2284,7 @@ $ruleShared = insert_rule($dbShared, [
 	'alert_call_enabled' => 1,
 	'alert_call_destinations' => '910',
 	'alert_call_recording_id' => 66,
-	'repeat_mode_override' => '5m',
+	'alert_reminder_mode_override' => '5m',
 ]);
 $incidentShared = insert_incident($dbShared, [
 	'rule_id' => $ruleShared,
@@ -2298,14 +2298,14 @@ assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND act
 assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'alert_call' AND event_type = 'initial' AND stage_n = 0"), 'initial stage should reserve alert_call history from the shared stage path');
 $clockShared->now = '2026-07-13 16:05:00';
 $processorShared->run(settings());
-assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'reminder stage should reserve GUI history from the same shared scheduler');
-assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'email' AND event_type = 'reminder' AND stage_n = 1"), 'reminder stage should reserve email history from the same shared scheduler');
-assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1"), 'reminder stage should reserve alert_call history from the same shared scheduler');
+assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'gui' AND event_type = 'reminder_1' AND stage_n = 0"), 'reminder stage should reserve GUI history from the same shared scheduler');
+assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'email' AND event_type = 'reminder_1' AND stage_n = 0"), 'reminder stage should reserve email history from the same shared scheduler');
+assert_same(1, count_history($dbShared, "incident_id = {$incidentShared} AND action_type = 'alert_call' AND event_type = 'reminder_1' AND stage_n = 0"), 'reminder stage should reserve alert_call history from the same shared scheduler');
 
 // 11c: legacy fibonacci override must remain equivalent to escalating
 $clockFib = new TestClock('2026-07-13 17:00:00');
 [$dbFib, $processorFib] = create_alert_environment($clockFib, new FakeEmailSender(), new FakeCallSender());
-$ruleFib = insert_rule($dbFib, ['email_enabled' => 0, 'repeat_mode_override' => 'fibonacci']);
+$ruleFib = insert_rule($dbFib, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'fibonacci']);
 $incidentFib = insert_incident($dbFib, [
 	'rule_id' => $ruleFib,
 	'subject_key' => '+441200000802',
@@ -2315,19 +2315,19 @@ $incidentFib = insert_incident($dbFib, [
 $processorFib->run(settings());
 $clockFib->now = '2026-07-13 17:04:59';
 $processorFib->run(settings());
-assert_same(0, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type = 'reminder'"), 'legacy fibonacci mode should not alert before first 5m interval');
+assert_same(0, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'legacy fibonacci mode should not alert before first 5m interval');
 $clockFib->now = '2026-07-13 17:05:00';
 $processorFib->run(settings());
 $clockFib->now = '2026-07-13 17:10:00';
 $processorFib->run(settings());
-assert_same(2, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type = 'reminder'"), 'legacy fibonacci mode should follow escalating cadence (5m then 5m)');
+assert_same(2, count_history($dbFib, "incident_id = {$incidentFib} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'legacy fibonacci mode should follow escalating cadence (5m then 5m)');
 
 // 12 and 13: per-rule override vs default never fallback
 $clockG = new TestClock('2026-07-13 09:00:00');
 $senderG = new FakeEmailSender();
 [$dbG, $processorG] = create_alert_environment($clockG, $senderG);
-$ruleOverride = insert_rule($dbG, ['email_enabled' => 0, 'repeat_mode_override' => '5m']);
-$ruleGlobal = insert_rule($dbG, ['email_enabled' => 0, 'repeat_mode_override' => null]);
+$ruleOverride = insert_rule($dbG, ['email_enabled' => 0, 'alert_reminder_mode_override' => '5m']);
+$ruleGlobal = insert_rule($dbG, ['email_enabled' => 0, 'alert_reminder_mode_override' => null]);
 $incidentOverride = insert_incident($dbG, [
 	'rule_id' => $ruleOverride,
 	'subject_key' => '+441200000009',
@@ -2343,18 +2343,18 @@ $incidentGlobal = insert_incident($dbG, [
 $processorG->run(settings());
 $clockG->now = '2026-07-13 09:05:00';
 $processorG->run(settings());
-assert_same(1, count_history($dbG, "incident_id = {$incidentOverride} AND action_type = 'gui' AND event_type = 'reminder'"), 'rule override should apply independently');
-assert_same(0, count_history($dbG, "incident_id = {$incidentGlobal} AND action_type = 'gui' AND event_type = 'reminder'"), 'rule without override should use default never mode');
+assert_same(1, count_history($dbG, "incident_id = {$incidentOverride} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'rule override should apply independently');
+assert_same(0, count_history($dbG, "incident_id = {$incidentGlobal} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'rule without override should use default never mode');
 $clockG->now = '2026-07-13 10:00:00';
 $processorG->run(settings());
-assert_same(0, count_history($dbG, "incident_id = {$incidentGlobal} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'default never mode should not trigger reminders for unset overrides');
+assert_same(0, count_history($dbG, "incident_id = {$incidentGlobal} AND action_type = 'gui' AND event_type = 'reminder_1' AND stage_n = 0"), 'default never mode should not trigger reminders for unset overrides');
 
 // 14, 15, 16: accepted/suppressed incident eligibility
 $clockCS = new TestClock('2026-07-13 10:05:00');
 $senderCS = new FakeEmailSender();
 $callSenderCS = new FakeCallSender();
 [$dbCS, $processorCS] = create_alert_environment($clockCS, $senderCS, $callSenderCS);
-$ruleCS = insert_rule($dbCS, ['email_enabled' => 1, 'alert_call_enabled' => 1, 'alert_call_destinations' => '301', 'alert_call_recording_id' => 55, 'repeat_mode_override' => '5m']);
+$ruleCS = insert_rule($dbCS, ['email_enabled' => 1, 'alert_call_enabled' => 1, 'alert_call_destinations' => '301', 'alert_call_recording_id' => 55, 'alert_reminder_mode_override' => '5m']);
 $acceptedNoNewIncident = insert_incident($dbCS, [
 	'rule_id' => $ruleCS,
 	'subject_key' => 'accepted-no-new-subject',
@@ -2365,7 +2365,7 @@ $acceptedNoNewIncident = insert_incident($dbCS, [
 ]);
 $dbCS->prepare(
 	'INSERT INTO repeatcaller_incident_alert_state
-		(incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
+		(incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2391,7 +2391,7 @@ $acceptedWithNewIncident = insert_incident($dbCS, [
 ]);
 $dbCS->prepare(
 	'INSERT INTO repeatcaller_incident_alert_state
-		(incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
+		(incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2415,9 +2415,9 @@ $suppressedIncident = insert_incident($dbCS, [
 ]);
 $processorCS->run(settings());
 assert_same(0, count_history($dbCS, "incident_id = {$acceptedNoNewIncident}"), 'accepted incidents with no new qualifying activity should not generate further alerts');
-assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'gui' AND event_type = 'reminder'"), 'accepted incidents with new qualifying activity should not reserve GUI reminders while suppression remains active');
-assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'email' AND event_type = 'reminder'"), 'accepted incidents with new qualifying activity should not reserve email reminders while suppression remains active');
-assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'alert_call' AND event_type = 'reminder'"), 'accepted incidents with new qualifying activity should not reserve alert_call reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'accepted incidents with new qualifying activity should not reserve GUI reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'email' AND event_type LIKE 'reminder_%'"), 'accepted incidents with new qualifying activity should not reserve email reminders while suppression remains active');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedWithNewIncident} AND action_type = 'alert_call' AND event_type LIKE 'reminder_%'"), 'accepted incidents with new qualifying activity should not reserve alert_call reminders while suppression remains active');
 assert_same(0, count($senderCS->calls), 'accepted incidents with new qualifying activity should not send email while suppression remains active');
 assert_same(0, count($callSenderCS->calls), 'accepted incidents with new qualifying activity should not send alert calls while suppression remains active');
 
@@ -2437,7 +2437,7 @@ $acceptedAfterExpiry = insert_incident($dbCS, [
 ]);
 $dbCS->prepare(
 	'INSERT INTO repeatcaller_incident_alert_state
-		(incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
+		(incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2456,16 +2456,16 @@ $processorCS->run(settings());
 $acceptedAfterExpiryState = $dbCS->query("SELECT last_alert_at, reminders_sent FROM repeatcaller_incident_alert_state WHERE incident_id = {$acceptedAfterExpiry}")->fetch(PDO::FETCH_ASSOC);
 assert_same('2026-07-13 11:05:00', (string)$acceptedAfterExpiryState['last_alert_at'], 'accepted incidents should advance the checkpoint once suppression has expired and fresh activity becomes alert-eligible');
 assert_same(1, (int)$acceptedAfterExpiryState['reminders_sent'], 'accepted incidents should advance the reminder counter once suppression has expired and fresh activity becomes alert-eligible');
-assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'gui' AND event_type = 'reminder' AND stage_n = 1"), 'accepted incidents should reserve one fresh GUI reminder after suppression expires');
-assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'email' AND event_type = 'reminder' AND stage_n = 1 AND delivery_status = 'sent'"), 'accepted incidents should deliver one fresh email reminder after suppression expires');
-assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder' AND stage_n = 1"), 'accepted incidents should not restart Alert Call activity after suppression expires');
-assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND event_type = 'reminder' AND stage_n = 2"), 'accepted incidents should not resume older reminder stages once suppression expires');
+assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'gui' AND event_type = 'reminder_1' AND stage_n = 0"), 'accepted incidents should reserve one fresh GUI reminder after suppression expires');
+assert_same(1, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'email' AND event_type = 'reminder_1' AND stage_n = 0 AND delivery_status = 'sent'"), 'accepted incidents should deliver one fresh email reminder after suppression expires');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND action_type = 'alert_call' AND event_type = 'reminder_1' AND stage_n = 0"), 'accepted incidents should not restart Alert Call activity after suppression expires');
+assert_same(0, count_history($dbCS, "incident_id = {$acceptedAfterExpiry} AND event_type = 'reminder_2'"), 'accepted incidents should not resume older reminder stages once suppression expires');
 
 // 16 and 17: global snooze handling
 $clockS = new TestClock('2026-07-13 11:00:00');
 $senderS = new FakeEmailSender();
 [$dbS, $processorS] = create_alert_environment($clockS, $senderS);
-$ruleS = insert_rule($dbS, ['email_enabled' => 1, 'repeat_mode_override' => 'never']);
+$ruleS = insert_rule($dbS, ['email_enabled' => 1, 'alert_reminder_mode_override' => 'never']);
 $incidentS = insert_incident($dbS, [
 	'rule_id' => $ruleS,
 	'subject_key' => 'snooze-subject',
@@ -2487,7 +2487,7 @@ $senderR2 = new FakeEmailSender();
 [$dbR, $processorR1] = create_alert_environment($clockR, $senderR1);
 $repositoryR = new RepeatCallerRepository($dbR);
 $processorR2 = new IncidentAlertProcessor($repositoryR, $senderR2, [$clockR, 'now']);
-$ruleR = insert_rule($dbR, ['email_enabled' => 0, 'repeat_mode_override' => 'never']);
+$ruleR = insert_rule($dbR, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'never']);
 $incidentR = insert_incident($dbR, [
 	'rule_id' => $ruleR,
 	'subject_key' => 'race-subject',
@@ -2505,7 +2505,7 @@ assert_same(1, count_history($dbR, "incident_id = {$incidentR} AND action_type =
 $clockP = new TestClock('2026-07-20 00:00:00');
 $senderP = new FakeEmailSender();
 [$dbP, $processorP] = create_alert_environment($clockP, $senderP);
-$ruleP = insert_rule($dbP, ['email_enabled' => 0, 'repeat_mode_override' => 'never']);
+$ruleP = insert_rule($dbP, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'never']);
 $activeIncident = insert_incident($dbP, [
 	'rule_id' => $ruleP,
 	'subject_key' => 'active-prune',
@@ -2530,7 +2530,7 @@ $acceptedIncident = insert_incident($dbP, [
 ]);
 $dbP->prepare(
 	'INSERT INTO repeatcaller_incident_alert_state
-		(incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
+		(incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2547,7 +2547,7 @@ $dbP->prepare(
 $dbP->prepare(
 	'INSERT INTO repeatcaller_incident_alert_history
 		(incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status,
-		 attempted_at, successful_at, next_retry_at, failure_detail, repeat_mode, dedupe_key, created_at, updated_at)
+		 attempted_at, successful_at, next_retry_at, failure_detail, alert_reminder_mode, dedupe_key, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2572,7 +2572,7 @@ $dbP->prepare(
 $dbP->prepare(
 	'INSERT INTO repeatcaller_incident_alert_history
 		(incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status,
-		 attempted_at, successful_at, next_retry_at, failure_detail, repeat_mode, dedupe_key, created_at, updated_at)
+		 attempted_at, successful_at, next_retry_at, failure_detail, alert_reminder_mode, dedupe_key, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2596,7 +2596,7 @@ $dbP->prepare(
 ]);
 $dbP->prepare(
 	'INSERT INTO repeatcaller_incident_alert_state
-		(incident_id, rule_id, repeat_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
+		(incident_id, rule_id, alert_reminder_mode, initial_sent_at, last_alert_at, reminders_sent, next_due_at, created_at, updated_at)
 	 VALUES
 		(?, ?, ?, ?, ?, ?, ?, ?, ?)'
 )->execute([
@@ -2652,7 +2652,7 @@ assert_same($initialEventsAfterFirstRun, $initialEventsAfterPruning, 'alert-hist
 $clockN = new TestClock('2026-07-13 06:00:00');
 $senderN = new FakeEmailSender();
 [$dbN, $processorN] = create_alert_environment($clockN, $senderN);
-$ruleN = insert_rule($dbN, ['email_enabled' => 0, 'repeat_mode_override' => 'never']);
+$ruleN = insert_rule($dbN, ['email_enabled' => 0, 'alert_reminder_mode_override' => 'never']);
 $incidentN = insert_incident($dbN, [
 	'rule_id' => $ruleN,
 	'subject_key' => 'never-subject',
@@ -2662,11 +2662,11 @@ $incidentN = insert_incident($dbN, [
 $processorN->run(settings());
 $clockN->now = '2026-07-14 06:00:00';
 $processorN->run(settings());
-assert_same(0, count_history($dbN, "incident_id = {$incidentN} AND action_type = 'gui' AND event_type = 'reminder'"), 'never mode should not create reminders');
+assert_same(0, count_history($dbN, "incident_id = {$incidentN} AND action_type = 'gui' AND event_type LIKE 'reminder_%'"), 'never mode should not create reminders');
 
 $alertSource = file_get_contents(__DIR__ . '/../src/IncidentAlertProcessor.php');
 assert_true($alertSource !== false, 'IncidentAlertProcessor source should be readable for formatter path checks');
 assert_true(strpos($alertSource, 'private function formatAlertTextLabel(string $value, array $labels, string $defaultLabel): string {') !== false, 'email mode and repeat labels should share one central formatter helper');
 assert_true(strpos($alertSource, 'Alert Reminder: ') !== false && strpos($alertSource, '$this->formatRepeatModeLabel(') !== false, 'email builder should render a single customer-facing Alert Reminder line using the effective repeat mode');
 
-echo "repeat alerting contract tests passed\n";
+echo "alert remindering contract tests passed\n";

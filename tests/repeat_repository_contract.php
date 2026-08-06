@@ -40,7 +40,7 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			caller_mode TEXT NOT NULL,
 			exclude_withheld INTEGER NOT NULL DEFAULT 0,
 			did_scope_mode TEXT NOT NULL,
-			repeat_mode_override TEXT,
+			alert_reminder_mode_override TEXT,
 			suppression_minutes_override INTEGER,
 			created_at TEXT,
 			updated_at TEXT
@@ -158,7 +158,7 @@ function create_repository(PDO $db): RepeatCallerRepository {
 			successful_at TEXT,
 			next_retry_at TEXT,
 			failure_detail TEXT,
-			repeat_mode TEXT NOT NULL,
+			alert_reminder_mode TEXT NOT NULL,
 			dedupe_key TEXT NOT NULL UNIQUE,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
@@ -246,7 +246,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -271,7 +271,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -295,7 +295,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 		'callers' => [],
@@ -348,7 +348,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => null,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 		'callers' => [],
@@ -384,7 +384,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => null,
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 		'callers' => [],
@@ -416,7 +416,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => null,
 		'schedules' => [['day' => 1, 'start' => '10:00', 'end' => '17:00']],
 		'callers' => [],
@@ -442,7 +442,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -476,7 +476,7 @@ try {
 		'caller_mode' => 'specific_only',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [
@@ -512,7 +512,7 @@ try {
 		'caller_mode' => 'specific_only',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -542,7 +542,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -573,7 +573,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'selected',
-		'repeat_mode_override' => 'never',
+		'alert_reminder_mode_override' => 'never',
 		'suppression_minutes_override' => null,
 		'schedules' => [],
 		'callers' => [],
@@ -821,7 +821,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => 30,
 		'schedules' => [],
 		'callers' => [],
@@ -888,7 +888,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => 0,
 		'schedules' => [],
 		'callers' => [],
@@ -919,7 +919,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => 60,
 		'schedules' => [],
 		'callers' => [],
@@ -971,7 +971,7 @@ try {
 		'caller_mode' => 'any',
 		'exclude_withheld' => 0,
 		'did_scope_mode' => 'all',
-		'repeat_mode_override' => null,
+		'alert_reminder_mode_override' => null,
 		'suppression_minutes_override' => 120,
 		'schedules' => [],
 		'callers' => [],
@@ -1027,14 +1027,14 @@ try {
 	assert_same($tokensAfterActiveUpdate['alertHistory'], $tokensAfterAccept['alertHistory'], 'accepting should not change alertHistory token');
 	assert_same($tokensAfterActiveUpdate['engineStatus'], $tokensAfterAccept['engineStatus'], 'accepting should not change engineStatus token');
 
-	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'gui', 'initial', 0, null, 'recorded', 'never', 'repo-token-1', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
 	$historyWithIncidentMode = $repo->loadIncidentAlertHistory(20);
 	assert_same('repeat', (string)$historyWithIncidentMode[0]['incident_mode'], 'alert history should include originating incident detection mode when incident exists');
 	assert_same(2, (int)$historyWithIncidentMode[0]['incident_threshold_count'], 'alert history should include the incident snapshot threshold count');
 	assert_same(60, (int)$historyWithIncidentMode[0]['incident_observation_window_minutes'], 'alert history should include the incident snapshot observation window');
 
-	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([999999, $ruleId, 'orphan-subject', 'orphan-subject', 'gui', 'initial', 0, null, 'recorded', 'hourly', 'repo-token-orphan', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
 	$historyWithOrphan = $repo->loadIncidentAlertHistory(20);
 	$orphanRows = array_values(array_filter($historyWithOrphan, static function (array $row): bool {
@@ -1055,7 +1055,7 @@ try {
 	assert_same($tokensAfterAlertInsert['acceptedIncidents'], $tokensAfterEngineUpdate['acceptedIncidents'], 'engine-only updates should not change acceptedIncidents token');
 	assert_same($tokensAfterAlertInsert['alertHistory'], $tokensAfterEngineUpdate['alertHistory'], 'engine-only updates should not change alertHistory token');
 
-	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+	$db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
 		->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'gui', 'reminder', 1, null, 'recorded', 'never', 'repo-token-2', '2026-07-13 12:16:00', '2026-07-13 12:16:00']);
 	$tokensBeforeDelete = $repo->loadUiChangeTokens();
 	$db->exec("DELETE FROM repeatcaller_incident_alert_history WHERE dedupe_key = 'repo-token-1'");
@@ -1139,7 +1139,7 @@ try {
 	assert_same(1, $repo->pruneSuppressedIncidentHistory('2026-07-13 12:40:00'), 'suppression history pruning should delete stale rows');
 	assert_same(0, count($repo->loadSuppressedIncidentHistory()), 'suppression history pruning should remove old rows');
 
-	$alertHistoryInsert = $db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, repeat_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+	$alertHistoryInsert = $db->prepare('INSERT INTO repeatcaller_incident_alert_history (incident_id, rule_id, subject_key, subject_label, action_type, event_type, stage_n, recipient, delivery_status, alert_reminder_mode, dedupe_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 	$alertHistoryInsert->execute([$secondIncidentId, $ruleId, '+441234567890', '+441234567890', 'alert_call', 'initial', 0, '100', 'sent', 'never', 'repo-alert-call-1', '2026-07-13 12:20:00', '2026-07-13 12:20:00']);
 	$dialResult = $repo->recordAlertCallDialDisposition((int)$db->lastInsertId(), $secondIncidentId, '100', 'BUSY', '17', '2026-07-13 12:20:10');
 	assert_true(!empty($dialResult['status']), 'recordAlertCallDialDisposition should update alert_call rows');
@@ -1153,8 +1153,8 @@ try {
 	$eligibleWithDestinationKeepFlags = $repo->eligibleAlertCallDestinationsForStage($secondIncidentId, [
 		['destination' => '100', 'keep_trying' => 0],
 		['destination' => '102', 'keep_trying' => 1],
-	], true, 'reminder', 1);
-	assert_same(['102'], $eligibleWithDestinationKeepFlags, 'destination-specific keep-trying flags should control future-stage recipient eligibility');
+	], true, 'initial', 1);
+	assert_same(['102'], $eligibleWithDestinationKeepFlags, 'destination-specific keep-trying flags should block same-cycle retry of a destination with keep-trying disabled');
 
 	$followupIncidentId = $repo->createIncident([
 		'rule_id' => $ruleId,

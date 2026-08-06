@@ -220,7 +220,7 @@ assert_true(strpos($readmeSource, '## Alerting') !== false, 'README should inclu
 assert_true((bool) preg_match('/Repeat Caller provides incident visibility and two optional notification\s+methods:/', $readmeSource), 'README should use the updated alerts introduction');
 assert_true(strpos($readmeSource, 'GUI incidents, which are always recorded') !== false, 'README should use GUI incidents wording');
 assert_true(strpos($readmeSource, 'Email notifications, which are optional per rule') !== false, 'README should use email notifications wording');
-assert_true(strpos($readmeSource, '## Repeat Alert Modes') !== false, 'README should document repeat alert modes');
+assert_true(strpos($readmeSource, '## Alert Reminder Modes') !== false, 'README should document alert reminder modes');
 assert_true(strpos($readmeSource, 'Initial alert only.') !== false, 'README should describe Never repeat mode as initial alert only');
 assert_true(strpos($readmeSource, 'Repeats every 5 minutes while the incident remains active.') !== false, 'README should describe 5-minute repeat mode');
 assert_true(strpos($readmeSource, 'Repeats every hour while the incident remains active.') !== false, 'README should describe hourly repeat mode');
