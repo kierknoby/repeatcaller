@@ -392,6 +392,18 @@ Ring All and is shown unticked and disabled. Ignore Callers applies only to
 inbound detection and never filters Alert Call destinations. Acceptance
 cancels pending future attempts and late callbacks cannot restart escalation.
 
+In 1.0.1, Alert Call originate currently sets a fixed AMI unanswered timeout of
+30000 ms (approximately 30 seconds). This provides a bounded fail-safe so a
+single attempt cannot ring indefinitely, but it can end an unanswered call
+attempt before a longer downstream FreePBX destination timer (for example ring
+group, queue, external route, or custom destination) would naturally finish.
+
+For Ordered strategy, this timeout is part of stage completion timing. Stage
+advancement waits for attempt completion, then applies the configured 60-second
+inter-stage defer, and is finally picked up by the background scheduler cycle.
+As a result, real wall-clock delay between Ordered stages may be longer than an
+exact 60 seconds.
+
 Repeat Caller also marks internally originated Alert Call legs and excludes
 those marked internal legs from detection. This internal marker is useful for
 on-box call legs only and does not survive a call that leaves through a
@@ -671,9 +683,18 @@ Recordings, and administrator-controlled routing.
 - Withheld or malformed caller identifiers can reduce matching precision.
 - Alert Call delivery depends on AMI availability, dialplan deployment,
   playback assets, and destination reachability.
+- Alert Call unanswered timeout is fixed at 30000 ms in 1.0.1; this is
+  intentional for bounded escalation behavior but may be shorter than some
+  downstream destination timing policies.
 - Email delivery depends on FreePBX mail configuration and downstream relays.
 - Snooze is global rather than per rule/incident.
 - No webhook or SMS delivery channel is implemented.
+
+Future release consideration:
+
+- A configurable Alert Call ring timeout is being evaluated for a future minor
+  release so administrators can better align escalation timing with downstream
+  routing policy while preserving bounded fail-safe behavior.
 
 ## Release History
 
