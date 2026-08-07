@@ -421,16 +421,30 @@ Alert Call flow:
 Operational notes:
 
 - Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.
+- In 1.0.1, Alert Call attempts use a fixed AMI unanswered timeout of 30000 ms
+	(approximately 30 seconds).
+- This timeout is a bounded safety control to prevent indefinite ringing
+	attempts, but it can end an unanswered attempt before a longer downstream
+	destination timer (for example ring group, queue, custom destination, or
+	external routing path) completes.
 - Declining does not close or resolve the incident.
 - Declining ends the current attempt. It does not accept or close the incident, and later eligibility follows the selected strategy and that destination's Keep Trying setting.
 - Only an explicit ACCEPTED response stops Alert Call progression.
 - Ordered stages add one new destination at a time. Earlier destinations remain eligible in later stages only when their own Keep Trying option is enabled.
 - Each completed Ordered stage pauses for 60 seconds before the next stage, and a multi-destination stage advances only after every attempt in that stage finishes without acceptance.
+- Because stage progression is scheduler-driven, real wall-clock delay between
+	Ordered stages can be longer than exactly 60 seconds.
 - A reminder cannot start until the previous cycle is fully complete. Each new reminder begins a fresh Ordered sequence from stage 0, so cycles do not overlap.
 - Ring All contacts every enabled destination on every cycle. Keep Trying is not applicable to Ring All and is shown unticked and disabled.
 - Ignore Callers affects inbound detection only and does not filter Alert Call destinations.
 - Acceptance cancels pending future attempts and late callbacks cannot restart escalation.
 - No same-recipient rapid retry loop occurs within one reminder point.
+
+Future improvement under consideration:
+
+- A configurable Alert Call ring timeout may be introduced in a future minor
+	release so administrators can tune this behavior to their routing policy
+	while retaining bounded fail-safe protection.
 
 ## Snooze Monitoring
 
