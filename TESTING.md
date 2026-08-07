@@ -107,6 +107,15 @@ These are additional manual installation checks beyond the contract suites:
 36. Confirm that Ring All shows Keep Trying as visible, unticked, and disabled.
 37. Confirm that Ignore Callers does not prevent an Alert Call destination from being called.
 
+Timeout and stage-timing checks:
+
+- Confirm an unanswered Alert Call attempt is capped at approximately 30
+	seconds in 1.0.1, even when the downstream destination is configured for a
+	longer ring interval.
+- In Ordered mode, confirm the next stage is not attempted immediately after a
+	non-accepting outcome and that real wall-clock stage-to-stage delay can be
+	longer than exactly 60 seconds due to scheduler pickup timing.
+
 ## Upgrade and Preservation
 
 38. Run the supported update sequence:
