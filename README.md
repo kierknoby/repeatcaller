@@ -432,16 +432,17 @@ mapping for all required summary and terminal behavior without misleading
 semantics or omitted information.
 
 Repeat Caller never substitutes native words piecemeal and does not ship or
-require translated sound recordings. Prompt discovery still merges full and
-base locales and preserves nested paths. If a selected language has no complete
-profile, prompt discovery is unavailable, or a required prompt is missing,
+require translated sound recordings. Prompt discovery inspects each locale
+directory independently and preserves nested paths; approved locale candidates
+are tried explicitly by the capability resolver. If a selected language has no
+complete profile, prompt discovery is unavailable, or a required prompt is missing,
 Repeat Caller plays the optional System Recording in its selected language and
 then switches the entire generated message to English. French is the supported
 native non-English generated Alert Call profile in this release.
 
-The standalone Alert Call system capability report shows whether each
-maintainer-supported profile is complete and safe in the installed audio files,
-plus fallback-only languages and their target. Installed inventory does not
+The standalone Alert Call system capability report separately shows
+maintainer-supported profiles, the exact locale directories installed on the
+PBX, and the active native/fallback selection. Installed inventory does not
 decide which profiles are officially supported. Rules do not configure language,
 and production does not expose developer profile overrides.
 Generated messages automatically use the active FreePBX language when its
@@ -752,8 +753,8 @@ Future release consideration:
   prompt set is not installed.
 - Preserves the selected System Recording language before generated Alert
   Call audio begins.
-- Discovers prompts recursively across full and base locale directories while
-  preserving nested Asterisk prompt paths.
+- Discovers prompts recursively within each exact requested locale directory
+  while preserving nested Asterisk prompt paths; candidate fallback is explicit.
 - Retains language-aware `SAY NUMBER` and `SAY DIGITS` handling.
 - Adds regression coverage for multilingual Alert Call behaviour while
   preserving existing `en`, `en_US`, and `en_GB` behaviour.

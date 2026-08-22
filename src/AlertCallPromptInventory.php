@@ -17,10 +17,6 @@ final class AlertCallPromptInventory {
 		}
 
 		$normalisedLanguage = str_replace('-', '_', $language);
-		$languageDirectories = array_values(array_unique([
-			$normalisedLanguage,
-			explode('_', $normalisedLanguage, 2)[0],
-		]));
 		$soundsRoot = rtrim($soundsRoot, '/');
 		$availableDirectories = [];
 		try {
@@ -37,39 +33,58 @@ final class AlertCallPromptInventory {
 		} catch (\UnexpectedValueException $e) {
 			return null;
 		}
-		$prompts = [];
-		$foundLanguageDirectory = false;
-		foreach ($languageDirectories as $languageDirectory) {
-			$directory = $soundsRoot . '/' . $languageDirectory;
-			if (!is_dir($directory)) {
-				$directory = $availableDirectories[strtolower($languageDirectory)] ?? null;
-				if ($directory === null) {
-					continue;
-				}
-			}
-			$foundLanguageDirectory = true;
-			try {
-				$files = new \RecursiveIteratorIterator(
-					new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
-					\RecursiveIteratorIterator::LEAVES_ONLY
-				);
-			} catch (\UnexpectedValueException $e) {
-				continue;
-			}
-			foreach ($files as $file) {
-				if (!$file->isFile()) {
-					continue;
-				}
-				$extension = strtolower((string)$file->getExtension());
-				if (!in_array($extension, self::AUDIO_EXTENSIONS, true)) {
-					continue;
-				}
-				$relativePath = substr($file->getPathname(), strlen($directory) + 1);
-				$relativePrompt = substr($relativePath, 0, -(strlen($extension) + 1));
-				$prompts[str_replace(DIRECTORY_SEPARATOR, '/', $relativePrompt)] = true;
+		$directory = $soundsRoot . '/' . $normalisedLanguage;
+		if (!is_dir($directory)) {
+			$directory = $availableDirectories[strtolower($normalisedLanguage)] ?? null;
+			if ($directory === null) {
+				return null;
 			}
 		}
+		$prompts = [];
+		try {
+			$files = new \RecursiveIteratorIterator(
+				new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+				\RecursiveIteratorIterator::LEAVES_ONLY
+			);
+		} catch (\UnexpectedValueException $e) {
+			return null;
+		}
+		foreach ($files as $file) {
+			if (!$file->isFile()) {
+				continue;
+			}
+			$extension = strtolower((string)$file->getExtension());
+			if (!in_array($extension, self::AUDIO_EXTENSIONS, true)) {
+				continue;
+			}
+			$relativePath = substr($file->getPathname(), strlen($directory) + 1);
+			$relativePrompt = substr($relativePath, 0, -(strlen($extension) + 1));
+			$prompts[str_replace(DIRECTORY_SEPARATOR, '/', $relativePrompt)] = true;
+		}
 
-		return $foundLanguageDirectory ? array_keys($prompts) : null;
+		return array_keys($prompts);
+	}
+
+	/**
+	 * @return array<int,string>
+	 */
+	public static function installedLanguages(string $soundsRoot): array {
+		if (!is_dir($soundsRoot)) {
+			return [];
+		}
+		$languages = [];
+		try {
+			$entries = new \FilesystemIterator($soundsRoot, \FilesystemIterator::SKIP_DOTS);
+			foreach ($entries as $entry) {
+				$name = $entry->getFilename();
+				if ($entry->isDir() && preg_match('/^[A-Za-z]{2,3}(?:[_-][A-Za-z]{2,8})?$/', $name) === 1) {
+					$languages[] = $name;
+				}
+			}
+		} catch (\UnexpectedValueException $e) {
+			return [];
+		}
+		natcasesort($languages);
+		return array_values($languages);
 	}
 }

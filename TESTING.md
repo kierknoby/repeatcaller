@@ -123,9 +123,9 @@ Multilingual Alert Call checks:
 - Remove one required French prompt and confirm the optional System Recording
 	still plays in French, followed by one coherent English generated message
 	with no French fragments.
-- Confirm the language-support table reports detected locale codes, native or
-	fallback-only status, exact missing prompts, and the selected fallback target
-	from actual installed audio files.
+- Confirm the capability report separates supported profiles, exact installed
+	locale directories, and the active native/fallback selection while reporting
+	exact missing prompts and the selected fallback target.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with French labelled as adapted wording.
 - Confirm installed Spanish or German files do not promote either language from
@@ -137,6 +137,8 @@ Multilingual Alert Call checks:
 	complete French native profile exist.
 - Restore a complete `en_US`, `en_GB`, or `en` inventory and confirm Alert Call
 	can be enabled and unsupported languages resolve to that one complete locale.
+- Confirm an `en_US` lookup cannot borrow files from `en`, and candidate ordering
+	reports `en_GB` or `en` only when that exact directory is installed and selected.
 - Confirm `en`, `en_US`, and `en_GB` retain the established English playback,
 	retry, acceptance, decline, timeout, and accepted-elsewhere behavior.
 

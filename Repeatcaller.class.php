@@ -350,7 +350,12 @@ class Repeatcaller implements \BMO {
 	}
 
 	private function alertCallLanguageSupportStatus(): array {
-		return $this->alertCallLanguageSupport()->status();
+		$support = $this->alertCallLanguageSupport();
+		$status = $support->status();
+		$activeLanguage = $this->resolveFreePBXDefaultLanguage();
+		$status['active_language'] = $activeLanguage;
+		$status['active_selection'] = $support->resolve($activeLanguage);
+		return $status;
 	}
 
 	private function canEnableAlertCall(): bool {

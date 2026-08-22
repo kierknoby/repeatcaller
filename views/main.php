@@ -171,16 +171,18 @@ $assetVer = max(
 				<div class="panel-heading"><h3 class="panel-title"><?php echo _('Alert Call language capability'); ?></h3></div>
 				<div class="panel-body">
 					<?php if (empty($alertCallLanguageSupport['fallback_available'])): ?><div class="alert alert-danger"><?php echo _('Alert Call cannot be enabled because the required fallback language prompts are unavailable.'); ?></div><?php endif; ?>
+					<h4><?php echo _('Supported Alert Call profiles'); ?></h4>
+					<p class="help-block"><?php echo _('These profiles are defined by the module maintainers. Installed sound folders do not add supported profiles.'); ?></p>
 					<div class="table-responsive">
 						<table class="table table-condensed">
-							<thead><tr><th><?php echo _('Language'); ?></th><th><?php echo _('Detected code'); ?></th><th><?php echo _('Generated profile'); ?></th><th><?php echo _('Availability'); ?></th><th><?php echo _('Missing required prompts'); ?></th><th><?php echo _('Fallback target'); ?></th></tr></thead>
+							<thead><tr><th><?php echo _('Profile'); ?></th><th><?php echo _('Approved locale candidates'); ?></th><th><?php echo _('Selected installed code'); ?></th><th><?php echo _('Installed status'); ?></th><th><?php echo _('Missing required prompts'); ?></th><th><?php echo _('Fallback target'); ?></th></tr></thead>
 							<tbody>
-								<?php foreach (($alertCallLanguageSupport['languages'] ?? []) as $languageSupport): ?>
+								<?php foreach (($alertCallLanguageSupport['supported_profiles'] ?? []) as $languageSupport): ?>
 									<tr>
-										<td><?php echo htmlspecialchars((string)($languageSupport['language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
-										<td><code><?php echo htmlspecialchars((string)($languageSupport['detected_language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></code></td>
-										<td><?php echo !empty($languageSupport['supported']) ? (!empty($languageSupport['adapted_wording']) ? _('Native supported (adapted wording)') : _('Native supported')) : '&rarr; ' . _('English fallback'); ?></td>
-										<td><?php echo !empty($languageSupport['supported']) ? (!empty($languageSupport['complete']) ? '&#10003; ' . _('Installed profile complete') : '&#10007; ' . _('Installed profile incomplete')) : (!empty($languageSupport['fallback_target']) ? '&#10003; ' . _('Fallback available') : '&#10007; ' . _('Fallback unavailable')); ?></td>
+										<td><?php echo htmlspecialchars((string)($languageSupport['language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?><br><small><?php echo !empty($languageSupport['adapted_wording']) ? _('Native supported (adapted wording)') : _('Native supported'); ?></small></td>
+										<td><code><?php echo htmlspecialchars(implode(', ', (array)($languageSupport['locale_candidates'] ?? [])), ENT_QUOTES, 'UTF-8'); ?></code></td>
+										<td><?php if ((string)($languageSupport['detected_language'] ?? '') !== ''): ?><code><?php echo htmlspecialchars((string)$languageSupport['detected_language'], ENT_QUOTES, 'UTF-8'); ?></code><?php else: ?><?php echo _('None'); ?><?php endif; ?></td>
+										<td><?php echo !empty($languageSupport['complete']) ? '&#10003; ' . _('Complete and safe') : '&#10007; ' . _('Incomplete'); ?></td>
 										<td><?php echo htmlspecialchars(implode(', ', (array)($languageSupport['missing_required_prompts'] ?? [])), ENT_QUOTES, 'UTF-8'); ?></td>
 										<td><?php echo htmlspecialchars((string)($languageSupport['fallback_target'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
 									</tr>
@@ -188,7 +190,12 @@ $assetVer = max(
 							</tbody>
 						</table>
 					</div>
-					<p class="help-block"><?php echo _('Maintainers define supported profiles; installed prompts determine whether each profile is complete and safe. This is a system capability report, and rules do not select languages. System Recordings can still use their selected language. Generated Alert Calls use the active FreePBX language when its native profile is complete; unsupported or incomplete languages automatically use the validated English fallback.'); ?></p>
+					<h4><?php echo _('Installed detected languages'); ?></h4>
+					<p><?php $installedLanguages = (array)($alertCallLanguageSupport['installed_languages'] ?? []); echo $installedLanguages === [] ? _('No language sound directories detected.') : htmlspecialchars(implode(', ', $installedLanguages), ENT_QUOTES, 'UTF-8'); ?></p>
+					<h4><?php echo _('Active and fallback selection'); ?></h4>
+					<?php $activeSelection = (array)($alertCallLanguageSupport['active_selection'] ?? []); ?>
+					<p><?php echo _('Active FreePBX language:'); ?> <code><?php echo htmlspecialchars((string)($alertCallLanguageSupport['active_language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></code><br><?php echo _('Generated Alert Call selection:'); ?> <?php if (!empty($activeSelection['available'])): ?><code><?php echo htmlspecialchars((string)($activeSelection['language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></code> &mdash; <?php echo !empty($activeSelection['fallback_language']) ? _('validated English fallback') : _('supported native profile'); ?><?php else: ?><?php echo _('Unavailable'); ?><?php endif; ?></p>
+					<p class="help-block"><?php echo _('Maintainers define supported profiles; installed prompts determine whether each profile is complete and safe. Other languages are fallback-only and use the validated English profile. This is a system capability report, and rules do not select languages. System Recordings can still use their selected language.'); ?></p>
 				</div>
 			</div>
 		</div>
