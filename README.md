@@ -1,6 +1,6 @@
-# Repeat Caller 1.0.1 for FreePBX 16 and 17
+# Repeat Caller 1.0.2 for FreePBX 16 and 17
 
-**Release date:** 6 August 2026
+**Release date:** 22 August 2026
 
 ## Introduction
 
@@ -392,8 +392,8 @@ Ring All and is shown unticked and disabled. Ignore Callers applies only to
 inbound detection and never filters Alert Call destinations. Acceptance
 cancels pending future attempts and late callbacks cannot restart escalation.
 
-In 1.0.1, Alert Call originate currently sets a fixed AMI unanswered timeout of
-30000 ms (approximately 30 seconds). This provides a bounded fail-safe so a
+Alert Call originate currently sets a fixed AMI unanswered timeout of 30000 ms
+(approximately 30 seconds). This provides a bounded fail-safe so a
 single attempt cannot ring indefinitely, but it can end an unanswered call
 attempt before a longer downstream FreePBX destination timer (for example ring
 group, queue, external route, or custom destination) would naturally finish.
@@ -412,6 +412,45 @@ presentation differences may still require administrator judgement.
 
 Alert Call supports optional introductory System Recording playback followed by
 a spoken summary of incident details such as caller and DID where available.
+The selected System Recording language takes priority over the global FreePBX
+Sound Languages setting and remains independent of the generated summary
+language. Native multilingual Alert Calls are assembled only from installed
+standard Asterisk and FreePBX sounds; caller and DID values use `SAY DIGITS`,
+while counts and observation windows use `SAY NUMBER`.
+
+French is an officially supported native profile with maintainer-approved
+adapted wording for its installed standard prompt vocabulary. Repeat alerts use
+`conf-thereare`, followed by the spoken count,
+optional `telephone-number` and DDI digits, the spoken observation window and
+`minutes`, and caller information where available. Invert alerts use
+`queue-less-than` and the spoken threshold with the same DDI, window, and caller
+structure. Queue quantity and voicemail prompts are not used.
+
+Spanish and German currently use the coherent whole-message English fallback
+because their standard inventories do not provide a straightforward complete
+mapping for all required summary and terminal behavior without misleading
+semantics or omitted information.
+
+Repeat Caller never substitutes native words piecemeal and does not ship or
+require translated sound recordings. Prompt discovery still merges full and
+base locales and preserves nested paths. If a selected language has no complete
+profile, prompt discovery is unavailable, or a required prompt is missing,
+Repeat Caller plays the optional System Recording in its selected language and
+then switches the entire generated message to English. French is the supported
+native non-English generated Alert Call profile in this release.
+
+The standalone Alert Call system capability report shows whether each
+maintainer-supported profile is complete and safe in the installed audio files,
+plus fallback-only languages and their target. Installed inventory does not
+decide which profiles are officially supported. Rules do not configure language,
+and production does not expose developer profile overrides.
+Generated messages automatically use the active FreePBX language when its
+native profile is complete, otherwise they use English. Alert Call cannot be
+enabled unless one complete English `en_US`, `en_GB`, or `en` fallback inventory
+is available. This validates every required summary, caller/DDI, interaction,
+and terminal prompt rather than only checking that a language directory exists.
+System Recordings remain independent and can still play in their selected
+language.
 
 Caller ID managed elsewhere is enabled by default for new rules. While it is
 enabled, Repeat Caller does not set Alert Call Caller ID, leaves the field
@@ -683,7 +722,7 @@ Recordings, and administrator-controlled routing.
 - Withheld or malformed caller identifiers can reduce matching precision.
 - Alert Call delivery depends on AMI availability, dialplan deployment,
   playback assets, and destination reachability.
-- Alert Call unanswered timeout is fixed at 30000 ms in 1.0.1; this is
+- Alert Call unanswered timeout is fixed at 30000 ms; this is
   intentional for bounded escalation behavior but may be shorter than some
   downstream destination timing policies.
 - Email delivery depends on FreePBX mail configuration and downstream relays.
@@ -698,13 +737,38 @@ Future release consideration:
 
 ## Release History
 
-- 1.0.1 development update: renamed the reminder terminology to Alert Reminders throughout the module, and documented that Alert Reminder scheduling is distinct from Repeat detection mode.
-- 1.0.1 development update: prevented reminder-cycle overlap by blocking new Alert Reminder cycles while an unfinished Ordered Alert Call cycle is still active, pending, or deferred.
-- 1.0.1 development update: documented that each Alert Reminder cycle restarts Ordered Alert Call delivery from stage 0 and that reminder cycles never overlap.
-- 1.0.1 development update: documented that Alert Reminder timing begins only after the previous alert cycle completes without acceptance.
+### 1.0.2, patch release, 22 August 2026
+
+- Improves Alert Call language handling for non-English Asterisk sound
+  languages.
+- Adds a concise native French Alert Call profile using standard installed
+  prompts without incorrect queue quantity or voicemail substitutions.
+- Uses native non-English Alert Call audio only where installed standard
+  Asterisk and FreePBX prompts reproduce the complete established behavior.
+- Uses one coherent English generated-message fallback for incomplete language
+  profiles, without module-owned translated recordings or mixed-language audio.
+- Prevents mixed-language generated Alert Call audio by using a coherent
+  English fallback when prompt discovery is unavailable or a complete native
+  prompt set is not installed.
+- Preserves the selected System Recording language before generated Alert
+  Call audio begins.
+- Discovers prompts recursively across full and base locale directories while
+  preserving nested Asterisk prompt paths.
+- Retains language-aware `SAY NUMBER` and `SAY DIGITS` handling.
+- Adds regression coverage for multilingual Alert Call behaviour while
+  preserving existing `en`, `en_US`, and `en_GB` behaviour.
 
 ### 1.0.1, patch release, 6 August 2026
 
+- Renamed the reminder terminology to Alert Reminders throughout the module,
+  and documented that Alert Reminder scheduling is distinct from Repeat
+  detection mode.
+- Prevented reminder-cycle overlap while an unfinished Ordered Alert Call cycle
+  is active, pending, or deferred.
+- Documented that each Alert Reminder cycle restarts Ordered Alert Call delivery
+  from stage 0 and that reminder cycles never overlap.
+- Documented that Alert Reminder timing begins only after the previous alert
+  cycle completes without acceptance.
 - Rule explanation-row styling is now consistent across enabled, disabled,
   temporary Status, and editing states.
 

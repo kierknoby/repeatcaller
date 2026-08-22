@@ -420,8 +420,16 @@ Alert Call flow:
 
 Operational notes:
 
+- The selected System Recording language takes priority over the global Sound Languages setting and remains independent of the generated summary language.
+- Multilingual summaries use installed standard Asterisk and FreePBX sounds only. Caller and DID values use Asterisk `SAY DIGITS`; counts and observation windows use `SAY NUMBER`.
+- French is an officially supported native profile with adapted wording approved for its standard prompt vocabulary. Repeat alerts speak `conf-thereare`, count, optional DDI, observation window, and caller information; Invert alerts use `queue-less-than` and the threshold with the same essential details. Queue quantity and voicemail count prompts are not used.
+- Spanish and German use the entire established English generated message because their standard inventories do not provide a straightforward complete mapping for all required behavior. Repeat Caller does not ship or require translated recordings.
+- The standalone Alert Call language capability section shows whether the installed prompts make each supported profile complete and safe, plus fallback-only languages, missing required prompts, and the fallback target. Maintainers decide which profiles are officially supported; installed files do not promote a language into support.
+- Rules do not select an Alert Call language, and normal administrators are not given developer profile overrides. Generated messages automatically use the active FreePBX language when its supported native profile is complete; unsupported or incomplete languages use the validated English fallback.
+- Alert Call cannot be enabled unless a complete English fallback profile is installed. System Recordings can still use their selected language, but generated Alert Calls require a validated native profile or the validated English fallback.
+- Repeat Caller checks the full locale and base language directories, including nested prompt paths. If prompt discovery is unavailable or any prompt needed for the current native message is missing, the optional System Recording still plays in its selected language and the complete generated message falls back to English. Native and English words are never mixed within one generated message.
 - Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.
-- In 1.0.1, Alert Call attempts use a fixed AMI unanswered timeout of 30000 ms
+- Alert Call attempts use a fixed AMI unanswered timeout of 30000 ms
 	(approximately 30 seconds).
 - This timeout is a bounded safety control to prevent indefinite ringing
 	attempts, but it can end an unanswered attempt before a longer downstream

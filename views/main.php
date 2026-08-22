@@ -12,6 +12,7 @@
  * @var array $alertHistory
  * @var array $inboundRoutes
  * @var array $systemRecordings
+ * @var array $alertCallLanguageSupport
  * @var string $csrfToken
  */
 if (!defined('FREEPBX_IS_AUTH')) {
@@ -27,6 +28,7 @@ $suppressedIncidents = isset($suppressedIncidents) && is_array($suppressedIncide
 $alertHistory = isset($alertHistory) && is_array($alertHistory) ? $alertHistory : [];
 $inboundRoutes = isset($inboundRoutes) && is_array($inboundRoutes) ? $inboundRoutes : [];
 $systemRecordings = isset($systemRecordings) && is_array($systemRecordings) ? $systemRecordings : [];
+$alertCallLanguageSupport = isset($alertCallLanguageSupport) && is_array($alertCallLanguageSupport) ? $alertCallLanguageSupport : [];
 $csrfToken = isset($csrfToken) ? (string)$csrfToken : '';
 
 $repeatModes = [
@@ -158,6 +160,35 @@ $assetVer = max(
 						<button type="button" class="btn btn-warning" id="rc-prune-now"><?php echo _('Run Pruning Now'); ?></button>
 						<button type="button" class="btn btn-danger" id="rc-clear-alert-history"><?php echo _('Clear Alert History'); ?></button>
 					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="row rc-section" id="rc-alert-call-language-support">
+		<div class="col-sm-12">
+			<div class="panel panel-default">
+				<div class="panel-heading"><h3 class="panel-title"><?php echo _('Alert Call language capability'); ?></h3></div>
+				<div class="panel-body">
+					<?php if (empty($alertCallLanguageSupport['fallback_available'])): ?><div class="alert alert-danger"><?php echo _('Alert Call cannot be enabled because the required fallback language prompts are unavailable.'); ?></div><?php endif; ?>
+					<div class="table-responsive">
+						<table class="table table-condensed">
+							<thead><tr><th><?php echo _('Language'); ?></th><th><?php echo _('Detected code'); ?></th><th><?php echo _('Generated profile'); ?></th><th><?php echo _('Availability'); ?></th><th><?php echo _('Missing required prompts'); ?></th><th><?php echo _('Fallback target'); ?></th></tr></thead>
+							<tbody>
+								<?php foreach (($alertCallLanguageSupport['languages'] ?? []) as $languageSupport): ?>
+									<tr>
+										<td><?php echo htmlspecialchars((string)($languageSupport['language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+										<td><code><?php echo htmlspecialchars((string)($languageSupport['detected_language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></code></td>
+										<td><?php echo !empty($languageSupport['supported']) ? (!empty($languageSupport['adapted_wording']) ? _('Native supported (adapted wording)') : _('Native supported')) : '&rarr; ' . _('English fallback'); ?></td>
+										<td><?php echo !empty($languageSupport['supported']) ? (!empty($languageSupport['complete']) ? '&#10003; ' . _('Installed profile complete') : '&#10007; ' . _('Installed profile incomplete')) : (!empty($languageSupport['fallback_target']) ? '&#10003; ' . _('Fallback available') : '&#10007; ' . _('Fallback unavailable')); ?></td>
+										<td><?php echo htmlspecialchars(implode(', ', (array)($languageSupport['missing_required_prompts'] ?? [])), ENT_QUOTES, 'UTF-8'); ?></td>
+										<td><?php echo htmlspecialchars((string)($languageSupport['fallback_target'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					</div>
+					<p class="help-block"><?php echo _('Maintainers define supported profiles; installed prompts determine whether each profile is complete and safe. This is a system capability report, and rules do not select languages. System Recordings can still use their selected language. Generated Alert Calls use the active FreePBX language when its native profile is complete; unsupported or incomplete languages automatically use the validated English fallback.'); ?></p>
 				</div>
 			</div>
 		</div>

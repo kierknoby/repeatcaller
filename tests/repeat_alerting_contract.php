@@ -6,9 +6,11 @@ require_once __DIR__ . '/../src/RepeatCallerRepository.php';
 require_once __DIR__ . '/../src/IncidentAlertProcessor.php';
 require_once __DIR__ . '/../src/DetectionEngine.php';
 require_once __DIR__ . '/../src/AlertCallAgiSession.php';
+require_once __DIR__ . '/../src/AlertCallPromptInventory.php';
 
 use FreePBX\modules\Repeatcaller\AlertCallAgiSession;
 use FreePBX\modules\Repeatcaller\AlertCallAgiTransport;
+use FreePBX\modules\Repeatcaller\AlertCallPromptInventory;
 use FreePBX\modules\Repeatcaller\IncidentAlertProcessor;
 use FreePBX\modules\Repeatcaller\RepeatCallerRepository;
 
@@ -98,8 +100,8 @@ function assert_same($expected, $actual, string $message): void {
 
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for alert-call dialplan contract checks');
-assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}^${IF($["${REPEATCALLER_PLAYBACK_LANGUAGE}"=""]?${CHANNEL(language)}:${REPEATCALLER_PLAYBACK_LANGUAGE})}^${REPEATCALLER_ALERT_HISTORY_ID}^${REPEATCALLER_INCIDENT_ID}^${REPEATCALLER_ALERT_RECIPIENT}^${REPEATCALLER_SUMMARY_MODE}^${REPEATCALLER_SUMMARY_CALL_COUNT}^${REPEATCALLER_SUMMARY_THRESHOLD}^${REPEATCALLER_SUMMARY_WINDOW_MINUTES}^${REPEATCALLER_SUMMARY_CALLER_KIND}^${REPEATCALLER_SUMMARY_CALLER_VALUE}^${REPEATCALLER_SUMMARY_DID_VALUE})') !== false, 'called-channel U() invocation must carry mode, count, threshold, window, caller-kind, caller digits, and DID digits into alert playback instead of relying on empty summary arguments');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12})') !== false, 'generated alert-playback dialplan must delegate answered-call interaction to the dedicated AGI session using ARG parameters');
+assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}^${IF($["${REPEATCALLER_PLAYBACK_LANGUAGE}"=""]?${CHANNEL(language)}:${REPEATCALLER_PLAYBACK_LANGUAGE})}^${REPEATCALLER_ALERT_HISTORY_ID}^${REPEATCALLER_INCIDENT_ID}^${REPEATCALLER_ALERT_RECIPIENT}^${REPEATCALLER_SUMMARY_MODE}^${REPEATCALLER_SUMMARY_CALL_COUNT}^${REPEATCALLER_SUMMARY_THRESHOLD}^${REPEATCALLER_SUMMARY_WINDOW_MINUTES}^${REPEATCALLER_SUMMARY_CALLER_KIND}^${REPEATCALLER_SUMMARY_CALLER_VALUE}^${REPEATCALLER_SUMMARY_DID_VALUE}^${REPEATCALLER_RECORDING_LANGUAGE})') !== false, 'called-channel U() invocation must carry summary values and the independent recording language into alert playback');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12},${ARG13})') !== false, 'generated alert-playback dialplan must delegate answered-call interaction to one recording-language-aware AGI session');
 assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF') === false, 'answered-call interaction must no longer depend on dialplan Read() collection');
 assert_true(strpos($installSource, 'While($[') === false, 'response loop must be finite and must not rely on an unbounded While retry structure');
 assert_true(strpos($installSource, '[repeatcaller-alert-summary]') !== false, 'generated dialplan may retain the summary helper context for compatibility even though answered-call interaction is now AGI-owned');
@@ -113,13 +115,12 @@ preg_match('/exten => remote_accepted,1,Set\(REPEATCALLER_ALERT_COMPLETED=1\)([\
 assert_true(!empty($remoteAcceptedMatch[1]), 'generated playback context should include a remote_accepted extension block for accepted-elsewhere redirects');
 $remoteAcceptedBlock = $remoteAcceptedMatch[1];
 $regularPlaybackBlock = substr($playbackBlock, 0, strpos($playbackBlock, 'exten => remote_accepted'));
-assert_true(strpos($remoteAcceptedBlock, 'Background(incoming-call-no-longer-avail)') !== false, 'accepted-elsewhere redirects must play the new incoming-call-no-longer-avail prompt before the closing prompts');
-assert_true(strpos($regularPlaybackBlock, 'Background(incoming-call-no-longer-avail)') === false, 'the regular interactive playback branch for active, unaccepted alerts must not enter the accepted-elsewhere prompt path');
-assert_true(strpos($remoteAcceptedBlock, 'Background(auth-thankyou)') !== false && strpos($remoteAcceptedBlock, 'Background(goodbye)') !== false, 'accepted-elsewhere redirects must retain the existing thank-you and goodbye prompts');
-assert_true(strpos($remoteAcceptedBlock, 'Background(incoming-call-no-longer-avail)') < strpos($remoteAcceptedBlock, 'Background(auth-thankyou)'), 'accepted-elsewhere redirects must play incoming-call-no-longer-avail before thank-you');
-assert_true(strpos($remoteAcceptedBlock, 'Background(auth-thankyou)') < strpos($remoteAcceptedBlock, 'Background(goodbye)'), 'accepted-elsewhere redirects must play thank-you before goodbye');
-assert_true(strpos($playbackBlock, 'Background(incoming-call-no-longer-avail)') !== false, 'the new prompt should be available in the accepted-elsewhere redirect path');
-assert_same(1, substr_count($playbackBlock, 'Background(incoming-call-no-longer-avail)'), 'the new prompt must appear exactly once in the playback context and only in the remote_accepted branch');
+assert_true(strpos($remoteAcceptedBlock, 'REPEATCALLER_ALERT_REMOTE_PROMPT') !== false, 'accepted-elsewhere redirects must use the profile-driven remote prompt with an English default');
+assert_true(strpos($remoteAcceptedBlock, 'REPEATCALLER_ALERT_THANKYOU_PROMPT') !== false, 'accepted-elsewhere redirects must use the profile-driven thank-you prompt with an English default');
+assert_true(strpos($remoteAcceptedBlock, 'REPEATCALLER_ALERT_GOODBYE_PROMPT') !== false, 'accepted-elsewhere redirects must use the profile-driven goodbye prompt with an English default');
+assert_true(strpos($regularPlaybackBlock, 'REPEATCALLER_ALERT_REMOTE_PROMPT') === false, 'regular interactive playback must not enter the asynchronous accepted-elsewhere prompt path');
+assert_true(strpos($remoteAcceptedBlock, 'incoming-call-no-longer-avail') < strpos($remoteAcceptedBlock, 'auth-thankyou'), 'the default accepted-elsewhere prompt must remain before the default thank-you prompt');
+assert_true(strpos($remoteAcceptedBlock, 'auth-thankyou') < strpos($remoteAcceptedBlock, 'goodbye'), 'the default thank-you prompt must remain before the default goodbye prompt');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}') !== false, 'alert playback must remain module-owned generated dialplan invoked through U() for FreePBX 16 and 17 compatibility');
 assert_true(strpos($installSource, 'Set(CHANNEL(language)=${ARG2})') !== false, 'generated playback must remain language-aware via the carried channel language argument');
 assert_true(strpos($installSource, '/var/lib/asterisk/sounds') === false && strpos($installSource, '/usr/share/asterisk/sounds') === false, 'generated playback must not hardcode absolute sound paths so carried languages like en and en_GB continue to resolve installed prompts');
@@ -129,12 +130,15 @@ assert_true($agiSource !== false, 'AGI interactive handler should be readable');
 assert_true(strpos($agiSource, 'STREAM FILE') !== false || strpos($agiSource, 'CONTROL STREAM FILE') !== false, 'interactive AGI must stream recordings and prompts through an interruptible AGI playback primitive with escape digits');
 assert_true(strpos($agiSource, 'SAY NUMBER') !== false, 'interactive AGI must speak numeric counts and windows through SAY NUMBER with escape digits');
 assert_true(strpos($agiSource, 'SAY DIGITS') !== false, 'interactive AGI must speak caller and DID details through SAY DIGITS with escape digits');
+assert_true(strpos($agiSource, '$agiEnv[\'agi_language\']') !== false, 'interactive AGI must pass the called channel language into prompt resolution');
+assert_true(strpos($agiSource, 'repeatcallerAgiAvailablePrompts($playbackLanguage)') !== false, 'interactive AGI must validate installed standard prompt availability before selecting a language profile');
+assert_true(strpos($agiSource, 'AlertCallPromptInventory::discover($soundsRoot, $language)') !== false, 'interactive AGI prompt discovery must delegate to the recursively tested inventory implementation');
 $agiSessionSource = file_get_contents(__DIR__ . '/../src/AlertCallAgiSession.php');
 assert_true($agiSessionSource !== false, 'AlertCallAgiSession.php should be readable');
 assert_true(strpos($agiSource, 'WAIT FOR DIGIT ') !== false, 'interactive AGI transport must issue WAIT FOR DIGIT commands');
 assert_true(strpos($agiSessionSource, 'waitForDigit(1)') !== false, 'interactive AGI session must poll immediately after answer so a buffered early digit is retained and acted on');
 assert_true(strpos($agiSessionSource, 'waitForDigit(10000)') !== false, 'interactive AGI session must preserve the 10-second response wait after spoken prompts');
-assert_true(strpos($agiSessionSource, 'incoming-call-no-longer-avail') !== false, 'interactive AGI session must play the accepted-elsewhere prompt before thank-you and goodbye');
+assert_true(strpos($agiSessionSource, 'interactionPrompts') !== false, 'interactive AGI session must obtain retry and terminal prompt names from the centralized resolver');
 
 $viewSource = file_get_contents(__DIR__ . '/../views/main.php');
 assert_true($viewSource !== false, 'views/main.php should be readable for alert-call UI contract checks');
@@ -185,10 +189,13 @@ final class FakeInteractiveTransport implements AlertCallAgiTransport {
 }
 
 $agiSession = new AlertCallAgiSession();
+$completeEnglishPrompts = (new \FreePBX\modules\Repeatcaller\AlertCallPromptResolver())->requiredPrompts('english');
 
 $earlyDigitTransport = new FakeInteractiveTransport(['1']);
 $earlyDigitResult = $agiSession->run([
 	'playback_target' => 'intro',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -207,6 +214,8 @@ assert_same(1, (int)$earlyDigitTransport->calls[0]['milliseconds'], 'the immedia
 $introAcceptTransport = new FakeInteractiveTransport([''], ['1']);
 $introAcceptResult = $agiSession->run([
 	'playback_target' => 'intro',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -222,6 +231,8 @@ assert_same('accepted', (string)$introAcceptResult['response'], 'Press 1 during 
 $callerDigitAcceptTransport = new FakeInteractiveTransport([''], [''], [], ['1']);
 $callerDigitAcceptResult = $agiSession->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -237,6 +248,8 @@ assert_same('accepted', (string)$callerDigitAcceptResult['response'], 'Press 1 d
 $spokenDeclineTransport = new FakeInteractiveTransport([''], [''], ['2']);
 $spokenDeclineResult = $agiSession->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -257,6 +270,8 @@ $invalidRetryTransport = new FakeInteractiveTransport(
 );
 $invalidRetryResult = $agiSession->run([
 	'playback_target' => 'intro',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -274,6 +289,8 @@ $remoteAcceptedTransport = new FakeInteractiveTransport([''], ['']);
 $remoteAcceptChecks = 0;
 $remoteAcceptedResult = $agiSession->run([
 	'playback_target' => 'intro',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -415,6 +432,8 @@ assert_true($redirectDecisionRepository->isIncidentAcceptedForRemoteAlertRedirec
 $repeatFullTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 (new AlertCallAgiSession())->run([
 	'playback_target' => 'custom/my-intro',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '3',
 	'summary_threshold' => '3',
@@ -464,6 +483,8 @@ $rfRemoteChecks = 0;
 $rfRemoteTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 (new AlertCallAgiSession())->run([
 	'playback_target' => 'custom/my-intro',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '3',
 	'summary_threshold' => '3',
@@ -482,6 +503,8 @@ assert_true(count($rfRemoteStreamFiles) < count($rfStreamFiles), 'remote accepta
 $callerDidTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 (new AlertCallAgiSession())->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '2',
 	'summary_threshold' => '2',
@@ -499,10 +522,243 @@ assert_true(in_array('number', $cdStreams, true), '"number" must be streamed as 
 $callingIdx = array_search('calling', $cdStreams, true);
 assert_same('number', $cdStreams[(int)$callingIdx + 1], '"number" must immediately follow "calling" in the stream order');
 
+// Language profiles preserve the established English path and keep every generated
+// segment in one deliberate language when a translated vocabulary is incomplete.
+$languageContext = [
+	'playback_target' => '',
+	'summary_mode' => 'repeat',
+	'summary_call_count' => '2',
+	'summary_threshold' => '2',
+	'summary_window_minutes' => '10',
+	'summary_caller_kind' => 'numeric',
+	'summary_caller_value' => '441234',
+	'summary_did_value' => '0207999',
+];
+$enTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run($languageContext + ['playback_language' => 'en', 'available_prompts' => $completeEnglishPrompts], $enTransport, function (): bool { return false; });
+$enUsTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run($languageContext + ['playback_language' => 'en_US', 'available_prompts' => $completeEnglishPrompts], $enUsTransport, function (): bool { return false; });
+$enGbTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run($languageContext + ['playback_language' => 'en_GB', 'available_prompts' => $completeEnglishPrompts], $enGbTransport, function (): bool { return false; });
+assert_same($enTransport->calls, $enUsTransport->calls, 'en and en_US must retain the exact same established prompt order and interaction behavior');
+assert_same($enUsTransport->calls, $enGbTransport->calls, 'en_US and en_GB must retain the exact same established prompt order and interaction behavior');
+assert_true(!array_filter($enUsTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'setVariable' && ($call['name'] ?? '') === 'CHANNEL(language)';
+}), 'English profiles must not reset CHANNEL(language) inside the AGI');
+
+$frenchCandidatePrompts = [
+	'beep', 'warning', 'alert', 'conf-thereare', 'queue-less-than', 'minutes',
+	'from-unknown-caller', 'followme/call-from', 'telephone-number', 'vqplus-accept',
+	'sorry', 'please-try-again', 'auth-thankyou', 'goodbye', 'incoming-call-no-longer-avail',
+];
+$promptResolver = new \FreePBX\modules\Repeatcaller\AlertCallPromptResolver();
+$supportedProfiles = $promptResolver->supportedProfiles();
+assert_same('english', $supportedProfiles['en']['profile'], 'English must be a maintainer-approved native profile');
+assert_same('french', $supportedProfiles['fr']['profile'], 'French must be a maintainer-approved native profile');
+assert_same(true, $supportedProfiles['fr']['adapted_wording'], 'French must be explicitly identified as the supported adapted-wording profile');
+assert_true(!isset($supportedProfiles['es']) && !isset($supportedProfiles['de']), 'Spanish and German must remain fallback-only until maintainers add supported profiles');
+assert_same(
+	['profile' => 'english', 'generated_language' => 'en_US'],
+	$promptResolver->resolve('en_GB', ['warning'], $languageContext + ['fallback_language' => 'en_US'], $completeEnglishPrompts),
+	'an incomplete supported English locale must use one validated English fallback locale'
+);
+assert_same(
+	['profile' => 'english', 'generated_language' => 'en_US'],
+	$promptResolver->resolve('en_GB', null, $languageContext + ['fallback_language' => 'en_US'], $completeEnglishPrompts),
+	'an unknown supported English inventory must not be assumed safe when a validated fallback is available'
+);
+assert_same(
+	['profile' => 'english', 'generated_language' => 'en'],
+	$promptResolver->resolve('fr', array_values(array_diff($frenchCandidatePrompts, ['queue-less-than'])), $languageContext, $completeEnglishPrompts),
+	'an incomplete supported French profile must use English fallback even when the missing prompt is not needed by the current message'
+);
+foreach (['fr', 'fr_FR'] as $frenchLocale) {
+	assert_same(
+		['profile' => 'french', 'generated_language' => ''],
+		$promptResolver->resolve($frenchLocale, $frenchCandidatePrompts, $languageContext),
+		$frenchLocale . ' must select the complete concise native French profile'
+	);
+}
+
+$frenchWarningSegments = [
+	['type' => 'stream', 'value' => 'beep'],
+	['type' => 'stream', 'value' => 'beep'],
+	['type' => 'stream', 'value' => 'beep'],
+	['type' => 'stream', 'value' => 'warning'],
+	['type' => 'stream', 'value' => 'beep'],
+	['type' => 'stream', 'value' => 'beep'],
+	['type' => 'stream', 'value' => 'beep'],
+];
+assert_same(array_merge($frenchWarningSegments, [
+	['type' => 'stream', 'value' => 'conf-thereare'],
+	['type' => 'number', 'value' => 2],
+	['type' => 'stream', 'value' => 'telephone-number'],
+	['type' => 'digits', 'value' => '0207999'],
+	['type' => 'number', 'value' => 10],
+	['type' => 'stream', 'value' => 'minutes'],
+	['type' => 'stream', 'value' => 'followme/call-from'],
+	['type' => 'digits', 'value' => '441234'],
+	['type' => 'stream', 'value' => 'vqplus-accept'],
+]), $promptResolver->summarySegments($languageContext, 'french'), 'French repeat summaries must use the exact approved concise native sequence');
+
+$frenchInvertContext = array_merge($languageContext, [
+	'summary_mode' => 'invert',
+	'summary_threshold' => '3',
+	'summary_caller_kind' => 'unknown',
+	'summary_caller_value' => '',
+]);
+assert_same(array_merge($frenchWarningSegments, [
+	['type' => 'stream', 'value' => 'queue-less-than'],
+	['type' => 'number', 'value' => 3],
+	['type' => 'stream', 'value' => 'telephone-number'],
+	['type' => 'digits', 'value' => '0207999'],
+	['type' => 'number', 'value' => 10],
+	['type' => 'stream', 'value' => 'minutes'],
+	['type' => 'stream', 'value' => 'from-unknown-caller'],
+	['type' => 'stream', 'value' => 'vqplus-accept'],
+]), $promptResolver->summarySegments($frenchInvertContext, 'french'), 'French invert summaries must use the exact approved concise native sequence');
+
+$frenchTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run($languageContext + [
+	'playback_language' => 'fr',
+	'available_prompts' => $frenchCandidatePrompts,
+], $frenchTransport, function (): bool { return false; });
+$frenchStreams = array_column(array_values(array_filter($frenchTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'streamFile';
+})), 'file');
+assert_true(in_array('conf-thereare', $frenchStreams, true) && in_array('telephone-number', $frenchStreams, true) && in_array('followme/call-from', $frenchStreams, true), 'French repeat playback must use the approved native static prompts');
+assert_true(!array_intersect(['queue-quantity1', 'queue-quantity2', 'queue-callswaiting', 'vm-message', 'vm-messages'], $frenchStreams), 'French playback must not use queue quantity or voicemail count prompts');
+assert_true(!array_filter($frenchTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'setVariable' && ($call['name'] ?? '') === 'CHANNEL(language)';
+}), 'a complete French profile must retain the selected French language');
+assert_true(array_filter($frenchTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'sayNumber' && in_array($call['number'], [2, 10], true);
+}) !== [], 'French count and window values must remain SAY NUMBER operations');
+assert_true(array_filter($frenchTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'sayDigits' && in_array($call['digits'], ['441234', '0207999'], true);
+}) !== [], 'French caller and DID values must remain SAY DIGITS operations');
+
+$frenchInvalidTransport = new FakeInteractiveTransport(['9', '1']);
+$agiSession->run($languageContext + [
+	'playback_language' => 'fr',
+	'available_prompts' => $frenchCandidatePrompts,
+], $frenchInvalidTransport, function (): bool { return false; });
+$frenchInvalidStreams = array_column(array_values(array_filter($frenchInvalidTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'streamFile';
+})), 'file');
+assert_same(['sorry', 'please-try-again', 'auth-thankyou', 'goodbye'], $frenchInvalidStreams, 'French invalid input and accepted closing must preserve existing interaction behavior');
+
+$frenchRemoteTransport = new FakeInteractiveTransport();
+$agiSession->run($languageContext + [
+	'playback_language' => 'fr',
+	'available_prompts' => $frenchCandidatePrompts,
+], $frenchRemoteTransport, function (): bool { return true; });
+$frenchRemoteStreams = array_column(array_values(array_filter($frenchRemoteTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'streamFile';
+})), 'file');
+assert_same(['incoming-call-no-longer-avail', 'auth-thankyou', 'goodbye'], $frenchRemoteStreams, 'French accepted-elsewhere handling must preserve existing terminal prompts');
+
+$frenchFallbackTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run(array_merge($languageContext, [
+	'playback_target' => 'custom/french-intro',
+	'playback_language' => 'fr',
+	'recording_language' => 'fr',
+	'available_prompts' => array_values(array_diff($frenchCandidatePrompts, ['conf-thereare'])),
+	'fallback_prompts' => $promptResolver->requiredPrompts('english'),
+]), $frenchFallbackTransport, function (): bool { return false; });
+$frenchFallbackLanguages = array_values(array_filter($frenchFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'setVariable' && ($call['name'] ?? '') === 'CHANNEL(language)';
+}));
+assert_same(['en', 'fr', 'en', 'fr', 'en', 'fr', 'en'], array_column($frenchFallbackLanguages, 'value'), 'incomplete French must preserve the French System Recording and keep the complete generated message in English');
+$frenchFallbackStreams = array_column(array_values(array_filter($frenchFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'streamFile';
+})), 'file');
+assert_same('custom/french-intro', $frenchFallbackStreams[0], 'French fallback must not replace or skip the selected System Recording');
+assert_true(in_array('this', $frenchFallbackStreams, true) && in_array('calls', $frenchFallbackStreams, true) && in_array('calling', $frenchFallbackStreams, true), 'incomplete French must use the complete established English summary');
+assert_true(!array_intersect(['conf-thereare', 'queue-less-than', 'telephone-number', 'followme/call-from'], $frenchFallbackStreams), 'incomplete French must not mix native fragments into the generated English message');
+
+$fallbackLocales = ['es', 'es_ES', 'de', 'de_DE'];
+$generousStandardInventory = [
+	'beep', 'warning', 'this', 'alert', 'has-been', 'initiated', 'for', 'less-than',
+	'call', 'calls', 'within', 'minute', 'minutes', 'from', 'from-unknown-caller',
+	'calling', 'number', 'vqplus-accept', 'sorry', 'please-try-again',
+	'auth-thankyou', 'goodbye', 'incoming-call-no-longer-avail',
+];
+foreach ($fallbackLocales as $fallbackLocale) {
+	assert_same(
+		['profile' => 'english', 'generated_language' => 'en'],
+		$promptResolver->resolve($fallbackLocale, $generousStandardInventory, $languageContext, $generousStandardInventory),
+		$fallbackLocale . ' must use coherent whole-message English fallback when no straightforward complete standard profile exists'
+	);
+}
+
+$spanishFallbackTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run(array_merge($languageContext, [
+	'playback_target' => 'custom/spanish-intro',
+	'playback_language' => 'es',
+	'recording_language' => 'es',
+	'available_prompts' => $generousStandardInventory,
+	'fallback_prompts' => $generousStandardInventory,
+]), $spanishFallbackTransport, function (): bool { return false; });
+$spanishFallbackLanguages = array_values(array_filter($spanishFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'setVariable' && ($call['name'] ?? '') === 'CHANNEL(language)';
+}));
+assert_same(['en', 'es', 'en', 'es', 'en', 'es', 'en'], array_column($spanishFallbackLanguages, 'value'), 'fallback must preserve the Spanish System Recording on every attempt and keep the complete generated message in English');
+$spanishFallbackStreams = array_column(array_values(array_filter($spanishFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'streamFile';
+})), 'file');
+assert_same('custom/spanish-intro', $spanishFallbackStreams[0], 'fallback must not replace or skip the selected System Recording');
+assert_true(in_array('this', $spanishFallbackStreams, true) && in_array('calling', $spanishFallbackStreams, true) && in_array('number', $spanishFallbackStreams, true), 'fallback must use the complete established English summary');
+assert_true(array_filter($spanishFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'sayNumber' && in_array($call['number'], [2, 10], true);
+}) !== [], 'fallback count and window values must remain SAY NUMBER operations');
+assert_true(array_filter($spanishFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'sayDigits' && in_array($call['digits'], ['441234', '0207999'], true);
+}) !== [], 'fallback caller and DID values must remain SAY DIGITS operations');
+
+$translatedPromptPattern = '/repeatcaller-(?:call-count|called-number|call-no-longer-available)/';
+foreach (['src/AlertCallPromptResolver.php', 'tests/repeat_alerting_contract.php', 'README.md', 'TESTING.md', 'USER_GUIDE.md'] as $translatedPromptGuardFile) {
+	$translatedPromptGuardSource = file_get_contents(__DIR__ . '/../' . $translatedPromptGuardFile);
+	assert_true($translatedPromptGuardSource !== false && preg_match($translatedPromptPattern, $translatedPromptGuardSource) === 0, $translatedPromptGuardFile . ' must not reference a Repeat Caller-owned translated sound prompt');
+}
+
+$unknownInventoryResolution = (new \FreePBX\modules\Repeatcaller\AlertCallPromptResolver())->resolve('es', null, $languageContext);
+assert_same(['profile' => '', 'generated_language' => ''], $unknownInventoryResolution, 'unknown fallback inventory must fail closed instead of assuming English prompts are available');
+$unavailableFallbackTransport = new FakeInteractiveTransport();
+$unavailableFallbackResult = $agiSession->run($languageContext + [
+	'playback_language' => 'es',
+	'available_prompts' => $generousStandardInventory,
+	'fallback_prompts' => array_values(array_diff($generousStandardInventory, ['warning'])),
+], $unavailableFallbackTransport, function (): bool { return false; });
+assert_same('unavailable', $unavailableFallbackResult['response'], 'an incomplete fallback inventory must terminate without generated playback');
+assert_true(!array_filter($unavailableFallbackTransport->calls, static function (array $call): bool {
+	return $call['method'] === 'streamFile' || $call['method'] === 'sayNumber' || $call['method'] === 'sayDigits';
+}), 'an incomplete fallback inventory must not emit partial or mixed-language prompt audio');
+
+$inventoryRoot = sys_get_temp_dir() . '/repeatcaller-prompt-inventory-' . bin2hex(random_bytes(4));
+mkdir($inventoryRoot . '/de_DE/followme', 0777, true);
+mkdir($inventoryRoot . '/de', 0777, true);
+file_put_contents($inventoryRoot . '/de_DE/followme/options.ulaw', 'audio');
+file_put_contents($inventoryRoot . '/de/minutes.wav', 'audio');
+file_put_contents($inventoryRoot . '/de/ignored.txt', 'not audio');
+$discoveredPrompts = AlertCallPromptInventory::discover($inventoryRoot, 'de-de');
+sort($discoveredPrompts);
+assert_same(['followme/options', 'minutes'], $discoveredPrompts, 'prompt discovery must resolve locale directory casing, merge full locale and base language, preserve nested paths, and ignore unsupported extensions');
+assert_same(null, AlertCallPromptInventory::discover('/path/that/does/not/exist', 'de_DE'), 'failed prompt discovery must return unknown inventory rather than implying completeness');
+unlink($inventoryRoot . '/de_DE/followme/options.ulaw');
+unlink($inventoryRoot . '/de/minutes.wav');
+unlink($inventoryRoot . '/de/ignored.txt');
+rmdir($inventoryRoot . '/de_DE/followme');
+rmdir($inventoryRoot . '/de_DE');
+rmdir($inventoryRoot . '/de');
+rmdir($inventoryRoot);
+
 // Invert mode: threshold 2, window 15 minutes, no caller info, no System Recording.
 $invertFullTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 (new AlertCallAgiSession())->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'invert',
 	'summary_call_count' => '0',
 	'summary_threshold' => '2',
@@ -536,6 +792,8 @@ assert_true(!in_array(0, $ifNumberValues, true), 'no spoken number may be zero i
 $noResponseTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 $noResponseResult = (new AlertCallAgiSession())->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '3',
 	'summary_threshold' => '3',
@@ -550,6 +808,8 @@ assert_same('1', (string)($noResponseTransport->variables['REPEATCALLER_ALERT_CO
 $sorryTransport = new FakeInteractiveTransport(['9', '9', '9']); // invalid digit on each waitForDigit(1)
 (new AlertCallAgiSession())->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '3',
 	'summary_threshold' => '3',
@@ -575,6 +835,8 @@ assert_same('please-try-again', $sorryStreamFiles[(int)$sorryIdx + 1], '"please-
 $zeroCountTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 (new AlertCallAgiSession())->run([
 	'playback_target' => '',
+	'playback_language' => 'en',
+	'available_prompts' => $completeEnglishPrompts,
 	'summary_mode' => 'repeat',
 	'summary_call_count' => '',
 	'summary_threshold' => '',
@@ -969,13 +1231,16 @@ FreePBX::$recordings = [
 ];
 FreePBX::$soundlangLanguage = 'en_GB';
 $repeatcaller = new \FreePBX\modules\Repeatcaller(new stdClass());
-$languageResolver = new ReflectionMethod(\FreePBX\modules\Repeatcaller::class, 'resolveAlertCallPlaybackLanguage');
+$languageResolver = new ReflectionMethod(\FreePBX\modules\Repeatcaller::class, 'resolveFreePBXDefaultLanguage');
 $languageResolver->setAccessible(true);
+$recordingResolver = new ReflectionMethod(\FreePBX\modules\Repeatcaller::class, 'resolveSystemRecordingPlayback');
+$recordingResolver->setAccessible(true);
 $classSource = file_get_contents(__DIR__ . '/../Repeatcaller.class.php');
 assert_true($classSource !== false, 'Repeatcaller.class.php should be readable for language fallback contract checks');
 assert_true(strpos($classSource, 'en_US') === false && strpos($classSource, 'en_GB') === false, 'language resolution code must not hard-code en_US or en_GB');
 assert_true(strpos($classSource, "'Account' => 'repeatcaller_alert_internal'") !== false, 'alert call originate should apply an internal account marker for module-originated call legs');
 assert_true(strpos($classSource, 'REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1') !== false, 'alert call originate variables should carry explicit internal-origin marker flags for module-owned legs');
+assert_true(strpos($classSource, 'REPEATCALLER_RECORDING_LANGUAGE=') !== false, 'alert call originate must carry System Recording language separately from the global generated-message language');
 assert_true(strpos($classSource, 'if ($callerId !== \'\') {') !== false && strpos($classSource, '$params[\'CallerID\'] = $callerId;') !== false, 'originate should only include CallerID when Repeat Caller is explicitly setting a nonblank value');
 $alertProcessorSource = file_get_contents(__DIR__ . '/../src/IncidentAlertProcessor.php');
 assert_true($alertProcessorSource !== false, 'IncidentAlertProcessor.php should be readable for system identifier contract checks');
@@ -984,8 +1249,9 @@ assert_true(strpos($alertProcessorSource, "FreePBX::Config()->get('FREEPBX_SYSTE
 $installSource = file_get_contents(__DIR__ . '/../install.php');
 assert_true($installSource !== false, 'install.php should be readable for language fallback contract checks');
 assert_true(strpos($installSource, 'en_US') === false && strpos($installSource, 'en_GB') === false, 'install-time dialplan generation must not hard-code en_US or en_GB');
-assert_same('en_GB', (string)$languageResolver->invoke($repeatcaller, '41'), 'selected System Recording should preserve its fcode_lang value');
-assert_same('en_GB', (string)$languageResolver->invoke($repeatcaller, ''), 'missing System Recording should fall back to the FreePBX sound language default');
+assert_same('en_GB', (string)$languageResolver->invoke($repeatcaller), 'generated Alert Call language must come from the global FreePBX sound language');
+$recordingResolution = $recordingResolver->invoke($repeatcaller, '41');
+assert_same('en_GB', (string)($recordingResolution['language'] ?? ''), 'selected System Recording should preserve its own fcode_lang independently');
 
 // 1, 2, 3, 4, 5, 6, 7, 19 in one scenario
 $clock = new TestClock('2026-07-13 10:00:00');
@@ -1590,6 +1856,22 @@ assert_same('2026-07-13 10:01:00', (string)$acceptedHistory['successful_at'], 'D
 $callClock->now = '2026-07-13 10:06:00';
 $acceptedReminder = $callProcessor->run(settings());
 assert_same(0, $acceptedReminder['reminder_events'], 'accepted alert calls should stop further escalation');
+
+$unavailableClock = new TestClock('2026-07-13 10:10:00');
+[$unavailableDb, $unavailableProcessor] = create_alert_environment($unavailableClock, new FakeEmailSender(), new FakeCallSender());
+$unavailableRule = insert_rule($unavailableDb, ['alert_call_enabled' => 1, 'alert_call_destinations' => '101']);
+$unavailableIncident = insert_incident($unavailableDb, [
+	'rule_id' => $unavailableRule,
+	'subject_key' => 'unavailable-prompts',
+	'first_matched_at' => '2026-07-13 10:10:00',
+	'suppression_expires_at' => '2026-07-13 11:10:00',
+]);
+$unavailableProcessor->run(settings());
+$unavailableHistoryId = (int)$unavailableDb->query("SELECT id FROM repeatcaller_incident_alert_history WHERE incident_id = {$unavailableIncident} AND action_type = 'alert_call' LIMIT 1")->fetchColumn();
+(new RepeatCallerRepository($unavailableDb))->recordAlertCallDtmfResponse($unavailableHistoryId, $unavailableIncident, 'unavailable', '101', '', '2026-07-13 10:10:10');
+$unavailableHistory = $unavailableDb->query("SELECT delivery_status, failure_detail FROM repeatcaller_incident_alert_history WHERE id = {$unavailableHistoryId}")->fetch(PDO::FETCH_ASSOC);
+assert_same('failed', (string)$unavailableHistory['delivery_status'], 'missing native and fallback prompts must record a failed Alert Call rather than a no-response outcome');
+assert_same('required Alert Call language prompts are unavailable', (string)$unavailableHistory['failure_detail'], 'missing prompt failure must describe the actual fail-closed reason');
 
 $acceptedRepeatClock = new TestClock('2026-07-13 10:00:00');
 $acceptedRepeatEmailSender = new FakeEmailSender();

@@ -31,6 +31,8 @@ if (!function_exists('_')) {
 if (!class_exists('FreePBX')) {
 	class FreePBX {
 		private static ?PDO $database = null;
+		private static string $soundsVarlib = '';
+		private static string $soundLanguage = 'en_US';
 
 		public static function setDatabase(PDO $database): void {
 			self::$database = $database;
@@ -42,8 +44,54 @@ if (!class_exists('FreePBX')) {
 			}
 			return self::$database;
 		}
+
+		public static function setSoundsVarlib(string $soundsVarlib): void {
+			self::$soundsVarlib = $soundsVarlib;
+		}
+
+		public static function Config() {
+			return new class {
+				public function get(string $key): string {
+					return $key === 'ASTVARLIBDIR' ? FreePBX::soundsVarlib() : '';
+				}
+			};
+		}
+
+		public static function soundsVarlib(): string {
+			return self::$soundsVarlib;
+		}
+
+		public static function setSoundLanguage(string $soundLanguage): void {
+			self::$soundLanguage = $soundLanguage;
+		}
+
+		public static function Soundlang() {
+			return new class {
+				public function getLanguage(): string {
+					return FreePBX::soundLanguage();
+				}
+			};
+		}
+
+		public static function soundLanguage(): string {
+			return self::$soundLanguage;
+		}
 	}
 }
+
+$alertSoundVarlib = sys_get_temp_dir() . '/repeatcaller-admin-sounds-' . bin2hex(random_bytes(4));
+$alertEnglishDirectory = $alertSoundVarlib . '/sounds/en_US';
+mkdir($alertEnglishDirectory, 0777, true);
+$alertEnglishPrompts = [
+	'beep', 'warning', 'this', 'alert', 'has-been', 'initiated', 'for', 'less-than',
+	'call', 'calls', 'within', 'minute', 'minutes', 'from', 'from-unknown-caller',
+	'calling', 'number', 'vqplus-accept', 'sorry', 'please-try-again',
+	'auth-thankyou', 'goodbye', 'incoming-call-no-longer-avail',
+];
+foreach ($alertEnglishPrompts as $alertEnglishPrompt) {
+	file_put_contents($alertEnglishDirectory . '/' . $alertEnglishPrompt . '.wav', 'audio');
+}
+FreePBX::setSoundsVarlib($alertSoundVarlib);
 
 class SqliteCompatPDO extends PDO {
 	public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null) {
@@ -600,6 +648,7 @@ $_REQUEST = [
 	'callers' => '[]',
 	'dids' => '[]',
 ];
+$alertActivationRequest = $_REQUEST;
 $callerIdSaveResponse = $callerIdSaveMethod->invoke($callerIdController);
 $_REQUEST = $savedRequest;
 assert_true(($callerIdSaveResponse['status'] ?? false) === true, 'controller save should succeed when Caller ID managed elsewhere is checked');
@@ -609,6 +658,72 @@ assert_same(1, (int)($callerIdSavedRule['alert_call_handle_callerid_upstream'] ?
 $callerIdReloadedRule = $callerIdSaveRepo->loadRule((int)($callerIdSavedRule['id'] ?? 0));
 assert_same('', trim((string)($callerIdReloadedRule['alert_call_callerid'] ?? '')), 'reloaded saved rule should keep Caller ID blank after managed-elsewhere save');
 assert_same(1, (int)($callerIdReloadedRule['alert_call_handle_callerid_upstream'] ?? 0), 'reloaded saved rule should keep the managed-elsewhere checkbox state');
+
+unlink($alertEnglishDirectory . '/warning.wav');
+require_once __DIR__ . '/../src/AlertCallLanguageSupport.php';
+$incompleteLanguageSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($alertSoundVarlib . '/sounds');
+$incompleteLanguageStatus = $incompleteLanguageSupport->status();
+assert_same(false, $incompleteLanguageStatus['fallback_available'], 'status must report an incomplete English fallback inventory');
+assert_true(in_array('warning', $incompleteLanguageStatus['languages'][0]['missing_required_prompts'], true), 'status must expose the exact missing English fallback prompt');
+$incompleteFallbackDb = make_db();
+FreePBX::setDatabase($incompleteFallbackDb);
+$incompleteFallbackController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$incompleteFallbackSaveMethod = new ReflectionMethod($incompleteFallbackController, 'rcHandleSaveRule');
+$incompleteFallbackSaveMethod->setAccessible(true);
+$_REQUEST = array_merge($alertActivationRequest, ['name' => 'Incomplete Fallback Guard', 'enabled' => '0']);
+$incompleteFallbackResponse = $incompleteFallbackSaveMethod->invoke($incompleteFallbackController);
+assert_same(false, (bool)($incompleteFallbackResponse['status'] ?? true), 'Alert Call activation must be blocked when the English fallback inventory is incomplete');
+assert_same('Alert Call cannot be enabled because the required fallback language prompts are unavailable.', (string)($incompleteFallbackResponse['message'] ?? ''), 'incomplete fallback rejection must use the required administrator-facing message');
+
+$alertFrenchDirectory = $alertSoundVarlib . '/sounds/fr';
+mkdir($alertFrenchDirectory . '/followme', 0777, true);
+$alertFrenchPrompts = [
+	'beep', 'warning', 'conf-thereare', 'queue-less-than', 'minutes', 'telephone-number',
+	'from-unknown-caller', 'vqplus-accept', 'sorry', 'please-try-again',
+	'auth-thankyou', 'goodbye', 'incoming-call-no-longer-avail',
+];
+foreach ($alertFrenchPrompts as $alertFrenchPrompt) {
+	file_put_contents($alertFrenchDirectory . '/' . $alertFrenchPrompt . '.wav', 'audio');
+}
+file_put_contents($alertFrenchDirectory . '/followme/call-from.wav', 'audio');
+$frenchLanguageStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($alertSoundVarlib . '/sounds'))->status();
+assert_same(true, $frenchLanguageStatus['languages'][1]['complete'], 'status must report a complete French native profile from actual prompt files');
+assert_same(true, $frenchLanguageStatus['languages'][1]['native'], 'status must classify French as a native profile');
+assert_same(true, $frenchLanguageStatus['languages'][1]['supported'], 'status must classify French as a maintainer-supported profile independently of inventory');
+assert_same(true, $frenchLanguageStatus['languages'][1]['adapted_wording'], 'status must expose French as the approved adapted-wording profile');
+unlink($alertFrenchDirectory . '/conf-thereare.wav');
+$incompleteFrenchStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($alertSoundVarlib . '/sounds'))->status();
+assert_same(true, $incompleteFrenchStatus['languages'][1]['supported'], 'missing inventory must not demote the official French profile from supported status');
+assert_same(false, $incompleteFrenchStatus['languages'][1]['complete'], 'missing inventory must mark the supported French profile incomplete and unsafe');
+assert_true(in_array('conf-thereare', $incompleteFrenchStatus['languages'][1]['missing_required_prompts'], true), 'incomplete French status must identify the missing required prompt');
+file_put_contents($alertFrenchDirectory . '/conf-thereare.wav', 'audio');
+FreePBX::setSoundLanguage('fr');
+$frenchNativeDb = make_db();
+FreePBX::setDatabase($frenchNativeDb);
+$frenchNativeController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$frenchNativeSaveMethod = new ReflectionMethod($frenchNativeController, 'rcHandleSaveRule');
+$frenchNativeSaveMethod->setAccessible(true);
+$_REQUEST = array_merge($alertActivationRequest, ['name' => 'French Native Activation', 'enabled' => '0']);
+$frenchNativeResponse = $frenchNativeSaveMethod->invoke($frenchNativeController);
+assert_same(false, (bool)($frenchNativeResponse['status'] ?? true), 'a complete French native profile must still require the global English safety fallback before Alert Call activation');
+
+file_put_contents($alertEnglishDirectory . '/warning.wav', 'audio');
+$frenchNativeResponse = $frenchNativeSaveMethod->invoke($frenchNativeController);
+assert_same(true, (bool)($frenchNativeResponse['status'] ?? false), 'a complete French native profile must allow Alert Call activation once the global English fallback is complete');
+FreePBX::setSoundLanguage('es');
+$languageSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($alertSoundVarlib . '/sounds');
+$languageStatus = $languageSupport->status();
+assert_same(true, $languageStatus['fallback_available'], 'complete English prompt files must expose an available fallback profile');
+assert_same('en_US', $languageStatus['fallback_language'], 'the detected complete English locale must be exposed as the fallback target');
+$spanishResolution = $languageSupport->resolve('es');
+assert_same(true, $spanishResolution['available'], 'an unsupported language must resolve when the English fallback inventory is complete');
+assert_same('english', $spanishResolution['profile'], 'an unsupported language must resolve only to the validated English profile');
+assert_same('en_US', $spanishResolution['fallback_language'], 'unsupported-language status must expose the validated English fallback target');
+assert_same(true, $languageStatus['languages'][2]['fallback_only'], 'status must classify Spanish as fallback-only');
+assert_same(false, $languageStatus['languages'][2]['supported'], 'installed inventory must not promote Spanish to a supported native profile');
+assert_same('en_US', $languageStatus['languages'][2]['fallback_target'], 'status must expose the validated fallback target for Spanish');
+FreePBX::setSoundLanguage('en_US');
+$_REQUEST = $savedRequest;
 FreePBX::setDatabase($db);
 
 $db->exec("INSERT INTO incoming (extension, cidnum, description) VALUES ('18005550001', '', 'Main Inbound')");
@@ -2410,6 +2525,16 @@ assert_true(strpos($jsSource, 'rc-alert-call-destination-down') === false, 'dest
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-strategy"') !== false, 'rule editor view should include alert call strategy selector');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-keep-trying"') === false, 'rule editor view should not render a global alert-call keep-trying field');
 assert_true(strpos($viewSource, '<select id="rc-rule-alert-call-recording-id" class="form-control">') !== false, 'rule editor view should render a FreePBX-style system recording selector');
+assert_true(substr_count($viewSource, 'id="rc-alert-call-language-support"') === 1, 'admin UI must render one standalone Alert Call system capability report outside per-rule language configuration');
+assert_true(strpos($viewSource, 'Alert Call language capability') !== false, 'language capability section must avoid implying that installed inventory defines support');
+assert_true(strpos($viewSource, 'Alert Call cannot be enabled because the required fallback language prompts are unavailable.') !== false, 'language support section must show the exact incomplete-fallback activation error');
+assert_true(strpos($viewSource, 'Missing required prompts') !== false && strpos($viewSource, 'Fallback target') !== false, 'language support table must expose missing prompts and fallback targets');
+assert_true(strpos($viewSource, "_('Native supported')") !== false, 'language support table must label English as native supported');
+assert_true(strpos($viewSource, "_('Native supported (adapted wording)')") !== false, 'language support table must label French as native supported with adapted wording');
+assert_true(strpos($viewSource, "_('English fallback')") !== false, 'language support table must label Spanish and German as English fallback');
+assert_true(strpos($viewSource, 'Maintainers define supported profiles; installed prompts determine whether each profile is complete and safe.') !== false, 'language capability section must distinguish maintainer support from inventory completeness');
+assert_true(strpos($viewSource, 'This is a system capability report, and rules do not select languages.') !== false, 'language capability section must state that rules do not configure language');
+assert_true(strpos($viewSource, 'Generated Alert Calls use the active FreePBX language when its native profile is complete; unsupported or incomplete languages automatically use the validated English fallback.') !== false, 'language capability section must explain automatic global language resolution and fallback');
 assert_true(strpos($viewSource, '<th><?php echo _(\'Suppression\'); ?></th>') !== false, 'rules table should include a Suppression summary column');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Suppression\'); ?></label><input type="number" id="rc-rule-suppression" class="form-control" min="0" placeholder="<?php echo _(\'Default 24hrs\'); ?>"><p class="help-block"><?php echo _(\'Leave blank to use Default 24hrs suppression period or enter 0 to disable.\'); ?></p>') !== false, 'rule editor should expose suppression with default and disabled guidance');
 assert_true(strpos($viewSource, 'systemRecordings: <?php echo json_encode($systemRecordings); ?>') !== false, 'view bootstrap should expose system recording options for editor context');

@@ -1783,6 +1783,9 @@ final class RepeatCallerRepository {
 			$deliveryStatus = self::ALERT_CALL_OUTCOME_DECLINED;
 			$successfulAt = $now;
 			$failureDetail = 'Recipient declined the Alert Call';
+		} elseif ($response === 'unavailable') {
+			$deliveryStatus = self::ALERT_CALL_OUTCOME_FAILED;
+			$failureDetail = 'required Alert Call language prompts are unavailable';
 		} elseif ($response === self::ALERT_CALL_OUTCOME_ANSWERED_NO_RESPONSE || $response === 'hangup') {
 			$failureDetail = 'answered call ended without a valid DTMF response';
 		} elseif ($digit !== '' && $digit !== '1' && $digit !== '2') {

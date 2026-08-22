@@ -70,8 +70,8 @@ $root = dirname(__DIR__);
 
 $moduleXml = simplexml_load_file($root . '/module.xml');
 assert_true($moduleXml !== false, 'module.xml should parse');
-assert_same('1.0.1', (string)$moduleXml->version, 'module.xml version must be 1.0.1 for this release');
-assert_same('1.0.1', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.1');
+assert_same('1.0.2', (string)$moduleXml->version, 'module.xml version must be 1.0.2 for this release');
+assert_same('1.0.2', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.2');
 
 // --- 1-3: AJAX allowlist, dispatcher, and frontend command parity --------
 
@@ -189,8 +189,8 @@ assert_true(strpos($viewSource, 'Selected DIDs only') !== false, 'rule editor DI
 
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
-assert_true(strpos($readmeSource, '# Repeat Caller 1.0.1 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.1');
-assert_true(strpos($readmeSource, '**Release date:** 6 August 2026') !== false, 'README should declare the 1.0.1 release date');
+assert_true(strpos($readmeSource, '# Repeat Caller 1.0.2 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.2');
+assert_true(strpos($readmeSource, '**Release date:** 22 August 2026') !== false, 'README should declare the 1.0.2 release date');
 assert_true(strpos($readmeSource, 'Repeat Caller supports two distinct operating modes') !== false, 'README should describe the module in user-facing language');
 assert_true(strpos($readmeSource, 'fwconsole ma installlocal repeatcaller') !== false, 'README must keep installlocal warning text');
 assert_true(strpos($readmeSource, 'git reset --hard FETCH_HEAD') !== false, 'README must keep deterministic update sequence');
@@ -200,6 +200,7 @@ assert_true(strpos($readmeSource, 'TESTING.md') !== false, 'README should link t
 assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should include Introduction section');
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
+assert_true(strpos($readmeSource, '### 1.0.2, patch release, 22 August 2026') !== false, 'README should include the 1.0.2 release history heading');
 assert_true(strpos($readmeSource, '### 1.0.1, patch release, 6 August 2026') !== false, 'README should include the 1.0.1 release history heading');
 assert_true(strpos($readmeSource, 'Rule explanation-row styling is now consistent across enabled, disabled,') !== false && strpos($readmeSource, 'temporary Status, and editing states.') !== false, 'README should record the 1.0.1 explanation-row styling consistency fix');
 assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
