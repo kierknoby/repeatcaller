@@ -63,6 +63,13 @@ final class AlertCallLanguageSupport {
 		return ['available' => false, 'profile' => '', 'language' => '', 'missing_required_prompts' => $english['missing_required_prompts'], 'fallback_language' => ''];
 	}
 
+	/**
+	 * @return array<int,string>
+	 */
+	public function installedCodecs(string $language): array {
+		return AlertCallPromptInventory::installedCodecs($this->soundsRoot, $language);
+	}
+
 	private function exactInstalledLanguage(string $language): string {
 		$normalised = strtolower(str_replace('-', '_', trim($language)));
 		foreach (AlertCallPromptInventory::installedLanguages($this->soundsRoot) as $installedLanguage) {

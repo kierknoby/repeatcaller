@@ -376,6 +376,9 @@ class Repeatcaller implements \BMO {
 		foreach (array_values($locales) as $locale) {
 			$locale = (string)$locale;
 			$installed = $this->containsAlertCallLocale($installedLanguages, $locale);
+			$installedCodecs = $installed
+				? $support->installedCodecs($locale)
+				: [];
 			$active = $activeLanguage !== '' && strcasecmp(str_replace('-', '_', $activeLanguage), str_replace('-', '_', $locale)) === 0;
 			$selection = $support->resolve($locale);
 			$available = !empty($selection['available']);
@@ -400,7 +403,7 @@ class Repeatcaller implements \BMO {
 			$rows[] = [
 				'language' => $this->alertCallLanguageLabel($locale),
 				'locale' => $locale,
-				'installed' => $installed,
+				'installed_codecs' => $installedCodecs,
 				'alert_call_language' => $alertCallLabel,
 				'status' => $statusLabel,
 				'active' => $active,

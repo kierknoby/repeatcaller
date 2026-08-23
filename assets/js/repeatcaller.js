@@ -472,6 +472,7 @@
 		var activeLanguage = 'Unknown';
 		$.each(rows, function (_, row) {
 			row = row || {};
+			var installedCodecs = $.isArray(row.installed_codecs) ? row.installed_codecs : [];
 			var $status = $('<td/>').text(String(row.status || ''));
 			var $sampleButton = $('<button/>', {
 				type: 'button',
@@ -483,7 +484,9 @@
 			}).prop('disabled', alertCallSampleLocked || !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
-				.append($('<td/>').text(String(row.locale || '')));
+				.append($('<td/>').text(String(row.locale || '')))
+				.append($('<td/>').text(installedCodecs.length > 0 ? installedCodecs.join(', ') : '-'))
+				.append($('<td/>').text(String(row.alert_call_language || '')));
 			if (row.active) {
 				activeLanguage = String(row.language || 'Unknown');
 				$row.addClass('info');
@@ -491,7 +494,6 @@
 			}
 			$body.append($row
 				.append($status)
-				.append($('<td/>').text(String(row.alert_call_language || '')))
 				.append($('<td/>').append($sampleButton)));
 		});
 		$('#rc-active-freepbx-language').text(activeLanguage);
