@@ -383,14 +383,13 @@ class Repeatcaller implements \BMO {
 			$available = !empty($selection['available']);
 			$selectedLanguage = (string)($selection['language'] ?? '');
 			$resolvesToOwnLocale = $available && $this->containsAlertCallLocale([$selectedLanguage], $locale);
-			$evaluatedLocale = $support->isEvaluatedLanguage($locale);
-			$selectedCode = strtolower(str_replace('-', '_', $selectedLanguage));
+			$evaluation = $support->languageEvaluation($locale);
 			$alertCallLabel = $available ? $this->alertCallLanguageLabel($selectedLanguage) : _('Unavailable');
-			if ($resolvesToOwnLocale && ($selectedCode === 'fr' || strpos($selectedCode, 'fr_') === 0)) {
+			if ($resolvesToOwnLocale && $evaluation['prompt_mapping_type'] === 'adapted') {
 				$statusLabel = _('Native but Adapted');
-			} elseif ($resolvesToOwnLocale) {
+			} elseif ($resolvesToOwnLocale && $evaluation['prompt_mapping_type'] === 'original') {
 				$statusLabel = _('Native and Original');
-			} elseif ($evaluatedLocale) {
+			} elseif ($evaluation['evaluated']) {
 				$statusLabel = _('Rejected → Fallback');
 			} else {
 				$statusLabel = _('Untested → Fallback');

@@ -17,7 +17,7 @@ final class AlertCallLanguageSupport {
 	}
 
 	/**
-	 * @return array{fallback_available:bool,fallback_language:string,supported_profiles:array<int,array{language:string,detected_language:string,profile:string,complete:bool,supported:bool,native:bool,adapted_wording:bool,fallback_only:bool,missing_required_prompts:array<int,string>,fallback_target:string}>,installed_languages:array<int,string>,languages:array<int,array{language:string,detected_language:string,profile:string,complete:bool,supported:bool,native:bool,adapted_wording:bool,fallback_only:bool,missing_required_prompts:array<int,string>,fallback_target:string}>}
+	 * @return array{fallback_available:bool,fallback_language:string,supported_profiles:array<int,array{language:string,detected_language:string,profile:string,complete:bool,supported:bool,native:bool,prompt_mapping_type:string,fallback_only:bool,missing_required_prompts:array<int,string>,fallback_target:string}>,installed_languages:array<int,string>,languages:array<int,array{language:string,detected_language:string,profile:string,complete:bool,supported:bool,native:bool,prompt_mapping_type:string,fallback_only:bool,missing_required_prompts:array<int,string>,fallback_target:string}>}
 	 */
 	public function status(): array {
 		$supportedProfiles = $this->resolver->supportedProfiles();
@@ -80,8 +80,14 @@ final class AlertCallLanguageSupport {
 	}
 
 	public function isEvaluatedLanguage(string $language): bool {
-		$family = strtolower(explode('_', str_replace('-', '_', trim($language)), 2)[0]);
-		return in_array($family, $this->resolver->evaluatedLanguageFamilies(), true);
+		return $this->languageEvaluation($language)['evaluated'];
+	}
+
+	/**
+	 * @return array{evaluated:bool,prompt_mapping_type:string}
+	 */
+	public function languageEvaluation(string $language): array {
+		return $this->resolver->languageEvaluation($language);
 	}
 
 	private function exactInstalledLanguage(string $language): string {
@@ -114,8 +120,8 @@ final class AlertCallLanguageSupport {
 	}
 
 	/**
-	 * @param array{language:string,candidates:array<int,string>,profile:string,adapted_wording:bool} $definition
-	 * @return array{language:string,locale_candidates:array<int,string>,detected_language:string,profile:string,complete:bool,supported:bool,native:bool,adapted_wording:bool,fallback_only:bool,missing_required_prompts:array<int,string>,fallback_target:string}
+	 * @param array{language:string,candidates:array<int,string>,profile:string,prompt_mapping_type:string} $definition
+	 * @return array{language:string,locale_candidates:array<int,string>,detected_language:string,profile:string,complete:bool,supported:bool,native:bool,prompt_mapping_type:string,fallback_only:bool,missing_required_prompts:array<int,string>,fallback_target:string}
 	 */
 	private function inspectProfile(array $definition): array {
 		$inventory = $this->bestInventory($definition['candidates'], $definition['profile']);
@@ -127,7 +133,7 @@ final class AlertCallLanguageSupport {
 			'complete' => $inventory['missing'] === [],
 			'supported' => true,
 			'native' => true,
-			'adapted_wording' => $definition['adapted_wording'],
+			'prompt_mapping_type' => $definition['prompt_mapping_type'],
 			'fallback_only' => false,
 			'missing_required_prompts' => $inventory['missing'],
 			'fallback_target' => '',

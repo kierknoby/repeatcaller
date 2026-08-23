@@ -11,13 +11,13 @@ final class AlertCallPromptResolver {
 			'language' => 'English',
 			'candidates' => ['en', 'en_GB', 'en_AU', 'en_NZ'],
 			'profile' => 'english',
-			'adapted_wording' => false,
+			'prompt_mapping_type' => 'original',
 		],
 		'fr' => [
 			'language' => 'French',
 			'candidates' => ['fr_FR', 'fr'],
 			'profile' => 'french',
-			'adapted_wording' => true,
+			'prompt_mapping_type' => 'adapted',
 		],
 	];
 	private const REJECTED_LANGUAGE_FAMILIES = ['de', 'es'];
@@ -43,7 +43,7 @@ final class AlertCallPromptResolver {
 	 * Maintainer-approved production profiles. Installed prompt inventory only
 	 * determines whether one of these supported profiles is complete and safe.
 	 *
-	 * @return array<string,array{language:string,candidates:array<int,string>,profile:string,adapted_wording:bool}>
+	 * @return array<string,array{language:string,candidates:array<int,string>,profile:string,prompt_mapping_type:string}>
 	 */
 	public function supportedProfiles(): array {
 		return self::SUPPORTED_PROFILES;
@@ -59,6 +59,24 @@ final class AlertCallPromptResolver {
 			array_keys(self::SUPPORTED_PROFILES),
 			self::REJECTED_LANGUAGE_FAMILIES
 		)));
+	}
+
+	/**
+	 * @return array{evaluated:bool,prompt_mapping_type:string}
+	 */
+	public function languageEvaluation(string $language): array {
+		$family = $this->languageFamily($language);
+		if (isset(self::SUPPORTED_PROFILES[$family])) {
+			return [
+				'evaluated' => true,
+				'prompt_mapping_type' => (string)self::SUPPORTED_PROFILES[$family]['prompt_mapping_type'],
+			];
+		}
+
+		return [
+			'evaluated' => in_array($family, self::REJECTED_LANGUAGE_FAMILIES, true),
+			'prompt_mapping_type' => '',
+		];
 	}
 
 	/**

@@ -558,7 +558,7 @@ $promptResolver = new \FreePBX\modules\Repeatcaller\AlertCallPromptResolver();
 $supportedProfiles = $promptResolver->supportedProfiles();
 assert_same('english', $supportedProfiles['en']['profile'], 'English must be a maintainer-approved native profile');
 assert_same('french', $supportedProfiles['fr']['profile'], 'French must be a maintainer-approved native profile');
-assert_same(true, $supportedProfiles['fr']['adapted_wording'], 'French must be explicitly identified as the supported adapted-wording profile');
+assert_same('adapted', $supportedProfiles['fr']['prompt_mapping_type'], 'French must be explicitly identified as the supported adapted prompt mapping type');
 assert_true(!isset($supportedProfiles['es']) && !isset($supportedProfiles['de']), 'Spanish and German must remain fallback-only until maintainers add supported profiles');
 assert_same(
 	['profile' => 'english', 'generated_language' => 'en'],

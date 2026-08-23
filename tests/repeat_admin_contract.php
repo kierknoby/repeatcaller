@@ -700,7 +700,7 @@ $frenchLanguageStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupp
 assert_same(true, $frenchLanguageStatus['languages'][1]['complete'], 'status must report a complete French native profile from actual prompt files');
 assert_same(true, $frenchLanguageStatus['languages'][1]['native'], 'status must classify French as a native profile');
 assert_same(true, $frenchLanguageStatus['languages'][1]['supported'], 'status must classify French as a maintainer-supported profile independently of inventory');
-assert_same(true, $frenchLanguageStatus['languages'][1]['adapted_wording'], 'status must expose French as the approved adapted-wording profile');
+assert_same('adapted', $frenchLanguageStatus['languages'][1]['prompt_mapping_type'], 'status must expose French as the approved adapted prompt mapping type');
 unlink($alertFrenchDirectory . '/conf-thereare.wav');
 $incompleteFrenchStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($alertSoundVarlib . '/sounds'))->status();
 assert_same(true, $incompleteFrenchStatus['languages'][1]['supported'], 'missing inventory must not demote the official French profile from supported status');
@@ -735,6 +735,11 @@ $languageSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($a
 $languageStatus = $languageSupport->status();
 assert_same(['en', 'en_GB', 'en_AU', 'en_NZ'], (new \FreePBX\modules\Repeatcaller\AlertCallPromptResolver())->supportedProfiles()['en']['candidates'], 'English fallback candidates must match available Asterisk sound-pack locale names and ordering');
 assert_same(['en', 'fr', 'de', 'es'], (new \FreePBX\modules\Repeatcaller\AlertCallPromptResolver())->evaluatedLanguageFamilies(), 'native-support evaluation metadata must include supported English/French and rejected German/Spanish families');
+assert_same(['evaluated' => true, 'prompt_mapping_type' => 'original'], $languageSupport->languageEvaluation('en'), 'generic English must use the canonical original prompt mapping type');
+assert_same(['evaluated' => true, 'prompt_mapping_type' => 'original'], $languageSupport->languageEvaluation('en_GB'), 'British English must verify the original prompt mapping type');
+assert_same(['evaluated' => true, 'prompt_mapping_type' => 'adapted'], $languageSupport->languageEvaluation('fr'), 'French adaptation must come from its approved prompt mapping type');
+assert_same(['evaluated' => true, 'prompt_mapping_type' => ''], $languageSupport->languageEvaluation('es'), 'evaluated rejected Spanish must not claim a supported prompt mapping type');
+assert_same(['evaluated' => false, 'prompt_mapping_type' => ''], $languageSupport->languageEvaluation('it'), 'an unevaluated locale must have neither evaluation nor prompt mapping type metadata');
 assert_same(true, $languageSupport->isEvaluatedLanguage('de_DE'), 'regional German locales must inherit the evaluated rejection classification');
 assert_same(false, $languageSupport->isEvaluatedLanguage('it'), 'a discovered locale without evaluation metadata must remain untested');
 assert_same(true, $languageStatus['fallback_available'], 'complete English prompt files must expose an available fallback profile');
@@ -2814,6 +2819,8 @@ assert_true(strpos($jsSource, "availableCodecs.join(', ')") !== false, 'refreshe
 assert_true((bool)preg_match('/row\.locale[\s\S]*availableCodecs\.join[\s\S]*append\(\$status\)[\s\S]*row\.alert_call_language[\s\S]*append\(\$\(\'<td\/\>\'\)\.append\(\$sampleButton\)\)/', $jsSource), 'refreshed language table rows must preserve Locale, Available Codecs, Status, Alert Call Language, and Sample order');
 assert_true(strpos($viewSource, 'class="btn btn-xs btn-default rc-alert-call-language-sample"') !== false, 'each language row must render an icon play button in the Sample column');
 assert_true(strpos($controllerSource, "_('Native and Original')") !== false && strpos($controllerSource, "_('Native but Adapted')") !== false && strpos($controllerSource, "_('Rejected → Fallback')") !== false && strpos($controllerSource, "_('Untested → Fallback')") !== false, 'language rows must expose the four operator-facing status labels');
+assert_true(strpos($controllerSource, "['prompt_mapping_type'] === 'adapted'") !== false && strpos($controllerSource, "['prompt_mapping_type'] === 'original'") !== false, 'native status classification must use prompt mapping type metadata');
+assert_true(strpos($controllerSource, "strpos(\$selectedCode, 'fr_')") === false, 'native adaptation status must not be inferred from a French locale name');
 assert_true(strpos($controllerSource, "_('Native')") === false && strpos($controllerSource, "_('French adapted')") === false, 'language rows must not expose retired status or playback-language wording');
 assert_true(strpos($controllerSource, "_('Active / Preferred')") === false && strpos($controllerSource, "_('Active / Fallback')") === false && strpos($controllerSource, "_('Fallback only')") === false && strpos($controllerSource, "_('Active/unavailable')") === false, 'language status labels must not duplicate active-row state');
 assert_true(strpos($controllerSource, "_('Active/native')") === false && strpos($controllerSource, "_('Active fallback')") === false && strpos($controllerSource, "_('Uses fallback')") === false, 'language status rows must not expose retired technical wording');
