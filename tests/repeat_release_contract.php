@@ -201,7 +201,7 @@ assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should i
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
 assert_true(strpos($readmeSource, '### 1.0.2, patch release, 23 August 2026') !== false, 'README should include the 1.0.2 release history heading');
-assert_true(strpos($readmeSource, 'resolved playback languages, and concise `Native` or `Unavailable` status') !== false, 'README release history should document the simplified Alert Call language statuses');
+assert_true(strpos($readmeSource, 'resolved playback languages, and clear original, adapted, or fallback status') !== false, 'README release history should document the Alert Call language status categories');
 assert_true(strpos($readmeSource, 'acceptance scenarios using the same prompt resolution as live Alert Calls') !== false, 'README release history should document Alert Call language sample playback');
 assert_true(strpos($readmeSource, '### 1.0.1, patch release, 6 August 2026') !== false, 'README should include the 1.0.1 release history heading');
 assert_true(strpos($readmeSource, 'Rule explanation-row styling is now consistent across enabled, disabled,') !== false && strpos($readmeSource, 'temporary Status, and editing states.') !== false, 'README should record the 1.0.1 explanation-row styling consistency fix');

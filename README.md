@@ -448,7 +448,8 @@ columns appear in this order:
 - **Locale:** Raw Asterisk/FreePBX locale identifier.
 - **Available Codecs:** Shows the audio codecs available for the required Alert
   Call prompt set for this language/locale.
-- **Status:** Whether the locale is Native or Unavailable for native playback.
+- **Status:** Whether playback is Native and Original, Native but Adapted, or
+  Untested / Fallback.
 - **Alert Call Language:** The actual language Repeat Caller will play.
 - **Sample:** Allows administrators to test the generated Alert Call audio.
 
@@ -459,12 +460,13 @@ sound files outside the Alert Call prompt set. A listed codec shows that require
 prompt files are available in that format; read it together with Status and Alert
 Call Language to determine whether the complete native set is usable.
 
-`Native` means the locale has a complete required Alert Call prompt set and the
-Alert Call Language matches that locale, including complete `en`, regional
-English, and French profiles. `Unavailable` means the locale cannot provide
-native Alert Call playback, including incomplete and unsupported locales. The
-Alert Call Language column still shows the language that will actually play.
-Active-row highlighting and candidate ordering do not determine the status. The
+`Native and Original` means the locale has a complete Alert Call prompt set using
+the original voice recordings. `Native but Adapted` means the locale has a
+complete set using adapted or localised voice recordings. `Untested / Fallback`
+means verified native support is unavailable, so another available Alert Call
+language will be used. The Alert Call Language column always shows the language
+that will actually play. Active-row highlighting and candidate ordering do not
+determine the status. The
 Sample button rotates through Repeat, Invert, and acceptance audio using that
 row's resolved Alert Call language. Rules do not configure language, and
 production does not expose developer profile overrides.
@@ -780,7 +782,7 @@ Future release consideration:
   while preserving nested Asterisk prompt paths; candidate fallback is explicit.
 - Retains language-aware `SAY NUMBER` and `SAY DIGITS` handling.
 - Adds an Alert Call Language table showing installed locales, available codecs,
-  resolved playback languages, and concise `Native` or `Unavailable` status
+  resolved playback languages, and clear original, adapted, or fallback status
   independently of the highlighted active FreePBX language.
 - Adds per-language sample playback that rotates through Repeat, Invert, and
   acceptance scenarios using the same prompt resolution as live Alert Calls.

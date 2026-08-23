@@ -125,7 +125,7 @@ Multilingual Alert Call checks:
 	with no French fragments.
 - Confirm the Alert Call Language table appears in Global Settings above
 	Default Country Code and shows Language, Locale, Available Codecs, Alert Call
-	Language, Status, and Sample columns.
+	Status, Alert Call Language, and Sample columns.
 - Confirm Available Codecs lists each format found on required Alert Call prompt
 	files once, using a clear comma-separated list when multiple formats are
 	available.
@@ -140,17 +140,18 @@ Multilingual Alert Call checks:
 	their displayed complete English fallback without using partial regional audio.
 - Remove a required prompt and confirm the sample is rejected rather than
 	playing a partial or invalid message.
-- Confirm complete `en`, regional English, and French rows that resolve to their
-	own locale show `Native`, regardless of active state or fallback candidate
-	ordering.
-- Confirm the Status column uses only `Native` and `Unavailable`, with incomplete
-	and unsupported locales marked `Unavailable` regardless of active-row state.
+- Confirm complete `en` and regional English rows that use their original voice
+	recordings show `Native and Original` regardless of active state.
+- Confirm complete French rows show `Native but Adapted` and Alert Call Language
+	shows `French`.
+- Confirm incomplete and unsupported locales show `Untested / Fallback`, while
+	Alert Call Language shows the language that will actually play.
 - Confirm the table column order is Language, Locale, Available Codecs, Status,
 	Alert Call Language, and Sample before and after a manual refresh.
 - Confirm English and French remain maintainer-supported native profiles even
-	when inventory reports one incomplete, with French labelled as adapted wording.
-- Confirm installed Spanish or German files remain `Unavailable` for native
-	playback and no developer language override is exposed to admins.
+	when inventory reports one incomplete, with adaptation reported in Status.
+- Confirm installed Spanish or German files remain `Untested / Fallback` and no
+	developer language override is exposed to admins.
 - Confirm active supported and unsupported languages show their native or exact
 	English fallback behavior, installed unsupported languages remain visible,
 	no rule language selector exists, and generated language follows the active
