@@ -710,6 +710,8 @@ assert_same(false, (bool)($frenchNativeResponse['status'] ?? true), 'a complete 
 file_put_contents($alertEnglishDirectory . '/warning.wav', 'audio');
 $frenchNativeResponse = $frenchNativeSaveMethod->invoke($frenchNativeController);
 assert_same(true, (bool)($frenchNativeResponse['status'] ?? false), 'a complete French native profile must allow Alert Call activation once the global English fallback is complete');
+mkdir($alertSoundVarlib . '/sounds/es', 0777, true);
+mkdir($alertSoundVarlib . '/sounds/de_DE', 0777, true);
 FreePBX::setSoundLanguage('es');
 $languageSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($alertSoundVarlib . '/sounds');
 $languageStatus = $languageSupport->status();
@@ -721,12 +723,41 @@ assert_same('english', $spanishResolution['profile'], 'an unsupported language m
 assert_same('en_US', $spanishResolution['fallback_language'], 'unsupported-language status must expose the validated English fallback target');
 $supportStatusMethod = new ReflectionMethod($frenchNativeController, 'alertCallLanguageSupportStatus');
 $supportStatusMethod->setAccessible(true);
+$statusRowsMethod = new ReflectionMethod($frenchNativeController, 'alertCallLanguageStatusRows');
+$statusRowsMethod->setAccessible(true);
 $activeLanguageStatus = $supportStatusMethod->invoke($frenchNativeController);
-assert_same('es', $activeLanguageStatus['active_language'], 'capability report must show the active FreePBX language independently of supported profiles');
-assert_same('en_US', $activeLanguageStatus['active_selection']['language'], 'capability report must show the exact validated locale selected for unsupported active languages');
-assert_same('en_US', $activeLanguageStatus['active_selection']['fallback_language'], 'unsupported active languages must be identified as using the validated English fallback');
+assert_same(['rows'], array_keys($activeLanguageStatus), 'controller must expose only clean operator-facing language table data');
+$spanishStatusRows = array_values(array_filter($activeLanguageStatus['rows'], function (array $row): bool {
+	return ($row['language'] ?? '') === 'Spanish';
+}));
+assert_same(1, count($spanishStatusRows), 'administrator status must include the active unsupported Spanish locale');
+assert_same('Spanish', $spanishStatusRows[0]['language'], 'administrator status must use a readable name for Spanish');
+assert_same(true, $spanishStatusRows[0]['installed'], 'administrator status must report an installed unsupported active locale');
+assert_same('English (US)', $spanishStatusRows[0]['alert_call_language'], 'administrator status must show the exact language Alert Call uses for Spanish');
+assert_same('Active fallback', $spanishStatusRows[0]['status'], 'administrator status must identify Spanish as the active fallback row');
+$germanStatusRows = array_values(array_filter($activeLanguageStatus['rows'], function (array $row): bool {
+	return ($row['language'] ?? '') === 'German';
+}));
+assert_same(1, count($germanStatusRows), 'administrator status must retain installed unsupported languages that are not active');
+assert_same('English (US)', $germanStatusRows[0]['alert_call_language'], 'installed unsupported languages must show the exact language Alert Call will use');
+assert_same('Uses fallback', $germanStatusRows[0]['status'], 'installed unsupported languages must show their runtime fallback outcome');
+$americanEnglishRows = array_values(array_filter($activeLanguageStatus['rows'], function (array $row): bool {
+	return ($row['language'] ?? '') === 'English (US)';
+}));
+assert_same(1, count($americanEnglishRows), 'administrator status must identify the installed en_US locale');
+assert_same('English (US)', $americanEnglishRows[0]['alert_call_language'], 'en_US must show the exact language Alert Call will use');
+assert_same('Fallback', $americanEnglishRows[0]['status'], 'the validated en_US locale must be marked as the fallback');
+FreePBX::setSoundLanguage('fr');
+$activeFrenchStatus = $supportStatusMethod->invoke($frenchNativeController);
+$frenchStatusRows = array_values(array_filter($activeFrenchStatus['rows'], function (array $row): bool {
+	return ($row['language'] ?? '') === 'French';
+}));
+assert_same(1, count($frenchStatusRows), 'administrator status must include the active supported French locale');
+assert_same('French adapted', $frenchStatusRows[0]['alert_call_language'], 'administrator status must identify the approved French playback language');
+assert_same('Active/native', $frenchStatusRows[0]['status'], 'administrator status must state that active French uses its native profile');
+FreePBX::setSoundLanguage('es');
 assert_same(2, count($languageStatus['supported_profiles']), 'capability status must list only maintainer-supported English and French profiles');
-assert_same(['en_US', 'fr'], $languageStatus['installed_languages'], 'installed language reporting must contain only actual locale directories');
+assert_same(['de_DE', 'en_US', 'es', 'fr'], $languageStatus['installed_languages'], 'installed language reporting must include supported and unsupported actual locale directories');
 
 $genericEnglishRoot = sys_get_temp_dir() . '/repeatcaller-generic-en-' . bin2hex(random_bytes(4));
 mkdir($genericEnglishRoot . '/en', 0777, true);
@@ -740,20 +771,63 @@ assert_same(null, \FreePBX\modules\Repeatcaller\AlertCallPromptInventory::discov
 assert_same('en', $genericEnglishStatus['supported_profiles'][0]['detected_language'], 'generic en must be selected only when the capability resolver explicitly reaches the en candidate');
 assert_same('', $genericEnglishStatus['supported_profiles'][1]['detected_language'], 'a supported profile with no installed candidate directory must not display a fabricated locale code');
 assert_same(['en'], $genericEnglishStatus['installed_languages'], 'installed language reporting must include en while excluding Asterisk tmp and custom sound directories');
-$genericEnglishResolution = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($genericEnglishRoot))->resolve('en_US');
+$genericEnglishSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($genericEnglishRoot);
+$genericEnglishResolution = $genericEnglishSupport->resolve('en_US');
 assert_same('en', $genericEnglishResolution['language'], 'an unavailable active en_US locale must resolve to the explicitly validated generic en fallback');
 assert_same('en', $genericEnglishResolution['fallback_language'], 'generic en selection for an unavailable active locale must be identified as fallback');
+$genericEnglishRows = $statusRowsMethod->invoke($frenchNativeController, $genericEnglishSupport, $genericEnglishStatus, 'en');
+assert_same(1, count($genericEnglishRows), 'language table rows must exclude tmp and custom and must not synthesize uninstalled supported languages');
+assert_same('English', $genericEnglishRows[0]['language'], 'generic en must remain visible as the installed language');
 
 $britishEnglishRoot = sys_get_temp_dir() . '/repeatcaller-en-gb-' . bin2hex(random_bytes(4));
 mkdir($britishEnglishRoot . '/en_GB', 0777, true);
+mkdir($britishEnglishRoot . '/es', 0777, true);
+mkdir($britishEnglishRoot . '/de_DE', 0777, true);
+mkdir($britishEnglishRoot . '/tmp', 0777, true);
+mkdir($britishEnglishRoot . '/custom', 0777, true);
 foreach ($alertEnglishPrompts as $alertEnglishPrompt) {
 	file_put_contents($britishEnglishRoot . '/en_GB/' . $alertEnglishPrompt . '.wav', 'audio');
 }
 $britishEnglishStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($britishEnglishRoot))->status();
 assert_same('en_GB', $britishEnglishStatus['supported_profiles'][0]['detected_language'], 'an installed en_GB candidate must be reported as en_GB when en_US is absent');
-assert_same(['en_GB'], $britishEnglishStatus['installed_languages'], 'en_GB-only inventory must report the actual en_GB directory');
-$britishEnglishResolution = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($britishEnglishRoot))->resolve('en_US');
+assert_same(['de_DE', 'en_GB', 'es'], $britishEnglishStatus['installed_languages'], 'inventory must report supported and unsupported language directories while excluding tmp and custom');
+$britishEnglishSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($britishEnglishRoot);
+$britishEnglishResolution = $britishEnglishSupport->resolve('en_US');
 assert_same('en_GB', $britishEnglishResolution['language'], 'an unavailable active en_US locale must resolve to the exact validated en_GB fallback');
+$britishStatusRows = $statusRowsMethod->invoke($frenchNativeController, $britishEnglishSupport, $britishEnglishStatus, 'fr');
+$britishEnglishRows = array_values(array_filter($britishStatusRows, function (array $row): bool {
+	return ($row['language'] ?? '') === 'English (UK)';
+}));
+assert_same(1, count($britishEnglishRows), 'administrator status must identify the installed en_GB locale as English (UK)');
+assert_same('English (UK)', $britishEnglishRows[0]['alert_call_language'], 'en_GB must show the exact language Alert Call will use');
+assert_same('Fallback', $britishEnglishRows[0]['status'], 'the validated en_GB locale must be marked as the fallback');
+$uninstalledActiveFrenchRows = array_values(array_filter($britishStatusRows, function (array $row): bool {
+	return ($row['language'] ?? '') === 'French';
+}));
+assert_same(1, count($uninstalledActiveFrenchRows), 'the active FreePBX language must appear even when its sound directory is not installed');
+assert_same(false, $uninstalledActiveFrenchRows[0]['installed'], 'an uninstalled active FreePBX language must be reported as not installed');
+assert_same('English (UK)', $uninstalledActiveFrenchRows[0]['alert_call_language'], 'an uninstalled active language must show the exact fallback Alert Call uses');
+assert_same('Active fallback', $uninstalledActiveFrenchRows[0]['status'], 'an uninstalled active language must be marked as active fallback');
+$activeSpanishRows = $statusRowsMethod->invoke($frenchNativeController, $britishEnglishSupport, $britishEnglishStatus, 'es');
+$britishSpanishRows = array_values(array_filter($activeSpanishRows, function (array $row): bool {
+	return ($row['language'] ?? '') === 'Spanish';
+}));
+assert_same(1, count($britishSpanishRows), 'active installed Spanish must remain visible in the language table');
+assert_same(true, $britishSpanishRows[0]['installed'], 'active Spanish must report its installed sound directory');
+assert_same('English (UK)', $britishSpanishRows[0]['alert_call_language'], 'active Spanish must show the exact en_GB fallback Alert Call uses');
+assert_same('Active fallback', $britishSpanishRows[0]['status'], 'active Spanish must be marked as active fallback');
+$britishGermanRows = array_values(array_filter($activeSpanishRows, function (array $row): bool {
+	return ($row['language'] ?? '') === 'German';
+}));
+assert_same(1, count($britishGermanRows), 'unsupported installed languages must remain visible when they are not active');
+assert_same('English (UK)', $britishGermanRows[0]['alert_call_language'], 'unsupported installed languages must show the exact en_GB fallback');
+assert_same('Uses fallback', $britishGermanRows[0]['status'], 'unsupported installed languages must be marked as using fallback');
+assert_same(3, count($activeSpanishRows), 'tmp and custom directories must not produce language table rows');
+$activeBritishRows = $statusRowsMethod->invoke($frenchNativeController, $britishEnglishSupport, $britishEnglishStatus, 'en_GB');
+$activeBritishEnglishRows = array_values(array_filter($activeBritishRows, function (array $row): bool {
+	return ($row['language'] ?? '') === 'English (UK)';
+}));
+assert_same('Active/native', $activeBritishEnglishRows[0]['status'], 'active en_GB must retain native English behavior');
 
 mkdir($britishEnglishRoot . '/en_US', 0777, true);
 foreach ($alertEnglishPrompts as $alertEnglishPrompt) {
@@ -2564,18 +2638,15 @@ assert_true(strpos($jsSource, 'rc-alert-call-destination-down') === false, 'dest
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-strategy"') !== false, 'rule editor view should include alert call strategy selector');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-keep-trying"') === false, 'rule editor view should not render a global alert-call keep-trying field');
 assert_true(strpos($viewSource, '<select id="rc-rule-alert-call-recording-id" class="form-control">') !== false, 'rule editor view should render a FreePBX-style system recording selector');
-assert_true(substr_count($viewSource, 'id="rc-alert-call-language-support"') === 1, 'admin UI must render one standalone Alert Call system capability report outside per-rule language configuration');
-assert_true(strpos($viewSource, 'Alert Call language capability') !== false, 'language capability section must avoid implying that installed inventory defines support');
-assert_true(strpos($viewSource, 'Alert Call cannot be enabled because the required fallback language prompts are unavailable.') !== false, 'language support section must show the exact incomplete-fallback activation error');
-assert_true(strpos($viewSource, 'Supported Alert Call profiles') !== false && strpos($viewSource, 'Installed detected languages') !== false && strpos($viewSource, 'Active and fallback selection') !== false, 'capability UI must separate product support, installed inventory, and runtime selection');
-assert_true(strpos($viewSource, 'Missing required prompts') !== false && strpos($viewSource, 'Fallback target') !== false, 'supported profile table must expose missing prompts and fallback targets');
-assert_true(strpos($viewSource, "_('Native supported')") !== false, 'language support table must label English as native supported');
-assert_true(strpos($viewSource, "_('Native supported (adapted wording)')") !== false, 'language support table must label French as native supported with adapted wording');
-assert_true(strpos($viewSource, 'Other languages are fallback-only and use the validated English profile.') !== false, 'capability UI must describe unsupported languages without presenting Spanish or German as supported profile rows');
-assert_true(strpos($viewSource, 'Spanish') === false && strpos($viewSource, 'German') === false, 'capability UI must not hardcode fallback-only languages as detected capabilities');
-assert_true(strpos($viewSource, 'Maintainers define supported profiles; installed prompts determine whether each profile is complete and safe.') !== false, 'language capability section must distinguish maintainer support from inventory completeness');
-assert_true(strpos($viewSource, 'This is a system capability report, and rules do not select languages.') !== false, 'language capability section must state that rules do not configure language');
-assert_true(strpos($viewSource, 'Active FreePBX language:') !== false && strpos($viewSource, 'Generated Alert Call selection:') !== false && strpos($viewSource, 'validated English fallback') !== false, 'language capability section must expose the automatic active and fallback runtime decision');
+assert_true(substr_count($viewSource, 'id="rc-alert-call-language-table"') === 1, 'admin UI must render one Alert Call language table');
+assert_true(strpos($viewSource, 'id="rc-alert-call-language-support"') === false && strpos($viewSource, 'Alert Call Language Status') === false, 'admin UI must remove the old Alert Call Language Status panel');
+assert_true(strpos($viewSource, "_('Global Settings')") < strpos($viewSource, 'id="rc-alert-call-language-table"'), 'language table must be inside Global Settings');
+assert_true(strpos($viewSource, 'id="rc-alert-call-language-table"') < strpos($viewSource, "_('Default Country Code')"), 'language table must appear above Default Country Code');
+assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th>") !== false, 'language table must use the four administrator-facing columns');
+assert_true(strpos($viewSource, 'Current FreePBX language') === false, 'language table must not render the active-language diagnostic block');
+assert_true(strpos($viewSource, 'Installed detected languages') === false && strpos($viewSource, 'Active and fallback selection') === false, 'language status must remove separate inventory and runtime diagnostic sections');
+assert_true(strpos($viewSource, 'Maintainers define supported profiles') === false && strpos($viewSource, 'This is a system capability report') === false, 'language status must remove internal architecture explanations');
+assert_true(strpos($viewSource, 'Selected installed code') === false && strpos($viewSource, 'Complete and safe') === false && strpos($viewSource, 'Detected locale') === false, 'language table must not expose retired diagnostic labels');
 assert_true(strpos($viewSource, '<th><?php echo _(\'Suppression\'); ?></th>') !== false, 'rules table should include a Suppression summary column');
 assert_true(strpos($viewSource, '<label><?php echo _(\'Suppression\'); ?></label><input type="number" id="rc-rule-suppression" class="form-control" min="0" placeholder="<?php echo _(\'Default 24hrs\'); ?>"><p class="help-block"><?php echo _(\'Leave blank to use Default 24hrs suppression period or enter 0 to disable.\'); ?></p>') !== false, 'rule editor should expose suppression with default and disabled guidance');
 assert_true(strpos($viewSource, 'systemRecordings: <?php echo json_encode($systemRecordings); ?>') !== false, 'view bootstrap should expose system recording options for editor context');

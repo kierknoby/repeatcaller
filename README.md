@@ -440,11 +440,11 @@ Repeat Caller plays the optional System Recording in its selected language and
 then switches the entire generated message to English. French is the supported
 native non-English generated Alert Call profile in this release.
 
-The standalone Alert Call system capability report separately shows
-maintainer-supported profiles, the exact locale directories installed on the
-PBX, and the active native/fallback selection. Installed inventory does not
-decide which profiles are officially supported. Rules do not configure language,
-and production does not expose developer profile overrides.
+The Alert Call Language Status table in Global Settings shows each relevant PBX
+language, its detected locale and installed state, its Alert Call profile, and
+the native or fallback behavior Alert Call will use. Installed unsupported
+languages remain visible without being promoted to supported profiles. Rules do
+not configure language, and production does not expose developer profile overrides.
 Generated messages automatically use the active FreePBX language when its
 native profile is complete, otherwise they use English. Alert Call cannot be
 enabled unless one complete English `en_US`, `en_GB`, or `en` fallback inventory

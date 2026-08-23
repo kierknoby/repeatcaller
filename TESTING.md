@@ -123,15 +123,17 @@ Multilingual Alert Call checks:
 - Remove one required French prompt and confirm the optional System Recording
 	still plays in French, followed by one coherent English generated message
 	with no French fragments.
-- Confirm the capability report separates supported profiles, exact installed
-	locale directories, and the active native/fallback selection while reporting
-	exact missing prompts and the selected fallback target.
+- Confirm the Alert Call Language Status table appears in Global Settings above
+	Default Country Code and shows Language, Installed, Alert Call profile, and
+	Status columns.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with French labelled as adapted wording.
 - Confirm installed Spanish or German files do not promote either language from
 	fallback-only status and no developer language override is exposed to admins.
-- Confirm the table is a standalone system capability report, no rule language
-	selector exists, and generated language follows the active FreePBX language.
+- Confirm active supported and unsupported languages show their native or exact
+	English fallback behavior, installed unsupported languages remain visible,
+	no rule language selector exists, and generated language follows the active
+	FreePBX language.
 - Remove one required English prompt and confirm Alert Call activation is
 	blocked with the fallback-language error even when a language directory and a
 	complete French native profile exist.

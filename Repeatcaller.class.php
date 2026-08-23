@@ -353,9 +353,82 @@ class Repeatcaller implements \BMO {
 		$support = $this->alertCallLanguageSupport();
 		$status = $support->status();
 		$activeLanguage = $this->resolveFreePBXDefaultLanguage();
-		$status['active_language'] = $activeLanguage;
-		$status['active_selection'] = $support->resolve($activeLanguage);
-		return $status;
+		return ['rows' => $this->alertCallLanguageStatusRows($support, $status, $activeLanguage)];
+	}
+
+	private function alertCallLanguageStatusRows(\FreePBX\modules\Repeatcaller\AlertCallLanguageSupport $support, array $status, string $activeLanguage): array {
+		$locales = array_values((array)($status['installed_languages'] ?? []));
+		if ($activeLanguage !== '' && !$this->containsAlertCallLocale($locales, $activeLanguage)) {
+			$locales[] = $activeLanguage;
+		}
+		natcasesort($locales);
+
+		$installedLanguages = (array)($status['installed_languages'] ?? []);
+		$fallbackLanguage = (string)($status['fallback_language'] ?? '');
+		$rows = [];
+		foreach (array_values($locales) as $locale) {
+			$locale = (string)$locale;
+			$installed = $this->containsAlertCallLocale($installedLanguages, $locale);
+			$active = $activeLanguage !== '' && strcasecmp(str_replace('-', '_', $activeLanguage), str_replace('-', '_', $locale)) === 0;
+			$selection = $support->resolve($locale);
+			$available = !empty($selection['available']);
+			$usesFallback = $available && (string)($selection['fallback_language'] ?? '') !== '';
+			$selectedLanguage = (string)($selection['language'] ?? '');
+			$selectedCode = strtolower(str_replace('-', '_', $selectedLanguage));
+			$alertCallLabel = $available ? $this->alertCallLanguageLabel($selectedLanguage) : _('Unavailable');
+			if (!$usesFallback && ($selectedCode === 'fr' || strpos($selectedCode, 'fr_') === 0)) {
+				$alertCallLabel = _('French adapted');
+			}
+			if ($active) {
+				$statusLabel = $available ? ($usesFallback ? _('Active fallback') : _('Active/native')) : _('Active/unavailable');
+			} elseif ($this->containsAlertCallLocale([$locale], $fallbackLanguage)) {
+				$statusLabel = _('Fallback');
+			} elseif ($usesFallback) {
+				$statusLabel = _('Uses fallback');
+			} elseif ($available) {
+				$statusLabel = _('Native');
+			} else {
+				$statusLabel = _('Unavailable');
+			}
+			$rows[] = [
+				'language' => $this->alertCallLanguageLabel($locale),
+				'installed' => $installed,
+				'alert_call_language' => $alertCallLabel,
+				'status' => $statusLabel,
+				'active' => $active,
+			];
+		}
+		return $rows;
+	}
+
+	private function containsAlertCallLocale(array $locales, string $target): bool {
+		$target = strtolower(str_replace('-', '_', trim($target)));
+		foreach ($locales as $locale) {
+			if (strtolower(str_replace('-', '_', trim((string)$locale))) === $target) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function alertCallLanguageLabel(string $locale): string {
+		$normalised = strtolower(str_replace('-', '_', trim($locale)));
+		$labels = [
+			'de' => _('German'),
+			'de_de' => _('German'),
+			'en' => _('English'),
+			'en_gb' => _('English (UK)'),
+			'en_us' => _('English (US)'),
+			'es' => _('Spanish'),
+			'es_es' => _('Spanish'),
+			'fr' => _('French'),
+			'fr_fr' => _('French'),
+			'it' => _('Italian'),
+			'it_it' => _('Italian'),
+			'ja' => _('Japanese'),
+			'ja_jp' => _('Japanese'),
+		];
+		return $labels[$normalised] ?? $locale;
 	}
 
 	private function canEnableAlertCall(): bool {
