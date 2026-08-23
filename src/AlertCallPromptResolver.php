@@ -9,7 +9,7 @@ final class AlertCallPromptResolver {
 	private const SUPPORTED_PROFILES = [
 		'en' => [
 			'language' => 'English',
-			'candidates' => ['en_US', 'en_GB', 'en'],
+			'candidates' => ['en', 'en_GB', 'en_AU', 'en_NZ'],
 			'profile' => 'english',
 			'adapted_wording' => false,
 		],

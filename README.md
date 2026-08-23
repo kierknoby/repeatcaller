@@ -441,13 +441,16 @@ then switches the entire generated message to English. French is the supported
 native non-English generated Alert Call profile in this release.
 
 The Alert Call Language Status table in Global Settings shows each relevant PBX
-language, its detected locale and installed state, its Alert Call profile, and
-the native or fallback behavior Alert Call will use. Installed unsupported
-languages remain visible without being promoted to supported profiles. Rules do
-not configure language, and production does not expose developer profile overrides.
+language, its installed state, the language Alert Call will actually use, and
+the resulting behavior. `Active / Preferred` is the active FreePBX language
+using its preferred Alert Call language; `Active / Fallback` is the active
+language using English fallback; `Fallback` is the configured English fallback;
+`Native` is an installed supported language; and `Fallback only` is an installed
+language that will use the configured English fallback. Rules do not configure
+language, and production does not expose developer profile overrides.
 Generated messages automatically use the active FreePBX language when its
 native profile is complete, otherwise they use English. Alert Call cannot be
-enabled unless one complete English `en_US`, `en_GB`, or `en` fallback inventory
+enabled unless one complete English `en`, `en_GB`, `en_AU`, or `en_NZ` fallback inventory
 is available. This validates every required summary, caller/DDI, interaction,
 and terminal prompt rather than only checking that a language directory exists.
 System Recordings remain independent and can still play in their selected

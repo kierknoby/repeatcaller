@@ -124,8 +124,11 @@ Multilingual Alert Call checks:
 	still plays in French, followed by one coherent English generated message
 	with no French fragments.
 - Confirm the Alert Call Language Status table appears in Global Settings above
-	Default Country Code and shows Language, Installed, Alert Call profile, and
+	Default Country Code and shows Language, Installed, Alert Call Language, and
 	Status columns.
+- Confirm the Status column uses `Active / Preferred`, `Active / Fallback`,
+	`Fallback`, `Native`, and `Fallback only` as applicable, without exposing
+	internal resolver or profile terminology.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with French labelled as adapted wording.
 - Confirm installed Spanish or German files do not promote either language from
@@ -137,7 +140,7 @@ Multilingual Alert Call checks:
 - Remove one required English prompt and confirm Alert Call activation is
 	blocked with the fallback-language error even when a language directory and a
 	complete French native profile exist.
-- Restore a complete `en_US`, `en_GB`, or `en` inventory and confirm Alert Call
+- Restore a complete `en`, `en_GB`, `en_AU`, or `en_NZ` inventory and confirm Alert Call
 	can be enabled and unsupported languages resolve to that one complete locale.
 - Confirm an `en_US` lookup cannot borrow files from `en`, and candidate ordering
 	reports `en_GB` or `en` only when that exact directory is installed and selected.

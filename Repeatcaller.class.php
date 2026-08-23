@@ -382,11 +382,11 @@ class Repeatcaller implements \BMO {
 				$alertCallLabel = _('French adapted');
 			}
 			if ($active) {
-				$statusLabel = $available ? ($usesFallback ? _('Active fallback') : _('Active/native')) : _('Active/unavailable');
+				$statusLabel = $available ? ($usesFallback ? _('Active / Fallback') : _('Active / Preferred')) : _('Active/unavailable');
 			} elseif ($this->containsAlertCallLocale([$locale], $fallbackLanguage)) {
 				$statusLabel = _('Fallback');
 			} elseif ($usesFallback) {
-				$statusLabel = _('Uses fallback');
+				$statusLabel = _('Fallback only');
 			} elseif ($available) {
 				$statusLabel = _('Native');
 			} else {
@@ -419,7 +419,9 @@ class Repeatcaller implements \BMO {
 			'de' => _('German'),
 			'de_de' => _('German'),
 			'en' => _('English (US)'),
+			'en_au' => _('English (AU)'),
 			'en_gb' => _('English (UK)'),
+			'en_nz' => _('English (NZ)'),
 			'en_us' => _('English (US)'),
 			'es' => _('Spanish'),
 			'es_es' => _('Spanish'),
