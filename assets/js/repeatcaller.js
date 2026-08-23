@@ -483,15 +483,16 @@
 			}).prop('disabled', alertCallSampleLocked || !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
-				.append($('<td/>').text(String(row.locale || '')))
-				.append($('<td/>').append($sampleButton))
-				.append($('<td/>').text(String(row.alert_call_language || '')));
+				.append($('<td/>').text(String(row.locale || '')));
 			if (row.active) {
 				activeLanguage = String(row.language || 'Unknown');
 				$row.addClass('info');
 				$status.empty().append($('<strong/>').text(String(row.status || '')));
 			}
-			$body.append($row.append($status));
+			$body.append($row
+				.append($status)
+				.append($('<td/>').text(String(row.alert_call_language || '')))
+				.append($('<td/>').append($sampleButton)));
 		});
 		$('#rc-active-freepbx-language').text(activeLanguage);
 	}

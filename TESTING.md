@@ -124,8 +124,8 @@ Multilingual Alert Call checks:
 	still plays in French, followed by one coherent English generated message
 	with no French fragments.
 - Confirm the Alert Call Language Status table appears in Global Settings above
-	Default Country Code and shows Language, Locale, Sample, Alert Call Language,
-	and Status columns.
+	Default Country Code and shows Language, Locale, Status, Alert Call Language,
+	and Sample columns.
 - Press each row's Sample play button repeatedly and confirm it rotates through
 	a Repeat alert, an Invert alert, and the acceptance prompt.
 - Confirm a complete French row plays French audio, unsupported languages play
