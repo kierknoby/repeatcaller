@@ -453,16 +453,55 @@ columns appear in this order:
 - **Alert Call Language:** The actual language Repeat Caller will play.
 - **Sample:** Allows administrators to test the generated Alert Call audio.
 
-The table is built from locale directories that exist under the local Asterisk
-sounds directory, `/var/lib/asterisk/sounds`, rather than from the list of
-available or downloadable FreePBX language packs. A language appears when its
-locale directory exists there. Removing a FreePBX language pack can leave its
-sound directory behind; remove `/var/lib/asterisk/sounds/<locale>` if that
-language should no longer appear. The table therefore reports what Repeat Caller
-can actually use from the locally installed audio files.
+Active-row highlighting and candidate ordering do not determine the status.
+Rules do not configure language, and production does not expose developer
+profile overrides.
+
+## Alert Call Language Detection
+
+Languages are detected from locale directories under:
+
+```text
+/var/lib/asterisk/sounds
+```
+
+Detection is based on audio files that Repeat Caller can actually use for
+required Alert Call prompts. This is not the list of available or downloadable
+FreePBX language packs.
 
 If a language pack has been removed but still appears in the Alert Call language
-table, check `/var/lib/asterisk/sounds` for leftover locale directories.
+table:
+
+- Check `/var/lib/asterisk/sounds` for leftover locale directories.
+- Remove `/var/lib/asterisk/sounds/<locale>` if that language should no longer
+  appear.
+
+### Native and Original
+
+A complete required Alert Call prompt set is available from the original voice
+pack.
+
+### Native but Adapted
+
+A complete required Alert Call prompt set is available from an adapted or
+localised voice pack.
+
+### Rejected → Fallback
+
+The locale has been evaluated against the required Alert Call prompt set but
+does not meet the requirements.
+
+### Untested → Fallback
+
+The locale exists locally but has not yet been evaluated against the required
+Alert Call prompt set.
+
+For both fallback states:
+
+- The Alert Call Language column shows the language that will actually be used.
+- Fallback selection behaviour is unchanged.
+
+### Available Codecs
 
 Available Codecs is scoped to audio files whose names belong to the required
 Alert Call prompt set. It does not represent every codec installed in Asterisk,
@@ -471,19 +510,7 @@ sound files outside the Alert Call prompt set. A listed codec shows that require
 prompt files are available in that format; read it together with Status and Alert
 Call Language to determine whether the complete native set is usable.
 
-`Native and Original` means the locale provides all required Alert Call prompts
-using original recordings. `Native but Adapted` means it provides all required
-prompts using adapted or localised recordings. `Rejected → Fallback` means the
-locale was evaluated against the required prompt set and did not meet the
-requirements. `Untested → Fallback` means the locale exists locally but has not
-yet been evaluated. Another available Alert Call language is used for either
-fallback state, and Alert Call Language always shows what will actually play.
-Active-row highlighting and candidate ordering do not determine the status. The
-Sample button rotates through Repeat, Invert, and acceptance audio using that
-row's resolved Alert Call language. Rules do not configure language, and
-production does not expose developer profile overrides.
-
-### Alert Call Samples
+## Alert Call Samples
 
 The Sample button previews the Alert Call experience using generated audio
 sequences. Samples rotate through:
