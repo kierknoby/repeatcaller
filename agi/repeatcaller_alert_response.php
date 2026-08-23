@@ -359,10 +359,10 @@ try {
 		$sessionResult = $interactiveSession->run([
 			'playback_target' => (string)($argv[5] ?? ''),
 			'playback_language' => $playbackLanguage,
-				'recording_language' => (string)($argv[13] ?? ''),
+			'recording_language' => (string)($argv[13] ?? ''),
 			'available_prompts' => repeatcallerAgiAvailablePrompts($playbackLanguage),
-				'fallback_language' => $fallbackProfile['language'],
-				'fallback_prompts' => $fallbackProfile['prompts'],
+			'fallback_language' => $fallbackProfile['language'],
+			'fallback_prompts' => $fallbackProfile['prompts'],
 			'summary_mode' => (string)($argv[6] ?? 'repeat'),
 			'summary_call_count' => (string)($argv[7] ?? '0'),
 			'summary_threshold' => (string)($argv[8] ?? '0'),

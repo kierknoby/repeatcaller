@@ -422,7 +422,7 @@ Operational notes:
 
 - The selected System Recording language takes priority over the global Sound Languages setting and remains independent of the generated summary language.
 - Multilingual summaries use installed standard Asterisk and FreePBX sounds only. Caller and DID values use Asterisk `SAY DIGITS`; counts and observation windows use `SAY NUMBER`.
-- French is an officially supported native profile with adapted wording approved for its standard prompt vocabulary. Repeat alerts speak `conf-thereare`, count, optional DDI, observation window, and caller information; Invert alerts use `queue-less-than` and the threshold with the same essential details. Queue quantity and voicemail count prompts are not used.
+- French is an officially supported native profile with an approved adapted prompt mapping for its standard prompt vocabulary. Repeat alerts speak `conf-thereare`, count, optional DDI, observation window, and caller information; Invert alerts use `queue-less-than` and the threshold with the same essential details. Queue quantity and voicemail count prompts are not used.
 - Spanish and German use the entire established English generated message because their standard inventories do not provide a straightforward complete mapping for all required behavior. Repeat Caller does not ship or require translated recordings.
 - The Alert Call Language table in Global Settings gives administrators visibility of language availability, resolved playback language, and sample playback capability. The active row is highlighted.
 - **Language:** Friendly language name.
@@ -464,8 +464,8 @@ pack.
 
 ### Native but Adapted
 
-A complete required Alert Call prompt set is available from an adapted or
-localised voice pack.
+A complete required Alert Call prompt set is available through an approved
+alternative mapping of source filenames or equivalent prompts.
 
 ### Rejected → Fallback
 

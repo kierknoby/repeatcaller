@@ -418,8 +418,8 @@ language. Native multilingual Alert Calls are assembled only from installed
 standard Asterisk and FreePBX sounds; caller and DID values use `SAY DIGITS`,
 while counts and observation windows use `SAY NUMBER`.
 
-French is an officially supported native profile with maintainer-approved
-adapted wording for its installed standard prompt vocabulary. Repeat alerts use
+French is an officially supported native profile with a maintainer-approved
+adapted prompt mapping for its installed standard prompt vocabulary. Repeat alerts use
 `conf-thereare`, followed by the spoken count,
 optional `telephone-number` and DDI digits, the spoken observation window and
 `minutes`, and caller information where available. Invert alerts use
@@ -483,8 +483,8 @@ pack.
 
 ### Native but Adapted
 
-A complete required Alert Call prompt set is available from an adapted or
-localised voice pack.
+A complete required Alert Call prompt set is available through an approved
+alternative mapping of source filenames or equivalent prompts.
 
 ### Rejected → Fallback
 
