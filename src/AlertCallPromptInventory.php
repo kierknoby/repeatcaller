@@ -6,6 +6,7 @@ namespace FreePBX\modules\Repeatcaller;
 
 final class AlertCallPromptInventory {
 	private const AUDIO_EXTENSIONS = ['alaw', 'g722', 'g729', 'gsm', 'sln', 'sln16', 'ulaw', 'wav', 'wav49'];
+	private const NON_LANGUAGE_DIRECTORIES = ['custom', 'tmp'];
 
 	/**
 	 * @return array<int,string>|null
@@ -77,7 +78,11 @@ final class AlertCallPromptInventory {
 			$entries = new \FilesystemIterator($soundsRoot, \FilesystemIterator::SKIP_DOTS);
 			foreach ($entries as $entry) {
 				$name = $entry->getFilename();
-				if ($entry->isDir() && preg_match('/^[A-Za-z]{2,3}(?:[_-][A-Za-z]{2,8})?$/', $name) === 1) {
+				if (
+					$entry->isDir()
+					&& !in_array(strtolower($name), self::NON_LANGUAGE_DIRECTORIES, true)
+					&& preg_match('/^[A-Za-z]{2,3}(?:[_-][A-Za-z]{2,8})?$/', $name) === 1
+				) {
 					$languages[] = $name;
 				}
 			}

@@ -730,6 +730,8 @@ assert_same(['en_US', 'fr'], $languageStatus['installed_languages'], 'installed 
 
 $genericEnglishRoot = sys_get_temp_dir() . '/repeatcaller-generic-en-' . bin2hex(random_bytes(4));
 mkdir($genericEnglishRoot . '/en', 0777, true);
+mkdir($genericEnglishRoot . '/tmp', 0777, true);
+mkdir($genericEnglishRoot . '/custom', 0777, true);
 foreach ($alertEnglishPrompts as $alertEnglishPrompt) {
 	file_put_contents($genericEnglishRoot . '/en/' . $alertEnglishPrompt . '.wav', 'audio');
 }
@@ -737,7 +739,7 @@ $genericEnglishStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupp
 assert_same(null, \FreePBX\modules\Repeatcaller\AlertCallPromptInventory::discover($genericEnglishRoot, 'en_US'), 'an en_US request must not borrow prompts from an installed generic en directory');
 assert_same('en', $genericEnglishStatus['supported_profiles'][0]['detected_language'], 'generic en must be selected only when the capability resolver explicitly reaches the en candidate');
 assert_same('', $genericEnglishStatus['supported_profiles'][1]['detected_language'], 'a supported profile with no installed candidate directory must not display a fabricated locale code');
-assert_same(['en'], $genericEnglishStatus['installed_languages'], 'generic-only inventory must report the actual en directory');
+assert_same(['en'], $genericEnglishStatus['installed_languages'], 'installed language reporting must include en while excluding Asterisk tmp and custom sound directories');
 $genericEnglishResolution = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($genericEnglishRoot))->resolve('en_US');
 assert_same('en', $genericEnglishResolution['language'], 'an unavailable active en_US locale must resolve to the explicitly validated generic en fallback');
 assert_same('en', $genericEnglishResolution['fallback_language'], 'generic en selection for an unavailable active locale must be identified as fallback');
