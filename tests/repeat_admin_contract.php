@@ -2644,7 +2644,8 @@ assert_true(strpos($viewSource, "_('Global Settings')") < strpos($viewSource, 'i
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-table"') < strpos($viewSource, "_('Default Country Code')"), 'language table must appear above Default Country Code');
 assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th>") !== false, 'language table must use the four administrator-facing columns');
 assert_true(strpos($viewSource, "_('Active FreePBX Language')") !== false, 'language table section must display the active FreePBX language');
-assert_true(strpos($viewSource, 'id="rc-refresh-alert-call-language"') !== false && strpos($viewSource, 'onclick="window.location.reload();"') !== false, 'language table refresh button must reload the current page on demand');
+assert_true(strpos($viewSource, 'id="rc-active-freepbx-language"') !== false && strpos($viewSource, 'id="rc-refresh-alert-call-language"') !== false, 'language table section must expose update targets for active language and manual refresh');
+assert_true(strpos($viewSource, 'window.location.reload') === false, 'language table refresh must not reload the current page');
 assert_true(strpos($viewSource, "_('Refresh the detected language status.')") !== false, 'language table refresh button must explain that it refreshes detected status');
 assert_true(strpos($viewSource, 'setInterval(') === false, 'language status must not add automatic polling');
 assert_true(strpos($viewSource, 'Installed detected languages') === false && strpos($viewSource, 'Active and fallback selection') === false, 'language status must remove separate inventory and runtime diagnostic sections');
@@ -2752,6 +2753,10 @@ $allowedCommands = [
 ];
 assert_true(in_array('invalidcommand', $allowedCommands, true) === false, 'invalid ajax commands should be rejected by allowlist');
 assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'getuichangetoken\'[\s\S]*\];/', $controllerSource), 'AJAX command allowlist must include getuichangetoken');
+assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'getalertcalllanguagestatus\'[\s\S]*\];/', $controllerSource), 'AJAX command allowlist must include getalertcalllanguagestatus');
+assert_true(strpos($controllerSource, "case 'getalertcalllanguagestatus': return \$this->rcHandleGetAlertCallLanguageStatus();") !== false, 'AJAX dispatcher must route getalertcalllanguagestatus to its handler');
+assert_true((bool)preg_match('/private function rcHandleGetAlertCallLanguageStatus\(\): array\s*\{[\s\S]*\$languageStatus\s*=\s*\$this->alertCallLanguageSupportStatus\(\);[\s\S]*\'rows\'\s*=>\s*\(array\)\(\$languageStatus\[\'rows\'\]/', $controllerSource), 'language-status handler must reuse the existing row generation path and expose only table rows');
+assert_true(strpos($controllerSource, "'languageStatus' => \$this->alertCallLanguageSupportStatus()") === false, 'language-status AJAX response must not wrap rows in a redundant languageStatus payload');
 assert_true((bool)preg_match('/case \'getuichangetoken\': return \$this->rcHandleGetUiChangeToken\(\);/', $controllerSource), 'AJAX dispatcher must route getuichangetoken to its handler');
 assert_true((bool)preg_match('/private function rcHandleGetUiChangeToken\(\): array\s*\{[\s\S]*\'changeTokens\'\s*=>\s*\$this->rcRepository\(\)->loadUiChangeTokens\(\),[\s\S]*\}/', $controllerSource), 'change-token handler must return repository-backed section token payload');
 assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'clearalerthistory\'[\s\S]*\];/', $controllerSource), 'AJAX command allowlist must include clearalerthistory');
@@ -2785,6 +2790,11 @@ assert_true(strpos($jsSource, 'rc-clear-suppression') !== false, 'suppressed inc
 assert_true(strpos($jsSource, "$('#rc-clear-alert-history').off('click.repeatcaller').on('click.repeatcaller'") !== false, 'UI should bind explicit Clear Alert History button');
 assert_true(strpos($jsSource, "window.confirm('Run pruning now using the selected retention policies? This removes eligible historical rows and cannot be undone.')") !== false, 'Run Pruning action should require an explicit confirmation prompt');
 assert_true(strpos($jsSource, "ajax('clearalerthistory', {}, function (response) {") !== false, 'Clear Alert History action should call clearalerthistory backend command');
+assert_true(strpos($jsSource, "ajax('getalertcalllanguagestatus', {}, function (response) {") !== false, 'language refresh button must request current rows through AJAX');
+assert_true(strpos($jsSource, 'renderAlertCallLanguageStatus(response.rows || []);') !== false, 'language refresh must update only the language status UI from returned rows');
+assert_true(strpos($jsSource, 'response.languageStatus') === false, 'language refresh must not depend on the removed response wrapper');
+assert_true(strpos($jsSource, '$button.find(\'.fa\').addClass(\'fa-spin\');') !== false && strpos($jsSource, '$button.find(\'.rc-refresh-label\').text(\'Refreshing...\');') !== false, 'language refresh button must show a Bootstrap-compatible loading state');
+assert_true(strpos($jsSource, '$button.find(\'.fa\').removeClass(\'fa-spin\');') !== false && strpos($jsSource, '$button.find(\'.rc-refresh-label\').text(\'Refresh\');') !== false, 'language refresh button must clear its loading state after completion');
 assert_true(strpos($jsSource, "renderAlertHistory((response && response.alertHistory) || []);") !== false, 'Clear Alert History action should refresh the history table from backend response');
 assert_true(strpos($jsSource, "renderSuppressedIncidents(response.suppressedIncidents || []);") !== false, 'suppression-history loader should refresh the table from backend response');
 assert_true(strpos($jsSource, "No rules configured yet.") !== false, 'rules table should render an explicit empty state row when no rules exist');

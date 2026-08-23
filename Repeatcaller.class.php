@@ -22,6 +22,7 @@ class Repeatcaller implements \BMO {
 	const REPEAT_MODE_ESCALATING = 'escalating';
 	const AJAX_COMMANDS = [
 		'getenginestatus',
+		'getalertcalllanguagestatus',
 		'runmonitor',
 		'saveglobalsettings',
 		'getrules',
@@ -223,6 +224,7 @@ class Repeatcaller implements \BMO {
 		try {
 			switch ($command) {
 				case 'getenginestatus': return $this->rcHandleGetEngineStatus();
+				case 'getalertcalllanguagestatus': return $this->rcHandleGetAlertCallLanguageStatus();
 				case 'runmonitor': return $this->rcHandleRunMonitor();
 				case 'saveglobalsettings': return $this->rcHandleSaveGlobalSettings();
 				case 'getrules': return $this->rcHandleGetRules();
@@ -484,6 +486,11 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleGetEngineStatus(): array {
 		return ['status' => true, 'engineStatus' => $this->rcEngineStatus($this->rcSettings())];
+	}
+
+	private function rcHandleGetAlertCallLanguageStatus(): array {
+		$languageStatus = $this->alertCallLanguageSupportStatus();
+		return ['status' => true, 'rows' => (array)($languageStatus['rows'] ?? [])];
 	}
 
 	private function rcHandleRunMonitor(): array {

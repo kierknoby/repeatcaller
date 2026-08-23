@@ -113,7 +113,7 @@ $assetVer = max(
 				<div class="panel-heading"><h3 class="panel-title"><?php echo _('Global Settings'); ?></h3></div>
 				<div class="panel-body">
 					<?php $activeAlertCallLanguage = array_values(array_filter((array)($alertCallLanguageSupport['rows'] ?? []), function (array $row): bool { return !empty($row['active']); })); ?>
-					<p><strong><?php echo _('Active FreePBX Language'); ?>:</strong> <?php echo htmlspecialchars((string)($activeAlertCallLanguage[0]['language'] ?? _('Unknown')), ENT_QUOTES, 'UTF-8'); ?> <button type="button" class="btn btn-xs btn-default" id="rc-refresh-alert-call-language" title="<?php echo htmlspecialchars(_('Refresh the detected language status.'), ENT_QUOTES, 'UTF-8'); ?>" onclick="window.location.reload();"><span class="fa fa-refresh" aria-hidden="true"></span> <?php echo _('Refresh'); ?></button></p>
+					<p><strong><?php echo _('Active FreePBX Language'); ?>:</strong> <span id="rc-active-freepbx-language"><?php echo htmlspecialchars((string)($activeAlertCallLanguage[0]['language'] ?? _('Unknown')), ENT_QUOTES, 'UTF-8'); ?></span> <button type="button" class="btn btn-xs btn-default" id="rc-refresh-alert-call-language" title="<?php echo htmlspecialchars(_('Refresh the detected language status.'), ENT_QUOTES, 'UTF-8'); ?>"><span class="fa fa-refresh" aria-hidden="true"></span> <span class="rc-refresh-label"><?php echo _('Refresh'); ?></span></button></p>
 					<div class="table-responsive">
 						<table class="table table-condensed" id="rc-alert-call-language-table">
 							<thead><tr><th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th></tr></thead>

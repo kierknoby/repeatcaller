@@ -458,6 +458,27 @@
 		});
 	}
 
+	function renderAlertCallLanguageStatus(rows) {
+		rows = $.isArray(rows) ? rows : [];
+		var $body = $('#rc-alert-call-language-table tbody').empty();
+		var activeLanguage = 'Unknown';
+		$.each(rows, function (_, row) {
+			row = row || {};
+			var $status = $('<td/>').text(String(row.status || ''));
+			var $row = $('<tr/>')
+				.append($('<td/>').text(String(row.language || '')))
+				.append($('<td/>').text(row.installed ? 'Yes' : 'No'))
+				.append($('<td/>').text(String(row.alert_call_language || '')));
+			if (row.active) {
+				activeLanguage = String(row.language || 'Unknown');
+				$row.addClass('info');
+				$status.empty().append($('<strong/>').text(String(row.status || '')));
+			}
+			$body.append($row.append($status));
+		});
+		$('#rc-active-freepbx-language').text(activeLanguage);
+	}
+
 	function clearPollTimer() {
 		if (refreshState.timerId !== null) {
 			window.clearTimeout(refreshState.timerId);
@@ -2721,6 +2742,20 @@
 	}
 
 	function bindEvents() {
+		$('#rc-refresh-alert-call-language').off('click.repeatcaller').on('click.repeatcaller', function () {
+			var $button = $(this);
+			$button.prop('disabled', true).addClass('disabled');
+			$button.find('.fa').addClass('fa-spin');
+			$button.find('.rc-refresh-label').text('Refreshing...');
+			ajax('getalertcalllanguagestatus', {}, function (response) {
+				renderAlertCallLanguageStatus(response.rows || []);
+			}, function () {
+				$button.prop('disabled', false).removeClass('disabled').blur();
+				$button.find('.fa').removeClass('fa-spin');
+				$button.find('.rc-refresh-label').text('Refresh');
+			});
+		});
+
 		$(document).off('click.repeatcaller', '.rc-table-show-more').on('click.repeatcaller', '.rc-table-show-more', function () {
 			var tableId = $.trim(String($(this).closest('.rc-table-batch-controls').attr('data-table-id') || ''));
 			if (tableId === '') {
