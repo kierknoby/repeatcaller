@@ -504,9 +504,11 @@ class Repeatcaller implements \BMO {
 
 	private function rcHandleGetAlertCallLanguageSample(): array {
 		require_once __DIR__ . '/src/AlertCallSampleBuilder.php';
+		$settings = $this->rcSettings();
 		$sample = (new \FreePBX\modules\Repeatcaller\AlertCallSampleBuilder($this->alertCallSoundsRoot()))->build(
 			(string)($_REQUEST['language'] ?? ''),
-			(string)($_REQUEST['scenario'] ?? '')
+			(string)($_REQUEST['scenario'] ?? ''),
+			(string)($settings['default_country_code'] ?? '')
 		);
 		if (empty($sample['available'])) {
 			return ['status' => false, 'message' => _('A complete playable sample is not available for this language.')];

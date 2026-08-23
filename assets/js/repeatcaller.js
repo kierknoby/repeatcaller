@@ -60,6 +60,9 @@
 	var alertCallSampleScenarioByLanguage = {};
 	var alertCallSampleSources = [];
 	var alertCallSampleContext = null;
+	var alertCallSampleLocked = false;
+	var alertCallSampleTimerId = null;
+	var alertCallSampleGeneration = 0;
 	var editingRuleId = 0;
 
 	// Country caller number formats for help text examples
@@ -472,9 +475,10 @@
 				type: 'button',
 				'class': 'btn btn-xs btn-default rc-alert-call-language-sample',
 				'data-language': String(row.sample_locale || ''),
+				'data-sample-available': row.sample_available ? '1' : '0',
 				title: 'Play Alert Call language sample.',
 				'aria-label': 'Play Alert Call language sample.'
-			}).prop('disabled', !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
+			}).prop('disabled', alertCallSampleLocked || !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
 				.append($('<td/>').text(row.installed ? 'Yes' : 'No'))
@@ -501,21 +505,57 @@
 		});
 	}
 
-	function playAlertCallSample(clips, onComplete) {
-		if (!alertCallSampleContext || !$.isArray(clips) || clips.length === 0) {
-			showMessage('A playable sample is not available in this browser.', 'error');
-			onComplete();
+	function updateAlertCallSampleButtons() {
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample').each(function () {
+			var $button = $(this);
+			$button.prop('disabled', alertCallSampleLocked || $button.attr('data-sample-available') !== '1');
+			$button.toggleClass('disabled', alertCallSampleLocked);
+		});
+	}
+
+	function finishAlertCallSample(generation) {
+		if (generation !== alertCallSampleGeneration) {
 			return;
 		}
+		if (alertCallSampleTimerId !== null) {
+			window.clearTimeout(alertCallSampleTimerId);
+			alertCallSampleTimerId = null;
+		}
+		alertCallSampleSources = [];
+		alertCallSampleLocked = false;
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner').addClass('fa-play');
+		updateAlertCallSampleButtons();
+	}
+
+	function stopAlertCallSample() {
+		alertCallSampleGeneration += 1;
+		if (alertCallSampleTimerId !== null) {
+			window.clearTimeout(alertCallSampleTimerId);
+			alertCallSampleTimerId = null;
+		}
 		$.each(alertCallSampleSources, function (_, source) {
-			try { source.stop(); } catch (error) {}
+			try { source.onended = null; source.stop(); } catch (error) {}
 		});
 		alertCallSampleSources = [];
+		alertCallSampleLocked = false;
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner').addClass('fa-play');
+		updateAlertCallSampleButtons();
+	}
+
+	function playAlertCallSample(clips, generation) {
+		if (!alertCallSampleContext || !$.isArray(clips) || clips.length === 0) {
+			showMessage('A playable sample is not available in this browser.', 'error');
+			finishAlertCallSample(generation);
+			return;
+		}
 		alertCallSampleContext.resume().then(function () {
 			return Promise.all($.map(clips, function (clip) {
 				return decodeAlertCallSample(alertCallSampleContext, clip);
 			}));
 		}).then(function (buffers) {
+			if (generation !== alertCallSampleGeneration || !alertCallSampleLocked) {
+				return;
+			}
 			var startsAt = alertCallSampleContext.currentTime;
 			$.each(buffers, function (_, buffer) {
 				var source = alertCallSampleContext.createBufferSource();
@@ -525,10 +565,20 @@
 				startsAt += buffer.duration;
 				alertCallSampleSources.push(source);
 			});
-			window.setTimeout(onComplete, Math.max(0, (startsAt - alertCallSampleContext.currentTime) * 1000));
+			if (alertCallSampleSources.length > 0) {
+				alertCallSampleSources[alertCallSampleSources.length - 1].onended = function () {
+					finishAlertCallSample(generation);
+				};
+			}
+			alertCallSampleTimerId = window.setTimeout(function () {
+				finishAlertCallSample(generation);
+			}, Math.max(0, (startsAt - alertCallSampleContext.currentTime) * 1000) + 250);
 		}).catch(function () {
+			if (generation !== alertCallSampleGeneration) {
+				return;
+			}
 			showMessage('The resolved Alert Call sample could not be played.', 'error');
-			onComplete();
+			finishAlertCallSample(generation);
 		});
 	}
 
@@ -2796,37 +2846,47 @@
 
 	function bindEvents() {
 		$(document).off('click.repeatcaller', '.rc-alert-call-language-sample').on('click.repeatcaller', '.rc-alert-call-language-sample', function () {
+			if (alertCallSampleLocked) {
+				return;
+			}
 			var AudioContext = window.AudioContext || window.webkitAudioContext;
 			if (!AudioContext) {
 				showMessage('A playable sample is not available in this browser.', 'error');
 				return;
 			}
-			alertCallSampleContext = alertCallSampleContext || new AudioContext();
-			alertCallSampleContext.resume();
+			try {
+				alertCallSampleContext = alertCallSampleContext || new AudioContext();
+			} catch (error) {
+				showMessage('A playable sample is not available in this browser.', 'error');
+				return;
+			}
 			var $button = $(this);
 			var language = String($button.attr('data-language') || '');
 			var scenarios = ['repeat', 'invert', 'acceptance'];
 			var scenarioIndex = alertCallSampleScenarioByLanguage[language] || 0;
 			var scenario = scenarios[scenarioIndex];
 			var playbackStarted = false;
+			alertCallSampleLocked = true;
+			alertCallSampleGeneration += 1;
+			var generation = alertCallSampleGeneration;
 			alertCallSampleScenarioByLanguage[language] = (scenarioIndex + 1) % scenarios.length;
-			var finish = function () {
-				$button.prop('disabled', false).removeClass('disabled');
-				$button.find('.fa').removeClass('fa-spin fa-spinner').addClass('fa-play');
-			};
-			$button.prop('disabled', true).addClass('disabled');
+			updateAlertCallSampleButtons();
 			$button.find('.fa').removeClass('fa-play').addClass('fa-spinner fa-spin');
 			ajax('getalertcalllanguagesample', {language: language, scenario: scenario}, function (response) {
+				if (generation !== alertCallSampleGeneration) {
+					return;
+				}
 				playbackStarted = true;
-				playAlertCallSample(response.clips || [], finish);
+				playAlertCallSample(response.clips || [], generation);
 			}, function () {
 				if (!playbackStarted) {
-					finish();
+					finishAlertCallSample(generation);
 				}
 			});
 		});
 
 		$('#rc-refresh-alert-call-language').off('click.repeatcaller').on('click.repeatcaller', function () {
+			stopAlertCallSample();
 			var $button = $(this);
 			$button.prop('disabled', true).addClass('disabled');
 			$button.find('.fa').addClass('fa-spin');

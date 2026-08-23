@@ -26,9 +26,9 @@ final class AlertCallSampleBuilder {
 	}
 
 	/**
-	 * @return array{available:bool,language:string,scenario:string,clips:array<int,string>}
+	 * @return array{available:bool,language:string,scenario:string,prompts:array<int,string>,clips:array<int,string>}
 	 */
-	public function build(string $requestedLanguage, string $scenario): array {
+	public function build(string $requestedLanguage, string $scenario, string $defaultCountryCode = ''): array {
 		$scenario = strtolower(trim($scenario));
 		if (!in_array($scenario, self::SCENARIOS, true)) {
 			return $this->unavailable($scenario);
@@ -41,42 +41,71 @@ final class AlertCallSampleBuilder {
 
 		$language = (string)($selection['language'] ?? '');
 		$profile = (string)($selection['profile'] ?? '');
-		$segments = $this->promptResolver->summarySegments([
-				'summary_mode' => $scenario,
-				'summary_call_count' => 3,
-				'summary_threshold' => 2,
-				'summary_window_minutes' => 5,
-				'summary_caller_kind' => 'none',
-				'summary_caller_value' => '',
-				'summary_did_value' => '',
-			], $profile);
+		$segments = $this->promptResolver->summarySegments(
+			$this->sampleContext($scenario, $defaultCountryCode),
+			$profile
+		);
 		if ($scenario === 'acceptance') {
-			$segments = array_slice($segments, -1);
+			$interactionPrompts = $this->promptResolver->interactionPrompts($profile);
+			foreach (['remote_accepted', 'thankyou', 'goodbye'] as $promptName) {
+				$segments[] = ['type' => 'stream', 'value' => $interactionPrompts[$promptName]];
+			}
 		}
 
+		$prompts = [];
 		$clips = [];
 		foreach ($segments as $segment) {
-			$prompt = $this->segmentPrompt($segment);
-			$clip = $prompt !== '' ? $this->audioDataUri($language, $prompt) : '';
-			if ($clip === '') {
+			$segmentPrompts = $this->segmentPrompts($segment);
+			if ($segmentPrompts === []) {
 				return $this->unavailable($scenario);
 			}
-			$clips[] = $clip;
+			foreach ($segmentPrompts as $prompt) {
+				$clip = $this->audioDataUri($language, $prompt);
+				if ($clip === '') {
+					return $this->unavailable($scenario);
+				}
+				$prompts[] = $prompt;
+				$clips[] = $clip;
+			}
 		}
 
-		return ['available' => true, 'language' => $language, 'scenario' => $scenario, 'clips' => $clips];
+		return ['available' => true, 'language' => $language, 'scenario' => $scenario, 'prompts' => $prompts, 'clips' => $clips];
 	}
 
-	private function segmentPrompt(array $segment): string {
+	private function sampleContext(string $scenario, string $defaultCountryCode): array {
+		$countryCode = preg_replace('/\D+/', '', $defaultCountryCode) ?? '';
+		if ($countryCode === '') {
+			$countryCode = '44';
+		}
+		return [
+			'summary_mode' => $scenario === 'invert' ? 'invert' : 'repeat',
+			'summary_call_count' => 3,
+			'summary_threshold' => 2,
+			'summary_window_minutes' => 5,
+			'summary_caller_kind' => $scenario === 'invert' ? 'unknown' : 'numeric',
+			'summary_caller_value' => $countryCode . '7700900123',
+			'summary_did_value' => $countryCode . '2079460123',
+		];
+	}
+
+	/**
+	 * @return array<int,string>
+	 */
+	private function segmentPrompts(array $segment): array {
 		$type = (string)($segment['type'] ?? '');
 		$value = (string)($segment['value'] ?? '');
 		if ($type === 'stream') {
-			return $value;
+			return $value !== '' ? [$value] : [];
 		}
-		if (($type === 'number' || $type === 'digits') && preg_match('/^[0-9]$/', $value) === 1) {
-			return 'digits/' . $value;
+		if ($type === 'number' && preg_match('/^[0-9]$/', $value) === 1) {
+			return ['digits/' . $value];
 		}
-		return '';
+		if ($type === 'digits' && preg_match('/^[0-9]+$/', $value) === 1) {
+			return array_map(static function (string $digit): string {
+				return 'digits/' . $digit;
+			}, str_split($value));
+		}
+		return [];
 	}
 
 	private function audioDataUri(string $language, string $prompt): string {
@@ -152,9 +181,9 @@ final class AlertCallSampleBuilder {
 	}
 
 	/**
-	 * @return array{available:bool,language:string,scenario:string,clips:array<int,string>}
+	 * @return array{available:bool,language:string,scenario:string,prompts:array<int,string>,clips:array<int,string>}
 	 */
 	private function unavailable(string $scenario): array {
-		return ['available' => false, 'language' => '', 'scenario' => $scenario, 'clips' => []];
+		return ['available' => false, 'language' => '', 'scenario' => $scenario, 'prompts' => [], 'clips' => []];
 	}
 }
