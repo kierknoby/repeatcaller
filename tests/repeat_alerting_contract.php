@@ -536,13 +536,16 @@ $languageContext = [
 ];
 $enTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 $agiSession->run($languageContext + ['playback_language' => 'en', 'available_prompts' => $completeEnglishPrompts], $enTransport, function (): bool { return false; });
-$enUsTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
-$agiSession->run($languageContext + ['playback_language' => 'en_US', 'available_prompts' => $completeEnglishPrompts], $enUsTransport, function (): bool { return false; });
 $enGbTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
 $agiSession->run($languageContext + ['playback_language' => 'en_GB', 'available_prompts' => $completeEnglishPrompts], $enGbTransport, function (): bool { return false; });
-assert_same($enTransport->calls, $enUsTransport->calls, 'en and en_US must retain the exact same established prompt order and interaction behavior');
-assert_same($enUsTransport->calls, $enGbTransport->calls, 'en_US and en_GB must retain the exact same established prompt order and interaction behavior');
-assert_true(!array_filter($enUsTransport->calls, static function (array $call): bool {
+$enAuTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run($languageContext + ['playback_language' => 'en_AU', 'available_prompts' => $completeEnglishPrompts], $enAuTransport, function (): bool { return false; });
+$enNzTransport = new FakeInteractiveTransport(array_fill(0, 40, ''));
+$agiSession->run($languageContext + ['playback_language' => 'en_NZ', 'available_prompts' => $completeEnglishPrompts], $enNzTransport, function (): bool { return false; });
+assert_same($enTransport->calls, $enGbTransport->calls, 'en and en_GB must retain the exact same established prompt order and interaction behavior');
+assert_same($enGbTransport->calls, $enAuTransport->calls, 'en_GB and en_AU must retain the exact same established prompt order and interaction behavior');
+assert_same($enAuTransport->calls, $enNzTransport->calls, 'en_AU and en_NZ must retain the exact same established prompt order and interaction behavior');
+assert_true(!array_filter($enNzTransport->calls, static function (array $call): bool {
 	return $call['method'] === 'setVariable' && ($call['name'] ?? '') === 'CHANNEL(language)';
 }), 'English profiles must not reset CHANNEL(language) inside the AGI');
 
@@ -558,13 +561,13 @@ assert_same('french', $supportedProfiles['fr']['profile'], 'French must be a mai
 assert_same(true, $supportedProfiles['fr']['adapted_wording'], 'French must be explicitly identified as the supported adapted-wording profile');
 assert_true(!isset($supportedProfiles['es']) && !isset($supportedProfiles['de']), 'Spanish and German must remain fallback-only until maintainers add supported profiles');
 assert_same(
-	['profile' => 'english', 'generated_language' => 'en_US'],
-	$promptResolver->resolve('en_GB', ['warning'], $languageContext + ['fallback_language' => 'en_US'], $completeEnglishPrompts),
+	['profile' => 'english', 'generated_language' => 'en'],
+	$promptResolver->resolve('en_GB', ['warning'], $languageContext + ['fallback_language' => 'en'], $completeEnglishPrompts),
 	'an incomplete supported English locale must use one validated English fallback locale'
 );
 assert_same(
-	['profile' => 'english', 'generated_language' => 'en_US'],
-	$promptResolver->resolve('en_GB', null, $languageContext + ['fallback_language' => 'en_US'], $completeEnglishPrompts),
+	['profile' => 'english', 'generated_language' => 'en'],
+	$promptResolver->resolve('en_GB', null, $languageContext + ['fallback_language' => 'en'], $completeEnglishPrompts),
 	'an unknown supported English inventory must not be assumed safe when a validated fallback is available'
 );
 assert_same(
@@ -738,21 +741,25 @@ assert_true(!array_filter($unavailableFallbackTransport->calls, static function 
 $inventoryRoot = sys_get_temp_dir() . '/repeatcaller-prompt-inventory-' . bin2hex(random_bytes(4));
 mkdir($inventoryRoot . '/de_DE/followme', 0777, true);
 mkdir($inventoryRoot . '/de', 0777, true);
+mkdir($inventoryRoot . '/en', 0777, true);
 file_put_contents($inventoryRoot . '/de_DE/followme/options.ulaw', 'audio');
 file_put_contents($inventoryRoot . '/de/minutes.wav', 'audio');
 file_put_contents($inventoryRoot . '/de/ignored.txt', 'not audio');
+file_put_contents($inventoryRoot . '/en/warning.ulaw', 'audio');
 $discoveredPrompts = AlertCallPromptInventory::discover($inventoryRoot, 'de-de');
 sort($discoveredPrompts);
 assert_same(['followme/options'], $discoveredPrompts, 'prompt discovery must inspect only the exact requested locale while preserving nested paths and ignoring unsupported extensions');
 assert_same(['minutes'], AlertCallPromptInventory::discover($inventoryRoot, 'de'), 'generic locale prompts must be discovered only when that generic locale is explicitly requested');
-assert_same(null, AlertCallPromptInventory::discover($inventoryRoot, 'en_US'), 'an exact locale request must not silently substitute an installed generic language directory');
+assert_same(null, AlertCallPromptInventory::discover($inventoryRoot, 'en_GB'), 'an exact English candidate request must not silently substitute an installed generic en directory');
 assert_same(null, AlertCallPromptInventory::discover('/path/that/does/not/exist', 'de_DE'), 'failed prompt discovery must return unknown inventory rather than implying completeness');
 unlink($inventoryRoot . '/de_DE/followme/options.ulaw');
 unlink($inventoryRoot . '/de/minutes.wav');
 unlink($inventoryRoot . '/de/ignored.txt');
+unlink($inventoryRoot . '/en/warning.ulaw');
 rmdir($inventoryRoot . '/de_DE/followme');
 rmdir($inventoryRoot . '/de_DE');
 rmdir($inventoryRoot . '/de');
+rmdir($inventoryRoot . '/en');
 rmdir($inventoryRoot);
 
 // Invert mode: threshold 2, window 15 minutes, no caller info, no System Recording.

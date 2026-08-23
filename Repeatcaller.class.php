@@ -23,6 +23,7 @@ class Repeatcaller implements \BMO {
 	const AJAX_COMMANDS = [
 		'getenginestatus',
 		'getalertcalllanguagestatus',
+		'getalertcalllanguagesample',
 		'runmonitor',
 		'saveglobalsettings',
 		'getrules',
@@ -225,6 +226,7 @@ class Repeatcaller implements \BMO {
 			switch ($command) {
 				case 'getenginestatus': return $this->rcHandleGetEngineStatus();
 				case 'getalertcalllanguagestatus': return $this->rcHandleGetAlertCallLanguageStatus();
+				case 'getalertcalllanguagesample': return $this->rcHandleGetAlertCallLanguageSample();
 				case 'runmonitor': return $this->rcHandleRunMonitor();
 				case 'saveglobalsettings': return $this->rcHandleSaveGlobalSettings();
 				case 'getrules': return $this->rcHandleGetRules();
@@ -343,12 +345,15 @@ class Repeatcaller implements \BMO {
 
 	private function alertCallLanguageSupport(): \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport {
 		require_once __DIR__ . '/src/AlertCallLanguageSupport.php';
-		$soundsRoot = '';
+		return new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($this->alertCallSoundsRoot());
+	}
+
+	private function alertCallSoundsRoot(): string {
 		try {
-			$soundsRoot = rtrim((string)\FreePBX::Config()->get('ASTVARLIBDIR'), '/') . '/sounds';
+			return rtrim((string)\FreePBX::Config()->get('ASTVARLIBDIR'), '/') . '/sounds';
 		} catch (\Throwable $e) {
 		}
-		return new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($soundsRoot);
+		return '';
 	}
 
 	private function alertCallLanguageSupportStatus(): array {
@@ -398,6 +403,8 @@ class Repeatcaller implements \BMO {
 				'alert_call_language' => $alertCallLabel,
 				'status' => $statusLabel,
 				'active' => $active,
+				'sample_locale' => $locale,
+				'sample_available' => $available,
 			];
 		}
 		return $rows;
@@ -493,6 +500,23 @@ class Repeatcaller implements \BMO {
 	private function rcHandleGetAlertCallLanguageStatus(): array {
 		$languageStatus = $this->alertCallLanguageSupportStatus();
 		return ['status' => true, 'rows' => (array)($languageStatus['rows'] ?? [])];
+	}
+
+	private function rcHandleGetAlertCallLanguageSample(): array {
+		require_once __DIR__ . '/src/AlertCallSampleBuilder.php';
+		$sample = (new \FreePBX\modules\Repeatcaller\AlertCallSampleBuilder($this->alertCallSoundsRoot()))->build(
+			(string)($_REQUEST['language'] ?? ''),
+			(string)($_REQUEST['scenario'] ?? '')
+		);
+		if (empty($sample['available'])) {
+			return ['status' => false, 'message' => _('A complete playable sample is not available for this language.')];
+		}
+		return [
+			'status' => true,
+			'language' => (string)$sample['language'],
+			'scenario' => (string)$sample['scenario'],
+			'clips' => (array)$sample['clips'],
+		];
 	}
 
 	private function rcHandleRunMonitor(): array {

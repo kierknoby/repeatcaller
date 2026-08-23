@@ -22,6 +22,16 @@ function assert_same($expected, $actual, string $message): void {
 	}
 }
 
+function write_sample_audio_set(string $directory, array $prompts, int $sampleByte): void {
+	foreach ($prompts as $prompt) {
+		$path = $directory . '/' . $prompt . '.ulaw';
+		if (!is_dir(dirname($path))) {
+			mkdir(dirname($path), 0777, true);
+		}
+		file_put_contents($path, str_repeat(chr($sampleByte), 80));
+	}
+}
+
 if (!function_exists('_')) {
 	function _(string $value): string {
 		return $value;
@@ -768,13 +778,13 @@ foreach ($alertEnglishPrompts as $alertEnglishPrompt) {
 	file_put_contents($genericEnglishRoot . '/en/' . $alertEnglishPrompt . '.wav', 'audio');
 }
 $genericEnglishStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($genericEnglishRoot))->status();
-assert_same(null, \FreePBX\modules\Repeatcaller\AlertCallPromptInventory::discover($genericEnglishRoot, 'en_US'), 'an en_US request must not borrow prompts from an installed generic en directory');
+assert_same(null, \FreePBX\modules\Repeatcaller\AlertCallPromptInventory::discover($genericEnglishRoot, 'en_GB'), 'an en_GB request must not borrow prompts from an installed generic en directory');
 assert_same('en', $genericEnglishStatus['supported_profiles'][0]['detected_language'], 'generic en must be selected only when the capability resolver explicitly reaches the en candidate');
 assert_same('', $genericEnglishStatus['supported_profiles'][1]['detected_language'], 'a supported profile with no installed candidate directory must not display a fabricated locale code');
 assert_same(['en'], $genericEnglishStatus['installed_languages'], 'installed language reporting must include en while excluding Asterisk tmp and custom sound directories');
 $genericEnglishSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($genericEnglishRoot);
-$genericEnglishResolution = $genericEnglishSupport->resolve('en_US');
-assert_same('en', $genericEnglishResolution['language'], 'an unavailable active en_US locale must resolve to the explicitly validated generic en fallback');
+$genericEnglishResolution = $genericEnglishSupport->resolve('en_GB');
+assert_same('en', $genericEnglishResolution['language'], 'an unavailable active en_GB locale must resolve to the explicitly validated generic en fallback');
 assert_same('en', $genericEnglishResolution['fallback_language'], 'generic en selection for an unavailable active locale must be identified as fallback');
 $genericEnglishRows = $statusRowsMethod->invoke($frenchNativeController, $genericEnglishSupport, $genericEnglishStatus, 'en');
 assert_same(1, count($genericEnglishRows), 'language table rows must exclude tmp and custom and must not synthesize uninstalled supported languages');
@@ -804,8 +814,8 @@ $britishEnglishStatus = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupp
 assert_same('en_GB', $britishEnglishStatus['supported_profiles'][0]['detected_language'], 'a complete en_GB candidate must be selected when generic en is absent and later candidates are incomplete');
 assert_same(['de_DE', 'en_AU', 'en_GB', 'en_NZ', 'es'], $britishEnglishStatus['installed_languages'], 'inventory must report all installed language directories while excluding tmp and custom');
 $britishEnglishSupport = new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($britishEnglishRoot);
-$britishEnglishResolution = $britishEnglishSupport->resolve('en_US');
-assert_same('en_GB', $britishEnglishResolution['language'], 'an unavailable active en_US locale must resolve to the exact validated en_GB fallback');
+$britishEnglishResolution = $britishEnglishSupport->resolve('en');
+assert_same('en_GB', $britishEnglishResolution['language'], 'an unavailable generic en locale must resolve to the exact validated en_GB fallback');
 $australianEnglishResolution = $britishEnglishSupport->resolve('en_AU');
 assert_same('en_GB', $australianEnglishResolution['language'], 'incomplete en_AU must not be selected instead of the complete en_GB fallback');
 assert_same('en_GB', $australianEnglishResolution['fallback_language'], 'incomplete en_AU must be identified as using en_GB fallback');
@@ -860,6 +870,45 @@ $activeBritishEnglishRows = array_values(array_filter($activeBritishRows, functi
 	return ($row['language'] ?? '') === 'English (UK)';
 }));
 assert_same('Active / Preferred', $activeBritishEnglishRows[0]['status'], 'active en_GB must retain preferred English behavior');
+
+require_once __DIR__ . '/../src/AlertCallSampleBuilder.php';
+$sampleSoundsRoot = sys_get_temp_dir() . '/repeatcaller-language-samples-' . bin2hex(random_bytes(4));
+$sampleEnglishDirectory = $sampleSoundsRoot . '/en_GB';
+$sampleFrenchDirectory = $sampleSoundsRoot . '/fr';
+$sampleAustralianDirectory = $sampleSoundsRoot . '/en_AU';
+$sampleNewZealandDirectory = $sampleSoundsRoot . '/en_NZ';
+mkdir($sampleEnglishDirectory, 0777, true);
+mkdir($sampleFrenchDirectory, 0777, true);
+mkdir($sampleAustralianDirectory, 0777, true);
+mkdir($sampleNewZealandDirectory, 0777, true);
+mkdir($sampleSoundsRoot . '/es', 0777, true);
+write_sample_audio_set($sampleEnglishDirectory, array_merge($alertEnglishPrompts, ['digits/2', 'digits/3', 'digits/5']), 0xff);
+write_sample_audio_set($sampleFrenchDirectory, array_merge($alertFrenchPrompts, ['followme/call-from', 'digits/2', 'digits/3', 'digits/5']), 0xfe);
+write_sample_audio_set($sampleAustralianDirectory, array_slice($alertEnglishPrompts, 0, 5), 0xfd);
+write_sample_audio_set($sampleNewZealandDirectory, array_slice($alertEnglishPrompts, 0, 12), 0xfc);
+$sampleBuilder = new \FreePBX\modules\Repeatcaller\AlertCallSampleBuilder($sampleSoundsRoot);
+$frenchSample = $sampleBuilder->build('fr', 'repeat');
+assert_same(true, $frenchSample['available'], 'a complete native French row must produce a playable sample');
+assert_same('fr', $frenchSample['language'], 'a native French row must play its exact resolved French language');
+assert_true(count($frenchSample['clips']) > 1 && strpos($frenchSample['clips'][0], 'data:audio/wav;base64,') === 0, 'native French sample must contain browser-playable generated audio clips');
+$unsupportedSample = $sampleBuilder->build('es', 'invert');
+assert_same(true, $unsupportedSample['available'], 'an unsupported installed language row must produce a fallback sample');
+assert_same('en_GB', $unsupportedSample['language'], 'an unsupported language row must play the exact resolved English fallback');
+assert_true($frenchSample['clips'][0] !== $unsupportedSample['clips'][0], 'native French and English fallback samples must use audio from their independently resolved locale directories');
+$incompleteAustralianSample = $sampleBuilder->build('en_AU', 'acceptance');
+assert_same(true, $incompleteAustralianSample['available'], 'an incomplete English regional row must produce a fallback sample');
+assert_same('en_GB', $incompleteAustralianSample['language'], 'an incomplete en_AU row must play the complete English fallback instead of its partial inventory');
+$incompleteNewZealandSample = $sampleBuilder->build('en_NZ', 'repeat');
+assert_same(true, $incompleteNewZealandSample['available'], 'a second incomplete English regional row must produce a fallback sample');
+assert_same('en_GB', $incompleteNewZealandSample['language'], 'an incomplete en_NZ row must play the complete English fallback instead of its partial inventory');
+unlink($sampleFrenchDirectory . '/warning.ulaw');
+$incompleteFrenchSample = $sampleBuilder->build('fr', 'repeat');
+assert_same(true, $incompleteFrenchSample['available'], 'a missing native French prompt must still produce a complete fallback sample');
+assert_same('en_GB', $incompleteFrenchSample['language'], 'a missing native French prompt must switch the entire sample to the resolved English fallback');
+unlink($sampleEnglishDirectory . '/warning.ulaw');
+$missingPromptSample = $sampleBuilder->build('es', 'repeat');
+assert_same(false, $missingPromptSample['available'], 'missing required fallback prompts must prevent sample generation');
+assert_same([], $missingPromptSample['clips'], 'missing prompts must not return partial or invalid sample clips');
 
 mkdir($britishEnglishRoot . '/en', 0777, true);
 foreach ($alertEnglishPrompts as $alertEnglishPrompt) {
@@ -2674,7 +2723,8 @@ assert_true(substr_count($viewSource, 'id="rc-alert-call-language-table"') === 1
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-support"') === false && strpos($viewSource, 'Alert Call Language Status') === false, 'admin UI must remove the old Alert Call Language Status panel');
 assert_true(strpos($viewSource, "_('Global Settings')") < strpos($viewSource, 'id="rc-alert-call-language-table"'), 'language table must be inside Global Settings');
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-table"') < strpos($viewSource, "_('Default Country Code')"), 'language table must appear above Default Country Code');
-assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th>") !== false, 'language table must use the four administrator-facing columns');
+assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th><th><?php echo _('Sample'); ?></th>") !== false, 'language table must include the five administrator-facing columns');
+assert_true(strpos($viewSource, 'class="btn btn-xs btn-default rc-alert-call-language-sample"') !== false, 'each language row must render an icon play button in the Sample column');
 assert_true(strpos($controllerSource, "_('Active / Preferred')") !== false && strpos($controllerSource, "_('Active / Fallback')") !== false, 'active language rows must use administrator-facing preferred and fallback labels');
 assert_true(strpos($controllerSource, "_('Fallback only')") !== false && strpos($controllerSource, "_('Native')") !== false && strpos($controllerSource, "_('Fallback')") !== false, 'non-active language rows must use administrator-facing native and fallback labels');
 assert_true(strpos($controllerSource, "_('Active/native')") === false && strpos($controllerSource, "_('Active fallback')") === false && strpos($controllerSource, "_('Uses fallback')") === false, 'language status rows must not expose retired technical wording');
@@ -2791,6 +2841,8 @@ assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'getuichangetoken
 assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'getalertcalllanguagestatus\'[\s\S]*\];/', $controllerSource), 'AJAX command allowlist must include getalertcalllanguagestatus');
 assert_true(strpos($controllerSource, "case 'getalertcalllanguagestatus': return \$this->rcHandleGetAlertCallLanguageStatus();") !== false, 'AJAX dispatcher must route getalertcalllanguagestatus to its handler');
 assert_true((bool)preg_match('/private function rcHandleGetAlertCallLanguageStatus\(\): array\s*\{[\s\S]*\$languageStatus\s*=\s*\$this->alertCallLanguageSupportStatus\(\);[\s\S]*\'rows\'\s*=>\s*\(array\)\(\$languageStatus\[\'rows\'\]/', $controllerSource), 'language-status handler must reuse the existing row generation path and expose only table rows');
+assert_true((bool)preg_match('/const AJAX_COMMANDS = \[[\s\S]*\'getalertcalllanguagesample\'[\s\S]*\];/', $controllerSource), 'AJAX command allowlist must include getalertcalllanguagesample');
+assert_true(strpos($controllerSource, "case 'getalertcalllanguagesample': return \$this->rcHandleGetAlertCallLanguageSample();") !== false, 'AJAX dispatcher must route language sample requests to the sample handler');
 assert_true(strpos($controllerSource, "'languageStatus' => \$this->alertCallLanguageSupportStatus()") === false, 'language-status AJAX response must not wrap rows in a redundant languageStatus payload');
 assert_true((bool)preg_match('/case \'getuichangetoken\': return \$this->rcHandleGetUiChangeToken\(\);/', $controllerSource), 'AJAX dispatcher must route getuichangetoken to its handler');
 assert_true((bool)preg_match('/private function rcHandleGetUiChangeToken\(\): array\s*\{[\s\S]*\'changeTokens\'\s*=>\s*\$this->rcRepository\(\)->loadUiChangeTokens\(\),[\s\S]*\}/', $controllerSource), 'change-token handler must return repository-backed section token payload');
@@ -2826,6 +2878,8 @@ assert_true(strpos($jsSource, "$('#rc-clear-alert-history').off('click.repeatcal
 assert_true(strpos($jsSource, "window.confirm('Run pruning now using the selected retention policies? This removes eligible historical rows and cannot be undone.')") !== false, 'Run Pruning action should require an explicit confirmation prompt');
 assert_true(strpos($jsSource, "ajax('clearalerthistory', {}, function (response) {") !== false, 'Clear Alert History action should call clearalerthistory backend command');
 assert_true(strpos($jsSource, "ajax('getalertcalllanguagestatus', {}, function (response) {") !== false, 'language refresh button must request current rows through AJAX');
+assert_true(strpos($jsSource, "var scenarios = ['repeat', 'invert', 'acceptance'];") !== false, 'language sample button must rotate through Repeat, Invert, and acceptance samples');
+assert_true(strpos($jsSource, "ajax('getalertcalllanguagesample', {language: language, scenario: scenario}") !== false, 'language sample playback must request the row locale and current scenario from the server');
 assert_true(strpos($jsSource, 'renderAlertCallLanguageStatus(response.rows || []);') !== false, 'language refresh must update only the language status UI from returned rows');
 assert_true(strpos($jsSource, 'response.languageStatus') === false, 'language refresh must not depend on the removed response wrapper');
 assert_true(strpos($jsSource, '$button.find(\'.fa\').addClass(\'fa-spin\');') !== false && strpos($jsSource, '$button.find(\'.rc-refresh-label\').text(\'Refreshing...\');') !== false, 'language refresh button must show a Bootstrap-compatible loading state');

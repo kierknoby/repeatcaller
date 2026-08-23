@@ -125,7 +125,14 @@ Multilingual Alert Call checks:
 	with no French fragments.
 - Confirm the Alert Call Language Status table appears in Global Settings above
 	Default Country Code and shows Language, Installed, Alert Call Language, and
-	Status columns.
+	Status and Sample columns.
+- Press each row's Sample play button repeatedly and confirm it rotates through
+	a Repeat alert, an Invert alert, and the acceptance prompt.
+- Confirm a complete French row plays French audio, unsupported languages play
+	the displayed English fallback, and incomplete `en_AU` or `en_NZ` rows play
+	their displayed complete English fallback without using partial regional audio.
+- Remove a required prompt and confirm the sample is rejected rather than
+	playing a partial or invalid message.
 - Confirm the Status column uses `Active / Preferred`, `Active / Fallback`,
 	`Fallback`, `Native`, and `Fallback only` as applicable, without exposing
 	internal resolver or profile terminology.
@@ -142,10 +149,11 @@ Multilingual Alert Call checks:
 	complete French native profile exist.
 - Restore a complete `en`, `en_GB`, `en_AU`, or `en_NZ` inventory and confirm Alert Call
 	can be enabled and unsupported languages resolve to that one complete locale.
-- Confirm an `en_US` lookup cannot borrow files from `en`, and candidate ordering
-	reports `en_GB` or `en` only when that exact directory is installed and selected.
-- Confirm `en`, `en_US`, and `en_GB` retain the established English playback,
-	retry, acceptance, decline, timeout, and accepted-elsewhere behavior.
+- Confirm English locale lookup only uses exact installed candidate directories.
+	Confirm `en`, `en_GB`, `en_AU`, and `en_NZ` are selected only when that exact
+	directory exists and contains the complete required English prompt inventory.
+- Confirm `en`, `en_GB`, `en_AU`, and `en_NZ` retain the established English
+	playback, retry, acceptance, decline, timeout, and accepted-elsewhere behavior.
 
 Timeout and stage-timing checks:
 

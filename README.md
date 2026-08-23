@@ -446,8 +446,10 @@ the resulting behavior. `Active / Preferred` is the active FreePBX language
 using its preferred Alert Call language; `Active / Fallback` is the active
 language using English fallback; `Fallback` is the configured English fallback;
 `Native` is an installed supported language; and `Fallback only` is an installed
-language that will use the configured English fallback. Rules do not configure
-language, and production does not expose developer profile overrides.
+language that will use the configured English fallback. The Sample button rotates
+through Repeat, Invert, and acceptance audio using that row's resolved Alert Call
+language. Rules do not configure language, and production does not expose
+developer profile overrides.
 Generated messages automatically use the active FreePBX language when its
 native profile is complete, otherwise they use English. Alert Call cannot be
 enabled unless one complete English `en`, `en_GB`, `en_AU`, or `en_NZ` fallback inventory
@@ -760,7 +762,7 @@ Future release consideration:
   while preserving nested Asterisk prompt paths; candidate fallback is explicit.
 - Retains language-aware `SAY NUMBER` and `SAY DIGITS` handling.
 - Adds regression coverage for multilingual Alert Call behaviour while
-  preserving existing `en`, `en_US`, and `en_GB` behaviour.
+  preserving existing `en`, `en_GB`, `en_AU`, and `en_NZ` behaviour.
 
 ### 1.0.1, patch release, 6 August 2026
 

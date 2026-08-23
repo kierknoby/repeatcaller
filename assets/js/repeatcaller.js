@@ -57,6 +57,9 @@
 		handleCallerIdUpstream: true,
 		callerId: ''
 	};
+	var alertCallSampleScenarioByLanguage = {};
+	var alertCallSampleSources = [];
+	var alertCallSampleContext = null;
 	var editingRuleId = 0;
 
 	// Country caller number formats for help text examples
@@ -465,6 +468,13 @@
 		$.each(rows, function (_, row) {
 			row = row || {};
 			var $status = $('<td/>').text(String(row.status || ''));
+			var $sampleButton = $('<button/>', {
+				type: 'button',
+				'class': 'btn btn-xs btn-default rc-alert-call-language-sample',
+				'data-language': String(row.sample_locale || ''),
+				title: 'Play Alert Call language sample.',
+				'aria-label': 'Play Alert Call language sample.'
+			}).prop('disabled', !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
 				.append($('<td/>').text(row.installed ? 'Yes' : 'No'))
@@ -474,9 +484,52 @@
 				$row.addClass('info');
 				$status.empty().append($('<strong/>').text(String(row.status || '')));
 			}
-			$body.append($row.append($status));
+			$body.append($row.append($status).append($('<td/>').append($sampleButton)));
 		});
 		$('#rc-active-freepbx-language').text(activeLanguage);
+	}
+
+	function decodeAlertCallSample(context, source) {
+		return new Promise(function (resolve, reject) {
+			var encoded = String(source || '').split(',', 2)[1] || '';
+			var binary = window.atob(encoded);
+			var bytes = new Uint8Array(binary.length);
+			for (var index = 0; index < binary.length; index++) {
+				bytes[index] = binary.charCodeAt(index);
+			}
+			context.decodeAudioData(bytes.buffer, resolve, reject);
+		});
+	}
+
+	function playAlertCallSample(clips, onComplete) {
+		if (!alertCallSampleContext || !$.isArray(clips) || clips.length === 0) {
+			showMessage('A playable sample is not available in this browser.', 'error');
+			onComplete();
+			return;
+		}
+		$.each(alertCallSampleSources, function (_, source) {
+			try { source.stop(); } catch (error) {}
+		});
+		alertCallSampleSources = [];
+		alertCallSampleContext.resume().then(function () {
+			return Promise.all($.map(clips, function (clip) {
+				return decodeAlertCallSample(alertCallSampleContext, clip);
+			}));
+		}).then(function (buffers) {
+			var startsAt = alertCallSampleContext.currentTime;
+			$.each(buffers, function (_, buffer) {
+				var source = alertCallSampleContext.createBufferSource();
+				source.buffer = buffer;
+				source.connect(alertCallSampleContext.destination);
+				source.start(startsAt);
+				startsAt += buffer.duration;
+				alertCallSampleSources.push(source);
+			});
+			window.setTimeout(onComplete, Math.max(0, (startsAt - alertCallSampleContext.currentTime) * 1000));
+		}).catch(function () {
+			showMessage('The resolved Alert Call sample could not be played.', 'error');
+			onComplete();
+		});
 	}
 
 	function clearPollTimer() {
@@ -2742,6 +2795,37 @@
 	}
 
 	function bindEvents() {
+		$(document).off('click.repeatcaller', '.rc-alert-call-language-sample').on('click.repeatcaller', '.rc-alert-call-language-sample', function () {
+			var AudioContext = window.AudioContext || window.webkitAudioContext;
+			if (!AudioContext) {
+				showMessage('A playable sample is not available in this browser.', 'error');
+				return;
+			}
+			alertCallSampleContext = alertCallSampleContext || new AudioContext();
+			alertCallSampleContext.resume();
+			var $button = $(this);
+			var language = String($button.attr('data-language') || '');
+			var scenarios = ['repeat', 'invert', 'acceptance'];
+			var scenarioIndex = alertCallSampleScenarioByLanguage[language] || 0;
+			var scenario = scenarios[scenarioIndex];
+			var playbackStarted = false;
+			alertCallSampleScenarioByLanguage[language] = (scenarioIndex + 1) % scenarios.length;
+			var finish = function () {
+				$button.prop('disabled', false).removeClass('disabled');
+				$button.find('.fa').removeClass('fa-spin fa-spinner').addClass('fa-play');
+			};
+			$button.prop('disabled', true).addClass('disabled');
+			$button.find('.fa').removeClass('fa-play').addClass('fa-spinner fa-spin');
+			ajax('getalertcalllanguagesample', {language: language, scenario: scenario}, function (response) {
+				playbackStarted = true;
+				playAlertCallSample(response.clips || [], finish);
+			}, function () {
+				if (!playbackStarted) {
+					finish();
+				}
+			});
+		});
+
 		$('#rc-refresh-alert-call-language').off('click.repeatcaller').on('click.repeatcaller', function () {
 			var $button = $(this);
 			$button.prop('disabled', true).addClass('disabled');
