@@ -517,6 +517,13 @@
 		});
 	}
 
+	function resetAlertCallSampleButtonAppearance() {
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample')
+			.attr('title', 'Play Alert Call language sample.')
+			.attr('aria-label', 'Play Alert Call language sample.')
+			.find('.fa').removeClass('fa-spin fa-spinner fa-stop').addClass('fa-play');
+	}
+
 	function finishAlertCallSample(generation) {
 		if (generation !== alertCallSampleGeneration) {
 			return;
@@ -529,7 +536,7 @@
 		alertCallSampleLocked = false;
 		alertCallSamplePhase = 'idle';
 		alertCallSampleActiveButton = null;
-		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner fa-stop').addClass('fa-play');
+		resetAlertCallSampleButtonAppearance();
 		updateAlertCallSampleButtons();
 	}
 
@@ -546,7 +553,7 @@
 		alertCallSampleLocked = false;
 		alertCallSamplePhase = 'idle';
 		alertCallSampleActiveButton = null;
-		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner fa-stop').addClass('fa-play');
+		resetAlertCallSampleButtonAppearance();
 		updateAlertCallSampleButtons();
 	}
 
@@ -575,7 +582,10 @@
 			});
 			alertCallSamplePhase = 'playing';
 			if (alertCallSampleActiveButton !== null) {
-				alertCallSampleActiveButton.find('.fa').removeClass('fa-spin fa-spinner fa-play').addClass('fa-stop');
+				alertCallSampleActiveButton
+					.attr('title', 'Stop Alert Call language sample.')
+					.attr('aria-label', 'Stop Alert Call language sample.')
+					.find('.fa').removeClass('fa-spin fa-spinner fa-play').addClass('fa-stop');
 			}
 			updateAlertCallSampleButtons();
 			if (alertCallSampleSources.length > 0) {
