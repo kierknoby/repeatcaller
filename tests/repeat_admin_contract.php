@@ -2789,6 +2789,7 @@ assert_true(strpos($controllerSource, "_('Fallback only')") !== false && strpos(
 assert_true(strpos($controllerSource, "_('Active/native')") === false && strpos($controllerSource, "_('Active fallback')") === false && strpos($controllerSource, "_('Uses fallback')") === false, 'language status rows must not expose retired technical wording');
 assert_true(strpos($viewSource, "_('Active FreePBX Language')") !== false, 'language table section must display the active FreePBX language');
 assert_true(strpos($viewSource, 'id="rc-active-freepbx-language"') !== false && strpos($viewSource, 'id="rc-refresh-alert-call-language"') !== false, 'language table section must expose update targets for active language and manual refresh');
+assert_true((bool)preg_match('/\.repeatcaller #rc-refresh-alert-call-language \{[\s\S]*margin-left: 6px;[\s\S]*\}/', $cssSource), 'language refresh control must retain breathing room after the active language value');
 assert_true(strpos($viewSource, 'window.location.reload') === false, 'language table refresh must not reload the current page');
 assert_true(strpos($viewSource, "_('Refresh the detected language status.')") !== false, 'language table refresh button must explain that it refreshes detected status');
 assert_true(strpos($viewSource, 'setInterval(') === false, 'language status must not add automatic polling');

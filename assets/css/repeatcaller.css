@@ -16,6 +16,10 @@
 	margin-bottom: 6px;
 }
 
+.repeatcaller #rc-refresh-alert-call-language {
+	margin-left: 6px;
+}
+
 .repeatcaller .rc-alert-call-language-sample {
 	display: inline-flex;
 	align-items: center;
