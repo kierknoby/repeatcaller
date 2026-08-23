@@ -79,6 +79,11 @@ final class AlertCallLanguageSupport {
 		);
 	}
 
+	public function isEvaluatedLanguage(string $language): bool {
+		$family = strtolower(explode('_', str_replace('-', '_', trim($language)), 2)[0]);
+		return in_array($family, $this->resolver->evaluatedLanguageFamilies(), true);
+	}
+
 	private function exactInstalledLanguage(string $language): string {
 		$normalised = strtolower(str_replace('-', '_', trim($language)));
 		foreach (AlertCallPromptInventory::installedLanguages($this->soundsRoot) as $installedLanguage) {

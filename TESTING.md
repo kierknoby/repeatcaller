@@ -126,9 +126,19 @@ Multilingual Alert Call checks:
 - Confirm the Alert Call Language table appears in Global Settings above
 	Default Country Code and shows Language, Locale, Available Codecs, Alert Call
 	Status, Alert Call Language, and Sample columns.
+- Confirm the table reflects locale directories under `/var/lib/asterisk/sounds`,
+	not available or downloadable FreePBX language packs, and reports audio files
+	that Repeat Caller can actually use.
+- Confirm a leftover locale directory remains visible after its FreePBX language
+	pack is removed, then remove `/var/lib/asterisk/sounds/<locale>` and confirm the
+	language no longer appears after refresh.
+- If a language pack has been removed but still appears in the Alert Call language
+	table, check `/var/lib/asterisk/sounds` for leftover locale directories.
 - Confirm Available Codecs lists each format found on required Alert Call prompt
 	files once, using a clear comma-separated list when multiple formats are
 	available.
+- Confirm Available Codecs excludes codecs found only in unrelated files elsewhere
+	in the locale directory.
 - Add an unrelated audio file in another recognised format and confirm that
 	format does not appear in Available Codecs.
 - Confirm a partial required prompt set can show Available Codecs while Status
@@ -140,17 +150,21 @@ Multilingual Alert Call checks:
 	their displayed complete English fallback without using partial regional audio.
 - Remove a required prompt and confirm the sample is rejected rather than
 	playing a partial or invalid message.
-- Confirm complete `en` and regional English rows that use their original voice
-	recordings show `Native and Original` regardless of active state.
-- Confirm complete French rows show `Native but Adapted` and Alert Call Language
-	shows `French`.
-- Confirm incomplete and unsupported locales show `Untested / Fallback`, while
-	Alert Call Language shows the language that will actually play.
+- Confirm `Native and Original` means all required Alert Call prompts exist and
+	the original voice pack is used, regardless of active state.
+- Confirm `Native but Adapted` means all required Alert Call prompts exist and an
+	adapted or localised voice pack is used; complete French rows use this status
+	and Alert Call Language shows `French`.
+- Confirm `Rejected → Fallback` means the locale was evaluated against the
+	required prompt set and failed it; verify Spanish, German, and incomplete
+	English/French locales use this status.
+- Confirm `Untested → Fallback` means the locale exists locally but has not been
+	evaluated; Alert Call Language shows the other language that will actually play.
 - Confirm the table column order is Language, Locale, Available Codecs, Status,
 	Alert Call Language, and Sample before and after a manual refresh.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with adaptation reported in Status.
-- Confirm installed Spanish or German files remain `Untested / Fallback` and no
+- Confirm installed Spanish or German files show `Rejected → Fallback` and no
 	developer language override is exposed to admins.
 - Confirm active supported and unsupported languages show their native or exact
 	English fallback behavior, installed unsupported languages remain visible,

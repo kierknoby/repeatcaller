@@ -20,6 +20,7 @@ final class AlertCallPromptResolver {
 			'adapted_wording' => true,
 		],
 	];
+	private const REJECTED_LANGUAGE_FAMILIES = ['de', 'es'];
 
 	private const PROFILE_PROMPTS = [
 		'english' => [
@@ -46,6 +47,18 @@ final class AlertCallPromptResolver {
 	 */
 	public function supportedProfiles(): array {
 		return self::SUPPORTED_PROFILES;
+	}
+
+	/**
+	 * Language families with a completed native-support evaluation.
+	 *
+	 * @return array<int,string>
+	 */
+	public function evaluatedLanguageFamilies(): array {
+		return array_values(array_unique(array_merge(
+			array_keys(self::SUPPORTED_PROFILES),
+			self::REJECTED_LANGUAGE_FAMILIES
+		)));
 	}
 
 	/**
