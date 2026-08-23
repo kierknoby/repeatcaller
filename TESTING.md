@@ -143,14 +143,14 @@ Multilingual Alert Call checks:
 - Confirm complete `en`, regional English, and French rows that resolve to their
 	own locale show `Native`, regardless of active state or fallback candidate
 	ordering.
-- Confirm the Status column uses only `Native`, `Fallback`, and `Unavailable`,
-	without duplicating active-row state or exposing internal resolver terminology.
+- Confirm the Status column uses only `Native` and `Unavailable`, with incomplete
+	and unsupported locales marked `Unavailable` regardless of active-row state.
 - Confirm the table column order is Language, Locale, Available Codecs, Status,
 	Alert Call Language, and Sample before and after a manual refresh.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with French labelled as adapted wording.
-- Confirm installed Spanish or German files do not promote either language from
-	`Fallback` status and no developer language override is exposed to admins.
+- Confirm installed Spanish or German files remain `Unavailable` for native
+	playback and no developer language override is exposed to admins.
 - Confirm active supported and unsupported languages show their native or exact
 	English fallback behavior, installed unsupported languages remain visible,
 	no rule language selector exists, and generated language follows the active
