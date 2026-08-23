@@ -482,6 +482,23 @@ Active-row highlighting and candidate ordering do not determine the status. The
 Sample button rotates through Repeat, Invert, and acceptance audio using that
 row's resolved Alert Call language. Rules do not configure language, and
 production does not expose developer profile overrides.
+
+### Alert Call Samples
+
+The Sample button previews the Alert Call experience using generated audio
+sequences. Samples rotate through:
+
+- Repeat
+- Invert
+- Acceptance
+
+Acceptance previews the completion sequence, including the accepted-elsewhere
+message, thank you prompt, and goodbye prompt.
+
+Samples are previews only and do not simulate a live Alert Call interaction.
+They do not include DTMF input, retries, escalation, or the full call handling
+flow.
+
 Generated messages automatically use the active FreePBX language when its
 native profile is complete, otherwise they use English. Alert Call cannot be
 enabled unless one complete English `en`, `en_GB`, `en_AU`, or `en_NZ` fallback inventory

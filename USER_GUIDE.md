@@ -442,6 +442,23 @@ Operational notes:
 - Alert Call cannot be enabled unless a complete English fallback profile is installed. System Recordings can still use their selected language, but generated Alert Calls require a validated native profile or the validated English fallback.
 - Repeat Caller checks each requested locale directory independently, including nested prompt paths. Approved locale candidates are tried explicitly rather than silently borrowing files from a related directory. If prompt discovery is unavailable or any prompt needed for the native profile is missing, the optional System Recording still plays in its selected language and the complete generated message falls back to English. Native and English words are never mixed within one generated message.
 - Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.
+
+### Alert Call Samples
+
+The Sample button previews the Alert Call experience using generated audio
+sequences. Samples rotate through:
+
+- Repeat
+- Invert
+- Acceptance
+
+Acceptance previews the completion sequence, including the accepted-elsewhere
+message, thank you prompt, and goodbye prompt.
+
+Samples are previews only and do not simulate a live Alert Call interaction.
+They do not include DTMF input, retries, escalation, or the full call handling
+flow.
+
 - Alert Call attempts use a fixed AMI unanswered timeout of 30000 ms
 	(approximately 30 seconds).
 - This timeout is a bounded safety control to prevent indefinite ringing

@@ -203,6 +203,9 @@ assert_true(strpos($readmeSource, '## Release History') !== false, 'README shoul
 assert_true(strpos($readmeSource, '### 1.0.2, patch release, 23 August 2026') !== false, 'README should include the 1.0.2 release history heading');
 assert_true(strpos($readmeSource, 'resolved playback languages, and clear original, adapted, or fallback status') !== false, 'README release history should document the Alert Call language status categories');
 assert_true(strpos($readmeSource, 'acceptance scenarios using the same prompt resolution as live Alert Calls') !== false, 'README release history should document Alert Call language sample playback');
+assert_true(strpos($readmeSource, '### Alert Call Samples') !== false, 'README should include dedicated Alert Call sample guidance');
+assert_true(strpos($readmeSource, 'Acceptance previews the completion sequence, including the accepted-elsewhere') !== false, 'README should explain the Acceptance sample sequence');
+assert_true(strpos($readmeSource, 'They do not include DTMF input, retries, escalation, or the full call handling') !== false, 'README should distinguish samples from live Alert Call interaction');
 assert_true(strpos($readmeSource, '### 1.0.1, patch release, 6 August 2026') !== false, 'README should include the 1.0.1 release history heading');
 assert_true(strpos($readmeSource, 'Rule explanation-row styling is now consistent across enabled, disabled,') !== false && strpos($readmeSource, 'temporary Status, and editing states.') !== false, 'README should record the 1.0.1 explanation-row styling consistency fix');
 assert_true(strpos($readmeSource, '#### Snooze controls') !== false && strpos($readmeSource, 'Adds 30-minute, 3-hour, 6-hour, 12-hour, and 24-hour global Snooze Monitoring options.') !== false, 'README release history should document the added 30-minute and long snooze controls');
