@@ -64,10 +64,19 @@ final class AlertCallLanguageSupport {
 	}
 
 	/**
+	 * Reports formats present on required Alert Call prompts for this locale.
+	 *
 	 * @return array<int,string>
 	 */
-	public function installedCodecs(string $language): array {
-		return AlertCallPromptInventory::installedCodecs($this->soundsRoot, $language);
+	public function availableCodecs(string $language): array {
+		$family = strtolower(explode('_', str_replace('-', '_', trim($language)), 2)[0]);
+		$profiles = $this->resolver->supportedProfiles();
+		$profile = (string)($profiles[$family]['profile'] ?? 'english');
+		return AlertCallPromptInventory::availableCodecs(
+			$this->soundsRoot,
+			$language,
+			$this->resolver->requiredPrompts($profile)
+		);
 	}
 
 	private function exactInstalledLanguage(string $language): string {

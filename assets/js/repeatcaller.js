@@ -472,7 +472,7 @@
 		var activeLanguage = 'Unknown';
 		$.each(rows, function (_, row) {
 			row = row || {};
-			var installedCodecs = $.isArray(row.installed_codecs) ? row.installed_codecs : [];
+			var availableCodecs = $.isArray(row.available_codecs) ? row.available_codecs : [];
 			var $status = $('<td/>').text(String(row.status || ''));
 			var $sampleButton = $('<button/>', {
 				type: 'button',
@@ -485,7 +485,7 @@
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
 				.append($('<td/>').text(String(row.locale || '')))
-				.append($('<td/>').text(installedCodecs.length > 0 ? installedCodecs.join(', ') : '-'))
+				.append($('<td/>').text(availableCodecs.length > 0 ? availableCodecs.join(', ') : '-'))
 				.append($('<td/>').text(String(row.alert_call_language || '')));
 			if (row.active) {
 				activeLanguage = String(row.language || 'Unknown');

@@ -94,11 +94,18 @@ final class AlertCallPromptInventory {
 	}
 
 	/**
+	 * Reports formats used by files in the supplied required prompt set only.
+	 *
+	 * @param array<int,string> $requiredPrompts
 	 * @return array<int,string>
 	 */
-	public static function installedCodecs(string $soundsRoot, string $language): array {
+	public static function availableCodecs(string $soundsRoot, string $language, array $requiredPrompts): array {
 		$language = trim($language);
 		if ($language === '' || preg_match('/^[A-Za-z0-9_.-]+$/', $language) !== 1 || !is_dir($soundsRoot)) {
+			return [];
+		}
+		$required = array_fill_keys($requiredPrompts, true);
+		if ($required === []) {
 			return [];
 		}
 
@@ -134,7 +141,13 @@ final class AlertCallPromptInventory {
 					continue;
 				}
 				$extension = strtolower((string)$file->getExtension());
-				if (in_array($extension, self::AUDIO_EXTENSIONS, true)) {
+				if (!in_array($extension, self::AUDIO_EXTENSIONS, true)) {
+					continue;
+				}
+				$relativePath = substr($file->getPathname(), strlen($directory) + 1);
+				$relativePrompt = substr($relativePath, 0, -(strlen($extension) + 1));
+				$relativePrompt = str_replace(DIRECTORY_SEPARATOR, '/', $relativePrompt);
+				if (isset($required[$relativePrompt])) {
 					$available[$extension] = true;
 				}
 			}

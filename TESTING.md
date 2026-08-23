@@ -123,11 +123,16 @@ Multilingual Alert Call checks:
 - Remove one required French prompt and confirm the optional System Recording
 	still plays in French, followed by one coherent English generated message
 	with no French fragments.
-- Confirm the Alert Call Language Status table appears in Global Settings above
-	Default Country Code and shows Language, Locale, Installed Codecs, Alert Call
+- Confirm the Alert Call Language table appears in Global Settings above
+	Default Country Code and shows Language, Locale, Available Codecs, Alert Call
 	Language, Status, and Sample columns.
-- Confirm Installed Codecs lists each detected format once for the locale, using
-	a clear comma-separated list when multiple formats are available.
+- Confirm Available Codecs lists each format found on required Alert Call prompt
+	files once, using a clear comma-separated list when multiple formats are
+	available.
+- Add an unrelated audio file in another recognised format and confirm that
+	format does not appear in Available Codecs.
+- Confirm a partial required prompt set can show Available Codecs while Status
+	and Alert Call Language still report fallback behaviour.
 - Press each row's Sample play button repeatedly and confirm it rotates through
 	a Repeat alert, an Invert alert, and the acceptance prompt.
 - Confirm a complete French row plays French audio, unsupported languages play

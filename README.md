@@ -440,16 +440,41 @@ Repeat Caller plays the optional System Recording in its selected language and
 then switches the entire generated message to English. French is the supported
 native non-English generated Alert Call profile in this release.
 
-The Alert Call Language Status table in Global Settings shows each relevant PBX
-language, its installed state, the language Alert Call will actually use, and
-the resulting behavior. `Active / Preferred` is the active FreePBX language
-using its preferred Alert Call language; `Active / Fallback` is the active
-language using English fallback; `Fallback` is the configured English fallback;
-`Native` is an installed supported language; and `Fallback only` is an installed
-language that will use the configured English fallback. The Sample button rotates
-through Repeat, Invert, and acceptance audio using that row's resolved Alert Call
-language. Rules do not configure language, and production does not expose
-developer profile overrides.
+The Alert Call Language table in Global Settings gives administrators visibility
+of language availability, resolved playback language, and sample playback. Its
+columns appear in this order:
+
+- **Language:** Friendly language name.
+- **Locale:** Raw Asterisk/FreePBX locale identifier.
+- **Available Codecs:** Shows the audio codecs available for the required Alert
+  Call prompt set for this language/locale.
+- **Alert Call Language:** The actual language Repeat Caller will play.
+- **Status:** Whether the language is native, active fallback, fallback, or
+  fallback only.
+- **Sample:** Allows administrators to test the generated Alert Call audio.
+
+Available Codecs is scoped to audio files whose names belong to the required
+Alert Call prompt set. It does not represent every codec installed in Asterisk,
+every audio format present elsewhere in the language directory, or unrelated
+sound files outside the Alert Call prompt set. A listed codec shows that required
+prompt files are available in that format; read it together with Status and Alert
+Call Language to determine whether the complete native set is usable.
+
+For example, a locale can exist and contain audio files while its required Alert
+Call prompts remain incomplete, so it can still use fallback behaviour. A locale
+can also list available codecs for the required prompts it does contain while
+resolving to another Alert Call Language because the complete set is unavailable.
+`Native` means the required Alert Call prompts exist and will be played using that
+language.
+
+`Active / Preferred` is the active FreePBX language using its preferred Alert
+Call language; `Active / Fallback` is the active language using English fallback;
+`Fallback` is the configured English fallback; `Native` is an installed supported
+language with its complete required prompt set; and `Fallback only` is an
+installed language that will use the configured English fallback. The Sample
+button rotates through Repeat, Invert, and acceptance audio using that row's
+resolved Alert Call language. Rules do not configure language, and production
+does not expose developer profile overrides.
 Generated messages automatically use the active FreePBX language when its
 native profile is complete, otherwise they use English. Alert Call cannot be
 enabled unless one complete English `en`, `en_GB`, `en_AU`, or `en_NZ` fallback inventory
