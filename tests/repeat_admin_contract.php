@@ -798,6 +798,16 @@ $americanEnglishRows = array_values(array_filter($activeLanguageStatus['rows'], 
 assert_same(1, count($americanEnglishRows), 'administrator status must identify the installed generic en locale as English (US)');
 assert_same('English (US)', $americanEnglishRows[0]['alert_call_language'], 'generic en must show the regional language Alert Call will use');
 assert_same('Native', $americanEnglishRows[0]['status'], 'complete generic en must be marked Native because it resolves to its own locale');
+$languageStatusAjaxMethod = new ReflectionMethod($frenchNativeController, 'rcHandleGetAlertCallLanguageStatus');
+$languageStatusAjaxMethod->setAccessible(true);
+$languageStatusAjaxResponse = $languageStatusAjaxMethod->invoke($frenchNativeController);
+$ajaxAmericanEnglishRows = array_values(array_filter((array)($languageStatusAjaxResponse['rows'] ?? []), function (array $row): bool {
+	return ($row['locale'] ?? '') === 'en';
+}));
+assert_same(true, (bool)($languageStatusAjaxResponse['status'] ?? false), 'language-status AJAX response must succeed');
+assert_same(1, count($ajaxAmericanEnglishRows), 'language-status AJAX response must include the generated en row');
+assert_same('English (US)', $ajaxAmericanEnglishRows[0]['alert_call_language'], 'language-status AJAX response must expose English (US) as the resolved playback language for en');
+assert_same('Native', $ajaxAmericanEnglishRows[0]['status'], 'language-status AJAX response must expose Native for complete self-resolving en');
 FreePBX::setSoundLanguage('fr');
 $activeFrenchStatus = $supportStatusMethod->invoke($frenchNativeController);
 $frenchStatusRows = array_values(array_filter($activeFrenchStatus['rows'], function (array $row): bool {

@@ -381,8 +381,9 @@ class Repeatcaller implements \BMO {
 			$active = $activeLanguage !== '' && strcasecmp(str_replace('-', '_', $activeLanguage), str_replace('-', '_', $locale)) === 0;
 			$selection = $support->resolve($locale);
 			$available = !empty($selection['available']);
-			$usesFallback = $available && (string)($selection['fallback_language'] ?? '') !== '';
 			$selectedLanguage = (string)($selection['language'] ?? '');
+			$resolvesToOwnLocale = $available && $this->containsAlertCallLocale([$selectedLanguage], $locale);
+			$usesFallback = $available && !$resolvesToOwnLocale;
 			$selectedCode = strtolower(str_replace('-', '_', $selectedLanguage));
 			$alertCallLabel = $available ? $this->alertCallLanguageLabel($selectedLanguage) : _('Unavailable');
 			if (!$usesFallback && ($selectedCode === 'fr' || strpos($selectedCode, 'fr_') === 0)) {
