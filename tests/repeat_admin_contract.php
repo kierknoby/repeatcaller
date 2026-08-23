@@ -963,6 +963,9 @@ write_sample_audio_set($sampleFrenchDirectory, array_merge($alertFrenchPrompts, 
 write_sample_audio_set($sampleAustralianDirectory, array_slice($alertEnglishPrompts, 0, 5), 0xfd);
 write_sample_audio_set($sampleNewZealandDirectory, array_slice($alertEnglishPrompts, 0, 12), 0xfc);
 $sampleBuilder = new \FreePBX\modules\Repeatcaller\AlertCallSampleBuilder($sampleSoundsRoot);
+$invalidScenarioSample = $sampleBuilder->build('en_GB', 'unsupported', '44');
+assert_same(false, $invalidScenarioSample['available'], 'an unsupported sample scenario must be rejected');
+assert_same([], $invalidScenarioSample['clips'], 'an unsupported sample scenario must not return audio clips');
 $frenchSample = $sampleBuilder->build('fr', 'repeat', '33');
 assert_same(true, $frenchSample['available'], 'a complete native French row must produce a playable sample');
 assert_same('fr', $frenchSample['language'], 'a native French row must play its exact resolved French language');
@@ -987,6 +990,35 @@ assert_same(['vqplus-accept', 'incoming-call-no-longer-avail', 'auth-thankyou', 
 $incompleteNewZealandSample = $sampleBuilder->build('en_NZ', 'repeat', '64');
 assert_same(true, $incompleteNewZealandSample['available'], 'a second incomplete English regional row must produce a fallback sample');
 assert_same('en_GB', $incompleteNewZealandSample['language'], 'an incomplete en_NZ row must play the complete English fallback instead of its partial inventory');
+$sampleBeepBase = $sampleEnglishDirectory . '/beep';
+unlink($sampleBeepBase . '.ulaw');
+$sampleWavPcm = str_repeat("\0", 160);
+$sampleWav = 'RIFF' . pack('V', 36 + strlen($sampleWavPcm)) . 'WAVEfmt '
+	. pack('VvvVVvv', 16, 1, 1, 8000, 16000, 2, 16)
+	. 'data' . pack('V', strlen($sampleWavPcm)) . $sampleWavPcm;
+$sampleFormats = [
+	'wav' => $sampleWav,
+	'alaw' => str_repeat(chr(0xd5), 80),
+	'sln' => str_repeat("\0", 160),
+	'sln16' => str_repeat("\0", 160),
+];
+foreach ($sampleFormats as $extension => $audio) {
+	file_put_contents($sampleBeepBase . '.' . $extension, $audio);
+	$formatSample = $sampleBuilder->build('en_GB', 'repeat', '44');
+	assert_same(true, $formatSample['available'], strtoupper($extension) . ' input must produce a playable Repeat sample');
+	$decodedBeep = base64_decode(substr($formatSample['clips'][0], strlen('data:audio/wav;base64,')), true);
+	assert_true($decodedBeep !== false && substr($decodedBeep, 0, 4) === 'RIFF' && substr($decodedBeep, 8, 4) === 'WAVE', strtoupper($extension) . ' input must produce WAV browser audio');
+	if ($extension === 'sln' || $extension === 'sln16') {
+		assert_same($extension === 'sln16' ? 16000 : 8000, unpack('V', substr($decodedBeep, 24, 4))[1], strtoupper($extension) . ' conversion must preserve its sample rate');
+	}
+	unlink($sampleBeepBase . '.' . $extension);
+}
+file_put_contents($sampleBeepBase . '.wav', 'invalid wav');
+$invalidAudioSample = $sampleBuilder->build('en_GB', 'repeat', '44');
+assert_same(false, $invalidAudioSample['available'], 'invalid WAV input must fail sample generation safely');
+assert_same([], $invalidAudioSample['clips'], 'invalid WAV input must not return partial audio clips');
+unlink($sampleBeepBase . '.wav');
+file_put_contents($sampleBeepBase . '.ulaw', str_repeat(chr(0xff), 80));
 unlink($sampleFrenchDirectory . '/warning.ulaw');
 $incompleteFrenchSample = $sampleBuilder->build('fr', 'repeat', '33');
 assert_same(true, $incompleteFrenchSample['available'], 'a missing native French prompt must still produce a complete fallback sample');
