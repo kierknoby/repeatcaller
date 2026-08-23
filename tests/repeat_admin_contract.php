@@ -777,7 +777,7 @@ assert_same('en', $genericEnglishResolution['language'], 'an unavailable active 
 assert_same('en', $genericEnglishResolution['fallback_language'], 'generic en selection for an unavailable active locale must be identified as fallback');
 $genericEnglishRows = $statusRowsMethod->invoke($frenchNativeController, $genericEnglishSupport, $genericEnglishStatus, 'en');
 assert_same(1, count($genericEnglishRows), 'language table rows must exclude tmp and custom and must not synthesize uninstalled supported languages');
-assert_same('English', $genericEnglishRows[0]['language'], 'generic en must remain visible as the installed language');
+assert_same('English (US)', $genericEnglishRows[0]['language'], 'generic en must display as English (US) without changing locale resolution');
 
 $britishEnglishRoot = sys_get_temp_dir() . '/repeatcaller-en-gb-' . bin2hex(random_bytes(4));
 mkdir($britishEnglishRoot . '/en_GB', 0777, true);
@@ -2643,7 +2643,10 @@ assert_true(strpos($viewSource, 'id="rc-alert-call-language-support"') === false
 assert_true(strpos($viewSource, "_('Global Settings')") < strpos($viewSource, 'id="rc-alert-call-language-table"'), 'language table must be inside Global Settings');
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-table"') < strpos($viewSource, "_('Default Country Code')"), 'language table must appear above Default Country Code');
 assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th>") !== false, 'language table must use the four administrator-facing columns');
-assert_true(strpos($viewSource, 'Current FreePBX language') === false, 'language table must not render the active-language diagnostic block');
+assert_true(strpos($viewSource, "_('Active FreePBX Language')") !== false, 'language table section must display the active FreePBX language');
+assert_true(strpos($viewSource, 'id="rc-refresh-alert-call-language"') !== false && strpos($viewSource, 'onclick="window.location.reload();"') !== false, 'language table refresh button must reload the current page on demand');
+assert_true(strpos($viewSource, "_('Refresh the detected language status.')") !== false, 'language table refresh button must explain that it refreshes detected status');
+assert_true(strpos($viewSource, 'setInterval(') === false, 'language status must not add automatic polling');
 assert_true(strpos($viewSource, 'Installed detected languages') === false && strpos($viewSource, 'Active and fallback selection') === false, 'language status must remove separate inventory and runtime diagnostic sections');
 assert_true(strpos($viewSource, 'Maintainers define supported profiles') === false && strpos($viewSource, 'This is a system capability report') === false, 'language status must remove internal architecture explanations');
 assert_true(strpos($viewSource, 'Selected installed code') === false && strpos($viewSource, 'Complete and safe') === false && strpos($viewSource, 'Detected locale') === false, 'language table must not expose retired diagnostic labels');

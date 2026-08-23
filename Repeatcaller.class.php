@@ -416,7 +416,7 @@ class Repeatcaller implements \BMO {
 		$labels = [
 			'de' => _('German'),
 			'de_de' => _('German'),
-			'en' => _('English'),
+			'en' => _('English (US)'),
 			'en_gb' => _('English (UK)'),
 			'en_us' => _('English (US)'),
 			'es' => _('Spanish'),
