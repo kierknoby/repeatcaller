@@ -428,8 +428,8 @@ Operational notes:
 - **Language:** Friendly language name.
 - **Locale:** Raw Asterisk/FreePBX locale identifier.
 - **Available Codecs:** Shows the audio codecs available for the required Alert Call prompt set for this language/locale.
-- **Alert Call Language:** The actual language Repeat Caller will play.
 - **Status:** Whether the locale is Native, uses Fallback, or is Unavailable.
+- **Alert Call Language:** The actual language Repeat Caller will play.
 - **Sample:** Allows administrators to test the generated Alert Call audio. Each row's Sample play button rotates through Repeat, Invert, and acceptance audio in the displayed Alert Call language.
 - Available Codecs does not represent every codec installed in Asterisk, every audio file present in the language directory, or unrelated sound files outside the Alert Call prompt set. It reports formats found on files belonging to the required Alert Call prompt vocabulary. Read it with Status and Alert Call Language to determine whether the complete native prompt set is usable.
 - A locale can exist and contain audio files while its required Alert Call prompts remain incomplete, so its status may be Unavailable even though Alert Call Language shows the validated English playback language.

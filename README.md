@@ -1,6 +1,6 @@
 # Repeat Caller 1.0.2 for FreePBX 16 and 17
 
-**Release date:** 22 August 2026
+**Release date:** 23 August 2026
 
 ## Introduction
 
@@ -448,8 +448,8 @@ columns appear in this order:
 - **Locale:** Raw Asterisk/FreePBX locale identifier.
 - **Available Codecs:** Shows the audio codecs available for the required Alert
   Call prompt set for this language/locale.
-- **Alert Call Language:** The actual language Repeat Caller will play.
 - **Status:** Whether the locale is Native, uses Fallback, or is Unavailable.
+- **Alert Call Language:** The actual language Repeat Caller will play.
 - **Sample:** Allows administrators to test the generated Alert Call audio.
 
 Available Codecs is scoped to audio files whose names belong to the required
@@ -761,7 +761,7 @@ Future release consideration:
 
 ## Release History
 
-### 1.0.2, patch release, 22 August 2026
+### 1.0.2, patch release, 23 August 2026
 
 - Improves Alert Call language handling for non-English Asterisk sound
   languages.
@@ -779,6 +779,11 @@ Future release consideration:
 - Discovers prompts recursively within each exact requested locale directory
   while preserving nested Asterisk prompt paths; candidate fallback is explicit.
 - Retains language-aware `SAY NUMBER` and `SAY DIGITS` handling.
+- Adds an Alert Call Language table showing installed locales, available codecs,
+  resolved playback languages, and concise `Native`, `Fallback`, or `Unavailable`
+  status independently of the highlighted active FreePBX language.
+- Adds per-language sample playback that rotates through Repeat, Invert, and
+  acceptance scenarios using the same prompt resolution as live Alert Calls.
 - Adds regression coverage for multilingual Alert Call behaviour while
   preserving existing `en`, `en_GB`, `en_AU`, and `en_NZ` behaviour.
 

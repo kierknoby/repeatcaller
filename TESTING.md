@@ -145,6 +145,8 @@ Multilingual Alert Call checks:
 	ordering.
 - Confirm the Status column uses only `Native`, `Fallback`, and `Unavailable`,
 	without duplicating active-row state or exposing internal resolver terminology.
+- Confirm the table column order is Language, Locale, Available Codecs, Status,
+	Alert Call Language, and Sample before and after a manual refresh.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with French labelled as adapted wording.
 - Confirm installed Spanish or German files do not promote either language from

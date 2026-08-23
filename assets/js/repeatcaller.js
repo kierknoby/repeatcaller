@@ -485,8 +485,7 @@
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
 				.append($('<td/>').text(String(row.locale || '')))
-				.append($('<td/>').text(availableCodecs.length > 0 ? availableCodecs.join(', ') : '-'))
-				.append($('<td/>').text(String(row.alert_call_language || '')));
+				.append($('<td/>').text(availableCodecs.length > 0 ? availableCodecs.join(', ') : '-'));
 			if (row.active) {
 				activeLanguage = String(row.language || 'Unknown');
 				$row.addClass('info');
@@ -494,6 +493,7 @@
 			}
 			$body.append($row
 				.append($status)
+				.append($('<td/>').text(String(row.alert_call_language || '')))
 				.append($('<td/>').append($sampleButton)));
 		});
 		$('#rc-active-freepbx-language').text(activeLanguage);
