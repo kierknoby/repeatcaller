@@ -797,7 +797,7 @@ $americanEnglishRows = array_values(array_filter($activeLanguageStatus['rows'], 
 }));
 assert_same(1, count($americanEnglishRows), 'administrator status must identify the installed generic en locale as English (US)');
 assert_same('English (US)', $americanEnglishRows[0]['alert_call_language'], 'generic en must show the regional language Alert Call will use');
-assert_same('Fallback', $americanEnglishRows[0]['status'], 'the validated generic en locale must be marked as the fallback');
+assert_same('Native', $americanEnglishRows[0]['status'], 'complete generic en must be marked Native because it resolves to its own locale');
 FreePBX::setSoundLanguage('fr');
 $activeFrenchStatus = $supportStatusMethod->invoke($frenchNativeController);
 $frenchStatusRows = array_values(array_filter($activeFrenchStatus['rows'], function (array $row): bool {
@@ -805,7 +805,7 @@ $frenchStatusRows = array_values(array_filter($activeFrenchStatus['rows'], funct
 }));
 assert_same(1, count($frenchStatusRows), 'administrator status must include the active supported French locale');
 assert_same('French adapted', $frenchStatusRows[0]['alert_call_language'], 'administrator status must identify the approved French playback language');
-assert_same('Active / Preferred', $frenchStatusRows[0]['status'], 'administrator status must state that active French uses its preferred language');
+assert_same('Native', $frenchStatusRows[0]['status'], 'complete French must be marked Native because it resolves to its own locale even when active');
 FreePBX::setSoundLanguage('es');
 assert_same(2, count($languageStatus['supported_profiles']), 'capability status must list only maintainer-supported English and French profiles');
 assert_same(['de_DE', 'en', 'es', 'fr'], $languageStatus['installed_languages'], 'installed language reporting must include supported and unsupported actual locale directories');
@@ -870,7 +870,7 @@ $britishEnglishRows = array_values(array_filter($britishStatusRows, function (ar
 }));
 assert_same(1, count($britishEnglishRows), 'administrator status must identify the installed en_GB locale as English (UK)');
 assert_same('English (UK)', $britishEnglishRows[0]['alert_call_language'], 'en_GB must show the regional language Alert Call will use');
-assert_same('Fallback', $britishEnglishRows[0]['status'], 'the validated en_GB locale must be marked as the fallback');
+assert_same('Native', $britishEnglishRows[0]['status'], 'complete en_GB must be marked Native because it resolves to its own locale');
 $uninstalledActiveFrenchRows = array_values(array_filter($britishStatusRows, function (array $row): bool {
 	return ($row['locale'] ?? '') === 'fr';
 }));
@@ -913,7 +913,7 @@ $activeBritishRows = $statusRowsMethod->invoke($frenchNativeController, $british
 $activeBritishEnglishRows = array_values(array_filter($activeBritishRows, function (array $row): bool {
 	return ($row['locale'] ?? '') === 'en_GB';
 }));
-assert_same('Active / Preferred', $activeBritishEnglishRows[0]['status'], 'active en_GB must retain preferred English behavior');
+assert_same('Native', $activeBritishEnglishRows[0]['status'], 'active complete en_GB must remain Native because it resolves to its own locale');
 assert_same('en_GB', $activeBritishEnglishRows[0]['locale'], 'British English row must preserve the raw en_GB locale');
 
 require_once __DIR__ . '/../src/AlertCallSampleBuilder.php';
@@ -2788,8 +2788,8 @@ assert_true(strpos($viewSource, "implode(', ', \$availableCodecs)") !== false, '
 assert_true(strpos($jsSource, "availableCodecs.join(', ')") !== false, 'refreshed language table rows must display multiple available codecs as a clear comma-separated list');
 assert_true((bool)preg_match('/row\.locale[\s\S]*availableCodecs\.join[\s\S]*row\.alert_call_language[\s\S]*append\(\$status\)[\s\S]*append\(\$\(\'<td\/\>\'\)\.append\(\$sampleButton\)\)/', $jsSource), 'refreshed language table rows must preserve Locale, Available Codecs, Alert Call Language, Status, and Sample order');
 assert_true(strpos($viewSource, 'class="btn btn-xs btn-default rc-alert-call-language-sample"') !== false, 'each language row must render an icon play button in the Sample column');
-assert_true(strpos($controllerSource, "_('Active / Preferred')") !== false && strpos($controllerSource, "_('Active / Fallback')") !== false, 'active language rows must use administrator-facing preferred and fallback labels');
-assert_true(strpos($controllerSource, "_('Fallback only')") !== false && strpos($controllerSource, "_('Native')") !== false && strpos($controllerSource, "_('Fallback')") !== false, 'non-active language rows must use administrator-facing native and fallback labels');
+assert_true(strpos($controllerSource, "_('Active / Preferred')") === false && strpos($controllerSource, "_('Active / Fallback')") !== false, 'active language rows must distinguish actual fallback playback without relabelling native playback');
+assert_true(strpos($controllerSource, "_('Fallback only')") !== false && strpos($controllerSource, "_('Native')") !== false && strpos($controllerSource, "_('Fallback')") === false, 'language rows must derive Native and Fallback only from actual resolution rather than fallback candidate ordering');
 assert_true(strpos($controllerSource, "_('Active/native')") === false && strpos($controllerSource, "_('Active fallback')") === false && strpos($controllerSource, "_('Uses fallback')") === false, 'language status rows must not expose retired technical wording');
 assert_true(strpos($viewSource, "_('Active FreePBX Language')") !== false, 'language table section must display the active FreePBX language');
 assert_true(strpos($viewSource, 'id="rc-active-freepbx-language"') !== false && strpos($viewSource, 'id="rc-refresh-alert-call-language"') !== false, 'language table section must expose update targets for active language and manual refresh');

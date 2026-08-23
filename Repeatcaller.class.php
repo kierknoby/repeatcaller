@@ -371,7 +371,6 @@ class Repeatcaller implements \BMO {
 		natcasesort($locales);
 
 		$installedLanguages = (array)($status['installed_languages'] ?? []);
-		$fallbackLanguage = (string)($status['fallback_language'] ?? '');
 		$rows = [];
 		foreach (array_values($locales) as $locale) {
 			$locale = (string)$locale;
@@ -389,10 +388,10 @@ class Repeatcaller implements \BMO {
 			if (!$usesFallback && ($selectedCode === 'fr' || strpos($selectedCode, 'fr_') === 0)) {
 				$alertCallLabel = _('French adapted');
 			}
-			if ($active) {
-				$statusLabel = $available ? ($usesFallback ? _('Active / Fallback') : _('Active / Preferred')) : _('Active/unavailable');
-			} elseif ($this->containsAlertCallLocale([$locale], $fallbackLanguage)) {
-				$statusLabel = _('Fallback');
+			if ($active && $usesFallback) {
+				$statusLabel = _('Active / Fallback');
+			} elseif ($active && !$available) {
+				$statusLabel = _('Active/unavailable');
 			} elseif ($usesFallback) {
 				$statusLabel = _('Fallback only');
 			} elseif ($available) {

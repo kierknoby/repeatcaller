@@ -140,9 +140,12 @@ Multilingual Alert Call checks:
 	their displayed complete English fallback without using partial regional audio.
 - Remove a required prompt and confirm the sample is rejected rather than
 	playing a partial or invalid message.
-- Confirm the Status column uses `Active / Preferred`, `Active / Fallback`,
-	`Fallback`, `Native`, and `Fallback only` as applicable, without exposing
-	internal resolver or profile terminology.
+- Confirm complete `en`, regional English, and French rows that resolve to their
+	own locale show `Native`, regardless of active state or fallback candidate
+	ordering.
+- Confirm the Status column uses `Active / Fallback` only when the active locale
+	resolves to another language and `Fallback only` for equivalent non-active
+	rows, without exposing internal resolver or profile terminology.
 - Confirm English and French remain maintainer-supported native profiles even
 	when inventory reports one incomplete, with French labelled as adapted wording.
 - Confirm installed Spanish or German files do not promote either language from

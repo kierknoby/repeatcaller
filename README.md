@@ -449,8 +449,8 @@ columns appear in this order:
 - **Available Codecs:** Shows the audio codecs available for the required Alert
   Call prompt set for this language/locale.
 - **Alert Call Language:** The actual language Repeat Caller will play.
-- **Status:** Whether the language is native, active fallback, fallback, or
-  fallback only.
+- **Status:** Whether the locale resolves natively, the active locale uses
+  fallback, a non-active locale is fallback only, or playback is unavailable.
 - **Sample:** Allows administrators to test the generated Alert Call audio.
 
 Available Codecs is scoped to audio files whose names belong to the required
@@ -467,14 +467,15 @@ resolving to another Alert Call Language because the complete set is unavailable
 `Native` means the required Alert Call prompts exist and will be played using that
 language.
 
-`Active / Preferred` is the active FreePBX language using its preferred Alert
-Call language; `Active / Fallback` is the active language using English fallback;
-`Fallback` is the configured English fallback; `Native` is an installed supported
-language with its complete required prompt set; and `Fallback only` is an
-installed language that will use the configured English fallback. The Sample
-button rotates through Repeat, Invert, and acceptance audio using that row's
-resolved Alert Call language. Rules do not configure language, and production
-does not expose developer profile overrides.
+`Native` means the locale resolves to its own complete Alert Call prompt set,
+including complete `en`, regional English, and French profiles. `Active /
+Fallback` means the active FreePBX locale resolves to another language, while
+`Fallback only` means a non-active locale resolves to another language.
+`Active/unavailable` and `Unavailable` mean no usable Alert Call language is
+available. Candidate ordering does not determine the displayed status. The
+Sample button rotates through Repeat, Invert, and acceptance audio using that
+row's resolved Alert Call language. Rules do not configure language, and
+production does not expose developer profile overrides.
 Generated messages automatically use the active FreePBX language when its
 native profile is complete, otherwise they use English. Alert Call cannot be
 enabled unless one complete English `en`, `en_GB`, `en_AU`, or `en_NZ` fallback inventory
