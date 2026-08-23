@@ -449,8 +449,7 @@ columns appear in this order:
 - **Available Codecs:** Shows the audio codecs available for the required Alert
   Call prompt set for this language/locale.
 - **Alert Call Language:** The actual language Repeat Caller will play.
-- **Status:** Whether the locale resolves natively, the active locale uses
-  fallback, a non-active locale is fallback only, or playback is unavailable.
+- **Status:** Whether the locale is Native, uses Fallback, or is Unavailable.
 - **Sample:** Allows administrators to test the generated Alert Call audio.
 
 Available Codecs is scoped to audio files whose names belong to the required
@@ -460,19 +459,12 @@ sound files outside the Alert Call prompt set. A listed codec shows that require
 prompt files are available in that format; read it together with Status and Alert
 Call Language to determine whether the complete native set is usable.
 
-For example, a locale can exist and contain audio files while its required Alert
-Call prompts remain incomplete, so it can still use fallback behaviour. A locale
-can also list available codecs for the required prompts it does contain while
-resolving to another Alert Call Language because the complete set is unavailable.
-`Native` means the required Alert Call prompts exist and will be played using that
-language.
-
 `Native` means the locale resolves to its own complete Alert Call prompt set,
-including complete `en`, regional English, and French profiles. `Active /
-Fallback` means the active FreePBX locale resolves to another language, while
-`Fallback only` means a non-active locale resolves to another language.
-`Active/unavailable` and `Unavailable` mean no usable Alert Call language is
-available. Candidate ordering does not determine the displayed status. The
+including complete `en`, regional English, and French profiles. `Fallback` means
+an unsupported locale resolves to a validated English Alert Call language.
+`Unavailable` means a supported locale candidate does not have its complete
+native prompt set. Active-row highlighting does not alter the status. Candidate
+ordering does not determine the displayed status. The
 Sample button rotates through Repeat, Invert, and acceptance audio using that
 row's resolved Alert Call language. Rules do not configure language, and
 production does not expose developer profile overrides.
