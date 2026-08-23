@@ -63,6 +63,8 @@
 	var alertCallSampleLocked = false;
 	var alertCallSampleTimerId = null;
 	var alertCallSampleGeneration = 0;
+	var alertCallSamplePhase = 'idle';
+	var alertCallSampleActiveButton = null;
 	var editingRuleId = 0;
 
 	// Country caller number formats for help text examples
@@ -481,14 +483,15 @@
 			}).prop('disabled', alertCallSampleLocked || !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
 			var $row = $('<tr/>')
 				.append($('<td/>').text(String(row.language || '')))
-				.append($('<td/>').text(row.installed ? 'Yes' : 'No'))
+				.append($('<td/>').text(String(row.locale || '')))
+				.append($('<td/>').append($sampleButton))
 				.append($('<td/>').text(String(row.alert_call_language || '')));
 			if (row.active) {
 				activeLanguage = String(row.language || 'Unknown');
 				$row.addClass('info');
 				$status.empty().append($('<strong/>').text(String(row.status || '')));
 			}
-			$body.append($row.append($status).append($('<td/>').append($sampleButton)));
+			$body.append($row.append($status));
 		});
 		$('#rc-active-freepbx-language').text(activeLanguage);
 	}
@@ -508,8 +511,9 @@
 	function updateAlertCallSampleButtons() {
 		$('#rc-alert-call-language-table .rc-alert-call-language-sample').each(function () {
 			var $button = $(this);
-			$button.prop('disabled', alertCallSampleLocked || $button.attr('data-sample-available') !== '1');
-			$button.toggleClass('disabled', alertCallSampleLocked);
+			var isStopControl = alertCallSamplePhase === 'playing' && alertCallSampleActiveButton !== null && $button.is(alertCallSampleActiveButton);
+			var disabled = $button.attr('data-sample-available') !== '1' || (alertCallSampleLocked && !isStopControl);
+			$button.prop('disabled', disabled).toggleClass('disabled', disabled);
 		});
 	}
 
@@ -523,7 +527,9 @@
 		}
 		alertCallSampleSources = [];
 		alertCallSampleLocked = false;
-		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner').addClass('fa-play');
+		alertCallSamplePhase = 'idle';
+		alertCallSampleActiveButton = null;
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner fa-stop').addClass('fa-play');
 		updateAlertCallSampleButtons();
 	}
 
@@ -538,7 +544,9 @@
 		});
 		alertCallSampleSources = [];
 		alertCallSampleLocked = false;
-		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner').addClass('fa-play');
+		alertCallSamplePhase = 'idle';
+		alertCallSampleActiveButton = null;
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample .fa').removeClass('fa-spin fa-spinner fa-stop').addClass('fa-play');
 		updateAlertCallSampleButtons();
 	}
 
@@ -565,6 +573,11 @@
 				startsAt += buffer.duration;
 				alertCallSampleSources.push(source);
 			});
+			alertCallSamplePhase = 'playing';
+			if (alertCallSampleActiveButton !== null) {
+				alertCallSampleActiveButton.find('.fa').removeClass('fa-spin fa-spinner fa-play').addClass('fa-stop');
+			}
+			updateAlertCallSampleButtons();
 			if (alertCallSampleSources.length > 0) {
 				alertCallSampleSources[alertCallSampleSources.length - 1].onended = function () {
 					finishAlertCallSample(generation);
@@ -2846,7 +2859,11 @@
 
 	function bindEvents() {
 		$(document).off('click.repeatcaller', '.rc-alert-call-language-sample').on('click.repeatcaller', '.rc-alert-call-language-sample', function () {
+			var $button = $(this);
 			if (alertCallSampleLocked) {
+				if (alertCallSamplePhase === 'playing' && alertCallSampleActiveButton !== null && $button.is(alertCallSampleActiveButton)) {
+					stopAlertCallSample();
+				}
 				return;
 			}
 			var AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -2860,13 +2877,14 @@
 				showMessage('A playable sample is not available in this browser.', 'error');
 				return;
 			}
-			var $button = $(this);
 			var language = String($button.attr('data-language') || '');
 			var scenarios = ['repeat', 'invert', 'acceptance'];
 			var scenarioIndex = alertCallSampleScenarioByLanguage[language] || 0;
 			var scenario = scenarios[scenarioIndex];
 			var playbackStarted = false;
 			alertCallSampleLocked = true;
+			alertCallSamplePhase = 'loading';
+			alertCallSampleActiveButton = $button;
 			alertCallSampleGeneration += 1;
 			var generation = alertCallSampleGeneration;
 			alertCallSampleScenarioByLanguage[language] = (scenarioIndex + 1) % scenarios.length;

@@ -736,18 +736,45 @@ $supportStatusMethod = new ReflectionMethod($frenchNativeController, 'alertCallL
 $supportStatusMethod->setAccessible(true);
 $statusRowsMethod = new ReflectionMethod($frenchNativeController, 'alertCallLanguageStatusRows');
 $statusRowsMethod->setAccessible(true);
+$languageLabelMethod = new ReflectionMethod($frenchNativeController, 'alertCallLanguageLabel');
+$languageLabelMethod->setAccessible(true);
+$expectedLanguageLabels = [
+	'cs' => 'Czech',
+	'de_DE' => 'German (Germany)',
+	'en' => 'English (US)',
+	'en_GB' => 'English (UK)',
+	'en_AU' => 'English (AU)',
+	'en_NZ' => 'English (NZ)',
+	'es' => 'Spanish (Spain)',
+	'es_419' => 'Spanish (Latin America and Caribbean)',
+	'fa' => 'Persian',
+	'fr' => 'French (France)',
+	'he' => 'Hebrew',
+	'it' => 'Italian (Italy)',
+	'ja' => 'Japanese (Japan)',
+	'nl' => 'Dutch (Netherlands)',
+	'no' => 'Norwegian',
+	'pl' => 'Polish',
+	'ru' => 'Russian',
+	'sv' => 'Swedish',
+	'tr' => 'Turkish',
+];
+foreach ($expectedLanguageLabels as $locale => $label) {
+	assert_same($label, $languageLabelMethod->invoke($frenchNativeController, $locale), 'language table must use the configured friendly label for ' . $locale);
+}
 $activeLanguageStatus = $supportStatusMethod->invoke($frenchNativeController);
 assert_same(['rows'], array_keys($activeLanguageStatus), 'controller must expose only clean operator-facing language table data');
 $spanishStatusRows = array_values(array_filter($activeLanguageStatus['rows'], function (array $row): bool {
-	return ($row['language'] ?? '') === 'Spanish';
+	return ($row['language'] ?? '') === 'Spanish (Spain)';
 }));
 assert_same(1, count($spanishStatusRows), 'administrator status must include the active unsupported Spanish locale');
-assert_same('Spanish', $spanishStatusRows[0]['language'], 'administrator status must use a readable name for Spanish');
+assert_same('Spanish (Spain)', $spanishStatusRows[0]['language'], 'administrator status must use the long-form name for Spanish');
+assert_same('es', $spanishStatusRows[0]['locale'], 'administrator status must preserve the exact Spanish locale directory');
 assert_same(true, $spanishStatusRows[0]['installed'], 'administrator status must report an installed unsupported active locale');
 assert_same('English (US)', $spanishStatusRows[0]['alert_call_language'], 'administrator status must show the exact language Alert Call uses for Spanish');
 assert_same('Active / Fallback', $spanishStatusRows[0]['status'], 'administrator status must identify Spanish as the active fallback row');
 $germanStatusRows = array_values(array_filter($activeLanguageStatus['rows'], function (array $row): bool {
-	return ($row['language'] ?? '') === 'German';
+	return ($row['language'] ?? '') === 'German (Germany)';
 }));
 assert_same(1, count($germanStatusRows), 'administrator status must retain installed unsupported languages that are not active');
 assert_same('English (US)', $germanStatusRows[0]['alert_call_language'], 'installed unsupported languages must show the exact language Alert Call will use');
@@ -761,7 +788,7 @@ assert_same('Fallback', $americanEnglishRows[0]['status'], 'the validated generi
 FreePBX::setSoundLanguage('fr');
 $activeFrenchStatus = $supportStatusMethod->invoke($frenchNativeController);
 $frenchStatusRows = array_values(array_filter($activeFrenchStatus['rows'], function (array $row): bool {
-	return ($row['language'] ?? '') === 'French';
+	return ($row['language'] ?? '') === 'French (France)';
 }));
 assert_same(1, count($frenchStatusRows), 'administrator status must include the active supported French locale');
 assert_same('French adapted', $frenchStatusRows[0]['alert_call_language'], 'administrator status must identify the approved French playback language');
@@ -789,6 +816,7 @@ assert_same('en', $genericEnglishResolution['fallback_language'], 'generic en se
 $genericEnglishRows = $statusRowsMethod->invoke($frenchNativeController, $genericEnglishSupport, $genericEnglishStatus, 'en');
 assert_same(1, count($genericEnglishRows), 'language table rows must exclude tmp and custom and must not synthesize uninstalled supported languages');
 assert_same('English (US)', $genericEnglishRows[0]['language'], 'generic en must display as English (US) without changing locale resolution');
+assert_same('en', $genericEnglishRows[0]['locale'], 'generic English row must preserve the raw en locale');
 
 $britishEnglishRoot = sys_get_temp_dir() . '/repeatcaller-en-gb-' . bin2hex(random_bytes(4));
 mkdir($britishEnglishRoot . '/en_GB', 0777, true);
@@ -830,7 +858,7 @@ assert_same(1, count($britishEnglishRows), 'administrator status must identify t
 assert_same('English (UK)', $britishEnglishRows[0]['alert_call_language'], 'en_GB must show the exact language Alert Call will use');
 assert_same('Fallback', $britishEnglishRows[0]['status'], 'the validated en_GB locale must be marked as the fallback');
 $uninstalledActiveFrenchRows = array_values(array_filter($britishStatusRows, function (array $row): bool {
-	return ($row['language'] ?? '') === 'French';
+	return ($row['language'] ?? '') === 'French (France)';
 }));
 assert_same(1, count($uninstalledActiveFrenchRows), 'the active FreePBX language must appear even when its sound directory is not installed');
 assert_same(false, $uninstalledActiveFrenchRows[0]['installed'], 'an uninstalled active FreePBX language must be reported as not installed');
@@ -838,14 +866,14 @@ assert_same('English (UK)', $uninstalledActiveFrenchRows[0]['alert_call_language
 assert_same('Active / Fallback', $uninstalledActiveFrenchRows[0]['status'], 'an uninstalled active language must be marked as active fallback');
 $activeSpanishRows = $statusRowsMethod->invoke($frenchNativeController, $britishEnglishSupport, $britishEnglishStatus, 'es');
 $britishSpanishRows = array_values(array_filter($activeSpanishRows, function (array $row): bool {
-	return ($row['language'] ?? '') === 'Spanish';
+	return ($row['language'] ?? '') === 'Spanish (Spain)';
 }));
 assert_same(1, count($britishSpanishRows), 'active installed Spanish must remain visible in the language table');
 assert_same(true, $britishSpanishRows[0]['installed'], 'active Spanish must report its installed sound directory');
 assert_same('English (UK)', $britishSpanishRows[0]['alert_call_language'], 'active Spanish must show the exact en_GB fallback Alert Call uses');
 assert_same('Active / Fallback', $britishSpanishRows[0]['status'], 'active Spanish must be marked as active fallback');
 $britishGermanRows = array_values(array_filter($activeSpanishRows, function (array $row): bool {
-	return ($row['language'] ?? '') === 'German';
+	return ($row['language'] ?? '') === 'German (Germany)';
 }));
 assert_same(1, count($britishGermanRows), 'unsupported installed languages must remain visible when they are not active');
 assert_same('English (UK)', $britishGermanRows[0]['alert_call_language'], 'unsupported installed languages must show the exact en_GB fallback');
@@ -855,6 +883,7 @@ $australianEnglishRows = array_values(array_filter($activeSpanishRows, function 
 }));
 assert_same(1, count($australianEnglishRows), 'installed en_AU must display as English (AU)');
 assert_same(true, $australianEnglishRows[0]['installed'], 'installed en_AU must be reported as installed');
+assert_same('en_AU', $australianEnglishRows[0]['locale'], 'Australian English row must preserve the raw en_AU locale');
 assert_same('English (UK)', $australianEnglishRows[0]['alert_call_language'], 'incomplete en_AU must show the actual en_GB fallback');
 assert_same('Fallback only', $australianEnglishRows[0]['status'], 'incomplete en_AU must be marked as fallback only');
 $newZealandEnglishRows = array_values(array_filter($activeSpanishRows, function (array $row): bool {
@@ -862,6 +891,7 @@ $newZealandEnglishRows = array_values(array_filter($activeSpanishRows, function 
 }));
 assert_same(1, count($newZealandEnglishRows), 'installed en_NZ must display as English (NZ)');
 assert_same(true, $newZealandEnglishRows[0]['installed'], 'installed en_NZ must be reported as installed');
+assert_same('en_NZ', $newZealandEnglishRows[0]['locale'], 'New Zealand English row must preserve the raw en_NZ locale');
 assert_same('English (UK)', $newZealandEnglishRows[0]['alert_call_language'], 'incomplete en_NZ must show the actual en_GB fallback');
 assert_same('Fallback only', $newZealandEnglishRows[0]['status'], 'incomplete en_NZ must be marked as fallback only');
 assert_same(5, count($activeSpanishRows), 'tmp and custom directories must not produce language table rows');
@@ -870,6 +900,7 @@ $activeBritishEnglishRows = array_values(array_filter($activeBritishRows, functi
 	return ($row['language'] ?? '') === 'English (UK)';
 }));
 assert_same('Active / Preferred', $activeBritishEnglishRows[0]['status'], 'active en_GB must retain preferred English behavior');
+assert_same('en_GB', $activeBritishEnglishRows[0]['locale'], 'British English row must preserve the raw en_GB locale');
 
 require_once __DIR__ . '/../src/AlertCallSampleBuilder.php';
 $sampleSoundsRoot = sys_get_temp_dir() . '/repeatcaller-language-samples-' . bin2hex(random_bytes(4));
@@ -2736,7 +2767,7 @@ assert_true(substr_count($viewSource, 'id="rc-alert-call-language-table"') === 1
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-support"') === false && strpos($viewSource, 'Alert Call Language Status') === false, 'admin UI must remove the old Alert Call Language Status panel');
 assert_true(strpos($viewSource, "_('Global Settings')") < strpos($viewSource, 'id="rc-alert-call-language-table"'), 'language table must be inside Global Settings');
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-table"') < strpos($viewSource, "_('Default Country Code')"), 'language table must appear above Default Country Code');
-assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Installed'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th><th><?php echo _('Sample'); ?></th>") !== false, 'language table must include the five administrator-facing columns');
+assert_true(strpos($viewSource, "<th><?php echo _('Language'); ?></th><th><?php echo _('Locale'); ?></th><th><?php echo _('Sample'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Status'); ?></th>") !== false, 'language table must include the five administrator-facing columns in the required order');
 assert_true(strpos($viewSource, 'class="btn btn-xs btn-default rc-alert-call-language-sample"') !== false, 'each language row must render an icon play button in the Sample column');
 assert_true(strpos($controllerSource, "_('Active / Preferred')") !== false && strpos($controllerSource, "_('Active / Fallback')") !== false, 'active language rows must use administrator-facing preferred and fallback labels');
 assert_true(strpos($controllerSource, "_('Fallback only')") !== false && strpos($controllerSource, "_('Native')") !== false && strpos($controllerSource, "_('Fallback')") !== false, 'non-active language rows must use administrator-facing native and fallback labels');
@@ -2895,6 +2926,9 @@ assert_true(strpos($jsSource, "ajax('getalertcalllanguagestatus', {}, function (
 assert_true(strpos($jsSource, "var scenarios = ['repeat', 'invert', 'acceptance'];") !== false, 'language sample button must rotate through Repeat, Invert, and acceptance samples');
 assert_true(strpos($jsSource, "ajax('getalertcalllanguagesample', {language: language, scenario: scenario}") !== false, 'language sample playback must request the row locale and current scenario from the server');
 assert_true(strpos($jsSource, 'if (alertCallSampleLocked) {') !== false && strpos($jsSource, 'updateAlertCallSampleButtons();') !== false, 'language sample playback must lock every Sample button against rapid clicks');
+assert_true(strpos($jsSource, "alertCallSamplePhase = 'loading';") !== false && strpos($jsSource, "alertCallSamplePhase = 'playing';") !== false, 'language sample controls must distinguish server loading from audio playback');
+assert_true(strpos($jsSource, "removeClass('fa-spin fa-spinner fa-play').addClass('fa-stop')") !== false, 'the active sample control must replace its loading spinner with a Stop control when playback begins');
+assert_true(strpos($jsSource, 'stopAlertCallSample();') !== false && strpos($jsSource, '$button.is(alertCallSampleActiveButton)') !== false, 'the active row Stop control must cancel current and queued playback');
 assert_true(strpos($jsSource, 'alertCallSampleTimerId = window.setTimeout(function () {') !== false && strpos($jsSource, 'window.clearTimeout(alertCallSampleTimerId);') !== false, 'language sample playback must track and clear its completion timer');
 assert_true(strpos($jsSource, 'source.onended = null; source.stop();') !== false, 'language sample cancellation must stop all queued audio sources');
 assert_true((bool)preg_match('/\$\(\'\#rc-refresh-alert-call-language\'\)[\s\S]*function \(\) \{\s*stopAlertCallSample\(\);/', $jsSource), 'language refresh must stop sample playback before requesting refreshed rows');
@@ -2902,6 +2936,7 @@ assert_true(strpos($jsSource, 'renderAlertCallLanguageStatus(response.rows || []
 assert_true(strpos($jsSource, 'response.languageStatus') === false, 'language refresh must not depend on the removed response wrapper');
 assert_true(strpos($jsSource, '$button.find(\'.fa\').addClass(\'fa-spin\');') !== false && strpos($jsSource, '$button.find(\'.rc-refresh-label\').text(\'Refreshing...\');') !== false, 'language refresh button must show a Bootstrap-compatible loading state');
 assert_true(strpos($jsSource, '$button.find(\'.fa\').removeClass(\'fa-spin\');') !== false && strpos($jsSource, '$button.find(\'.rc-refresh-label\').text(\'Refresh\');') !== false, 'language refresh button must clear its loading state after completion');
+assert_true((bool)preg_match('/\.repeatcaller \.rc-alert-call-language-sample \{[\s\S]*width: 30px;[\s\S]*height: 24px;[\s\S]*\}/', $cssSource), 'Sample and Stop controls must retain fixed dimensions across playback states');
 assert_true(strpos($jsSource, "renderAlertHistory((response && response.alertHistory) || []);") !== false, 'Clear Alert History action should refresh the history table from backend response');
 assert_true(strpos($jsSource, "renderSuppressedIncidents(response.suppressedIncidents || []);") !== false, 'suppression-history loader should refresh the table from backend response');
 assert_true(strpos($jsSource, "No rules configured yet.") !== false, 'rules table should render an explicit empty state row when no rules exist');

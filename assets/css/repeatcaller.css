@@ -16,6 +16,15 @@
 	margin-bottom: 6px;
 }
 
+.repeatcaller .rc-alert-call-language-sample {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 24px;
+	padding: 1px 5px;
+}
+
 .repeatcaller .rc-route-actions {
 	display: inline-flex;
 	flex-wrap: wrap;

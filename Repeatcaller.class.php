@@ -399,6 +399,7 @@ class Repeatcaller implements \BMO {
 			}
 			$rows[] = [
 				'language' => $this->alertCallLanguageLabel($locale),
+				'locale' => $locale,
 				'installed' => $installed,
 				'alert_call_language' => $alertCallLabel,
 				'status' => $statusLabel,
@@ -423,21 +424,25 @@ class Repeatcaller implements \BMO {
 	private function alertCallLanguageLabel(string $locale): string {
 		$normalised = strtolower(str_replace('-', '_', trim($locale)));
 		$labels = [
-			'de' => _('German'),
-			'de_de' => _('German'),
+			'cs' => _('Czech'),
+			'de_de' => _('German (Germany)'),
 			'en' => _('English (US)'),
 			'en_au' => _('English (AU)'),
 			'en_gb' => _('English (UK)'),
 			'en_nz' => _('English (NZ)'),
-			'en_us' => _('English (US)'),
-			'es' => _('Spanish'),
-			'es_es' => _('Spanish'),
-			'fr' => _('French'),
-			'fr_fr' => _('French'),
-			'it' => _('Italian'),
-			'it_it' => _('Italian'),
-			'ja' => _('Japanese'),
-			'ja_jp' => _('Japanese'),
+			'es' => _('Spanish (Spain)'),
+			'es_419' => _('Spanish (Latin America and Caribbean)'),
+			'fa' => _('Persian'),
+			'fr' => _('French (France)'),
+			'he' => _('Hebrew'),
+			'it' => _('Italian (Italy)'),
+			'ja' => _('Japanese (Japan)'),
+			'nl' => _('Dutch (Netherlands)'),
+			'no' => _('Norwegian'),
+			'pl' => _('Polish'),
+			'ru' => _('Russian'),
+			'sv' => _('Swedish'),
+			'tr' => _('Turkish'),
 		];
 		return $labels[$normalised] ?? $locale;
 	}
