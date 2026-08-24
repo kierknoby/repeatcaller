@@ -154,8 +154,7 @@ Multilingual Alert Call checks:
 	the original voice pack is used, regardless of active state.
 - Confirm `Native but Adapted` means all required Alert Call prompts exist and an
 	approved alternative mapping of source filenames or equivalent prompts is used;
-	complete French rows use this status
-	and Alert Call Language shows `French`.
+	complete French rows use this status and Alert Call Language shows `French`.
 - Confirm `Rejected → Fallback` means the locale was evaluated against the
 	required prompt set and failed it; verify Spanish, German, and incomplete
 	English/French locales use this status.

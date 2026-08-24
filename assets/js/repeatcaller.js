@@ -67,7 +67,6 @@
 	var alertCallSampleActiveButton = null;
 	var editingRuleId = 0;
 
-	// Country caller number formats for help text examples
 	// Country caller formats - country code maps to country name and preferred local format example
 	// The backend accepts all three formats (local, international without +, international with +)
 	// The UI hint shows only the preferred local format to guide users

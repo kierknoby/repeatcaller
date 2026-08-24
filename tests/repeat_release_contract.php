@@ -190,7 +190,7 @@ assert_true(strpos($viewSource, 'Selected DIDs only') !== false, 'rule editor DI
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
 assert_true(strpos($readmeSource, '# Repeat Caller 1.0.2 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.2');
-assert_true(strpos($readmeSource, '**Release date:** 23 August 2026') !== false, 'README should declare the 1.0.2 release date');
+assert_true(strpos($readmeSource, '**Release date:** 24 August 2026') !== false, 'README should declare the 1.0.2 release date');
 assert_true(strpos($readmeSource, 'Repeat Caller supports two distinct operating modes') !== false, 'README should describe the module in user-facing language');
 assert_true(strpos($readmeSource, 'fwconsole ma installlocal repeatcaller') !== false, 'README must keep installlocal warning text');
 assert_true(strpos($readmeSource, 'git reset --hard FETCH_HEAD') !== false, 'README must keep deterministic update sequence');
@@ -200,7 +200,7 @@ assert_true(strpos($readmeSource, 'TESTING.md') !== false, 'README should link t
 assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should include Introduction section');
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
-assert_true(strpos($readmeSource, '### 1.0.2, patch release, 23 August 2026') !== false, 'README should include the 1.0.2 release history heading');
+assert_true(strpos($readmeSource, '### 1.0.2, patch release, 24 August 2026') !== false, 'README should include the 1.0.2 release history heading');
 assert_true(strpos($readmeSource, 'resolved playback languages, and clear original, adapted, or fallback status') !== false, 'README release history should document the Alert Call language status categories');
 assert_true(strpos($readmeSource, 'acceptance scenarios using the same prompt resolution as live Alert Calls') !== false, 'README release history should document Alert Call language sample playback');
 assert_true(strpos($readmeSource, '## Alert Call Language Detection') !== false, 'README should include dedicated Alert Call language detection guidance');
