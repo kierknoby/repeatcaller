@@ -164,9 +164,13 @@ fwconsole reload
 
 Option 2: Update from GitHub
 
-Git commands require the module repository directory context. After fetching
-and resetting, switch back to a neutral directory before running fwconsole
-commands.
+After the first installation, fwconsole chown may cause Git to reject the module directory because it is owned by the FreePBX web user rather than root. Add the directory to Git's safe-directory list once:
+
+```sh
+git config --global --add safe.directory /var/www/html/admin/modules/repeatcaller
+```
+
+Then update the module:
 
 ```sh
 cd /var/www/html/admin/modules/repeatcaller
