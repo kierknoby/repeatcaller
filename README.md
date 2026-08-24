@@ -847,7 +847,7 @@ Future release consideration:
 - Adds per-language sample playback that rotates through Repeat, Invert, and
   acceptance scenarios using the same prompt resolution as live Alert Calls.
 - Adds regression coverage for multilingual Alert Call behaviour while
-  preserving existing `en`, `en_GB`, `en_AU`, and `en_NZ` behaviour.
+  preserving existing `en` and `en_GB` behaviour.
 
 ### 1.0.1, patch release, 6 August 2026
 
