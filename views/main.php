@@ -12,6 +12,7 @@
  * @var array $alertHistory
  * @var array $inboundRoutes
  * @var array $systemRecordings
+ * @var array $alertCallLanguageSupport
  * @var string $csrfToken
  */
 if (!defined('FREEPBX_IS_AUTH')) {
@@ -27,6 +28,7 @@ $suppressedIncidents = isset($suppressedIncidents) && is_array($suppressedIncide
 $alertHistory = isset($alertHistory) && is_array($alertHistory) ? $alertHistory : [];
 $inboundRoutes = isset($inboundRoutes) && is_array($inboundRoutes) ? $inboundRoutes : [];
 $systemRecordings = isset($systemRecordings) && is_array($systemRecordings) ? $systemRecordings : [];
+$alertCallLanguageSupport = isset($alertCallLanguageSupport) && is_array($alertCallLanguageSupport) ? $alertCallLanguageSupport : [];
 $csrfToken = isset($csrfToken) ? (string)$csrfToken : '';
 
 $repeatModes = [
@@ -110,6 +112,26 @@ $assetVer = max(
 			<div class="panel panel-default">
 				<div class="panel-heading"><h3 class="panel-title"><?php echo _('Global Settings'); ?></h3></div>
 				<div class="panel-body">
+					<?php $activeAlertCallLanguage = array_values(array_filter((array)($alertCallLanguageSupport['rows'] ?? []), function (array $row): bool { return !empty($row['active']); })); ?>
+					<p><strong><?php echo _('Active FreePBX Language'); ?>:</strong> <span id="rc-active-freepbx-language"><?php echo htmlspecialchars((string)($activeAlertCallLanguage[0]['language'] ?? _('Unknown')), ENT_QUOTES, 'UTF-8'); ?></span> <button type="button" class="btn btn-xs btn-default" id="rc-refresh-alert-call-language" title="<?php echo htmlspecialchars(_('Refresh the detected language status.'), ENT_QUOTES, 'UTF-8'); ?>"><span class="fa fa-refresh" aria-hidden="true"></span> <span class="rc-refresh-label"><?php echo _('Refresh'); ?></span></button></p>
+					<p class="help-block"><?php echo _('Alert Call languages are based on installed audio files that can provide the required prompts. The status shows whether native audio is available or whether fallback language will be used.'); ?></p>
+					<div class="table-responsive">
+						<table class="table table-condensed" id="rc-alert-call-language-table">
+							<thead><tr><th><?php echo _('Language'); ?></th><th><?php echo _('Locale'); ?></th><th title="<?php echo htmlspecialchars(_('Shows only the audio codecs available for the required Alert Call prompts, not all codecs found in the language directory.'), ENT_QUOTES, 'UTF-8'); ?>"><?php echo _('Available Codecs'); ?></th><th><?php echo _('Status'); ?></th><th><?php echo _('Alert Call Language'); ?></th><th><?php echo _('Sample'); ?></th></tr></thead>
+								<tbody>
+									<?php foreach ((array)($alertCallLanguageSupport['rows'] ?? []) as $languageStatus): ?>
+										<tr<?php echo !empty($languageStatus['active']) ? ' class="info"' : ''; ?>>
+											<td><?php echo htmlspecialchars((string)($languageStatus['language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+											<td><?php echo htmlspecialchars((string)($languageStatus['locale'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+											<td><?php $availableCodecs = array_values((array)($languageStatus['available_codecs'] ?? [])); echo htmlspecialchars($availableCodecs === [] ? '-' : implode(', ', $availableCodecs), ENT_QUOTES, 'UTF-8'); ?></td>
+											<td><?php if (!empty($languageStatus['active'])): ?><strong><?php echo htmlspecialchars((string)($languageStatus['status'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></strong><?php else: ?><?php echo htmlspecialchars((string)($languageStatus['status'] ?? ''), ENT_QUOTES, 'UTF-8'); ?><?php endif; ?></td>
+											<td><?php echo htmlspecialchars((string)($languageStatus['alert_call_language'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
+											<td><button type="button" class="btn btn-xs btn-default rc-alert-call-language-sample" data-language="<?php echo htmlspecialchars((string)($languageStatus['sample_locale'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>" data-sample-available="<?php echo !empty($languageStatus['sample_available']) ? '1' : '0'; ?>" title="<?php echo htmlspecialchars(_('Play Alert Call language sample.'), ENT_QUOTES, 'UTF-8'); ?>" aria-label="<?php echo htmlspecialchars(_('Play Alert Call language sample.'), ENT_QUOTES, 'UTF-8'); ?>"<?php echo empty($languageStatus['sample_available']) ? ' disabled' : ''; ?>><span class="fa fa-play" aria-hidden="true"></span></button></td>
+										</tr>
+									<?php endforeach; ?>
+								</tbody>
+						</table>
+					</div>
 					<div class="row">
 						<div class="col-sm-3">
 							<label><?php echo _('Default Country Code'); ?></label>

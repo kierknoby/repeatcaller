@@ -64,19 +64,19 @@ Expected v1 fresh-install tables include:
 17. Trigger a post-accept matching call and confirm the same accepted incident updates without new reminders.
 18. Snooze globally, confirm deferred Alert Call and Email delivery, then select Resume All Rules and confirm deferred delivery.
 19. Use Enable All Rules and Disable All Rules to confirm they switch the global engine and every non-deleted rule on or off, while deleted rules remain unchanged.
-19. Delete a rule with an active incident and confirm the rule disappears while incident history remains visible.
-20. Confirm the available pruning schedule options:
+20. Delete a rule with an active incident and confirm the rule disappears while incident history remains visible.
+21. Confirm the available pruning schedule options:
 	- Never
 	- Hourly
 	- Daily (default)
 	- Weekly
 	- Monthly
 	- Yearly
-21. Run manual pruning and review returned delete counts.
+22. Run manual pruning and review returned delete counts.
 
 ## Alert Call contract coverage
 
-22. Run the focused documentation and behavior contracts:
+23. Run the focused documentation and behavior contracts:
 
 ```bash
 cd /workspaces/repeatcaller
@@ -91,26 +91,100 @@ The alerting contract covers first-destination NOANSWER progression, cumulative 
 
 These are additional manual installation checks beyond the contract suites:
 
-23. Confirm that no Alert Reminder launches while an Ordered cycle is active, pending, or still in its 60-second pause.
-24. Confirm that the reminder interval begins only after the final Ordered stage completes without acceptance.
-25. Confirm that a reminder starts a fresh Ordered sequence at stage 0.
-26. Confirm that a reminder cycle cannot overlap another cycle.
-27. Confirm that acceptance during any stage prevents later stages and future reminders.
-28. Confirm that Ring All schedules its reminder only after its single-stage cycle completes.
-29. Configure an Ordered rule with destination 1 enabled, destination 2 disabled, and destination 3 enabled. Confirm that the first stage calls destination 1, the next stage calls destination 1 again when Keep Trying is enabled for destination 1 and introduces destination 2, and the following stage calls destination 1 and destination 3 while destination 2 remains absent.
-30. Configure an Ordered rule where the first destination has Keep Trying disabled. Confirm that after its introduction stage, that destination does not return in later stages while the next destination is introduced.
-31. Configure a multi-destination Ordered stage and confirm the stage does not advance until every call in that stage has finished without acceptance.
-32. Confirm that the next Ordered stage waits approximately 60 seconds after the previous stage completes.
-33. Confirm that decline, NOANSWER, BUSY, and answered-without-acceptance outcomes continue progression rather than stop it.
-34. Confirm that an explicit ACCEPTED response stops progression and prevents pending later calls from being sent.
-35. Confirm that Ring All calls every enabled destination on every cycle.
-36. Confirm that Ring All shows Keep Trying as visible, unticked, and disabled.
-37. Confirm that Ignore Callers does not prevent an Alert Call destination from being called.
+24. Confirm that no Alert Reminder launches while an Ordered cycle is active, pending, or still in its 60-second pause.
+25. Confirm that the reminder interval begins only after the final Ordered stage completes without acceptance.
+26. Confirm that a reminder starts a fresh Ordered sequence at stage 0.
+27. Confirm that a reminder cycle cannot overlap another cycle.
+28. Confirm that acceptance during any stage prevents later stages and future reminders.
+29. Confirm that Ring All schedules its reminder only after its single-stage cycle completes.
+30. Configure an Ordered rule with destination 1 enabled, destination 2 disabled, and destination 3 enabled. Confirm that the first stage calls destination 1, the next stage calls destination 1 again when Keep Trying is enabled for destination 1 and introduces destination 2, and the following stage calls destination 1 and destination 3 while destination 2 remains absent.
+31. Configure an Ordered rule where the first destination has Keep Trying disabled. Confirm that after its introduction stage, that destination does not return in later stages while the next destination is introduced.
+32. Configure a multi-destination Ordered stage and confirm the stage does not advance until every call in that stage has finished without acceptance.
+33. Confirm that the next Ordered stage waits approximately 60 seconds after the previous stage completes.
+34. Confirm that decline, NOANSWER, BUSY, and answered-without-acceptance outcomes continue progression rather than stop it.
+35. Confirm that an explicit ACCEPTED response stops progression and prevents pending later calls from being sent.
+36. Confirm that Ring All calls every enabled destination on every cycle.
+37. Confirm that Ring All shows Keep Trying as visible, unticked, and disabled.
+38. Confirm that Ignore Callers does not prevent an Alert Call destination from being called.
+
+Multilingual Alert Call checks:
+
+- Confirm French Repeat alerts use `conf-thereare`, spoken count, optional
+	`telephone-number` and DDI, spoken window and `minutes`, caller information,
+	and the unchanged accept/decline prompt in that order.
+- Confirm French Invert alerts use `queue-less-than`, spoken threshold, and the
+	same DDI, window, caller, and accept/decline structure.
+- Confirm French uses no queue quantity or voicemail count prompts.
+- Confirm Spanish and German switch the entire generated message to English
+	without native fragments.
+- Confirm no module-owned translated prompt is referenced or required.
+- Confirm spoken counts and windows use `SAY NUMBER`, and caller/DID values use
+	`SAY DIGITS`.
+- Remove one required French prompt and confirm the optional System Recording
+	still plays in French, followed by one coherent English generated message
+	with no French fragments.
+- Confirm the Alert Call Language table appears in Global Settings above
+	Default Country Code and shows Language, Locale, Available Codecs, Alert Call
+	Status, Alert Call Language, and Sample columns.
+- Confirm the table reflects locale directories under `/var/lib/asterisk/sounds`,
+	not available or downloadable FreePBX language packs, and reports audio files
+	that Repeat Caller can actually use.
+- Confirm a leftover locale directory remains visible after its FreePBX language
+	pack is removed, then remove `/var/lib/asterisk/sounds/<locale>` and confirm the
+	language no longer appears after refresh.
+- If a language pack has been removed but still appears in the Alert Call language
+	table, check `/var/lib/asterisk/sounds` for leftover locale directories.
+- Confirm Available Codecs lists each format found on required Alert Call prompt
+	files once, using a clear comma-separated list when multiple formats are
+	available.
+- Confirm Available Codecs excludes codecs found only in unrelated files elsewhere
+	in the locale directory.
+- Add an unrelated audio file in another recognised format and confirm that
+	format does not appear in Available Codecs.
+- Confirm a partial required prompt set can show Available Codecs while Status
+	and Alert Call Language still report fallback behaviour.
+- Press each row's Sample play button repeatedly and confirm it rotates through
+	a Repeat alert, an Invert alert, and the acceptance prompt.
+- Confirm a complete French row plays French audio, unsupported languages play
+	the displayed English fallback, and incomplete `en_AU` or `en_NZ` rows play
+	their displayed complete English fallback without using partial regional audio.
+- Remove a required prompt and confirm the sample is rejected rather than
+	playing a partial or invalid message.
+- Confirm `Native and Original` means all required Alert Call prompts exist and
+	the original voice pack is used, regardless of active state.
+- Confirm `Native but Adapted` means all required Alert Call prompts exist and an
+	approved alternative mapping of source filenames or equivalent prompts is used;
+	complete French rows use this status and Alert Call Language shows `French`.
+- Confirm `Rejected → Fallback` means the locale was evaluated against the
+	required prompt set and failed it; verify Spanish, German, and incomplete
+	English/French locales use this status.
+- Confirm `Untested → Fallback` means the locale exists locally but has not been
+	evaluated; Alert Call Language shows the other language that will actually play.
+- Confirm the table column order is Language, Locale, Available Codecs, Status,
+	Alert Call Language, and Sample before and after a manual refresh.
+- Confirm English and French remain maintainer-supported native profiles even
+	when inventory reports one incomplete, with adaptation reported in Status.
+- Confirm installed Spanish or German files show `Rejected → Fallback` and no
+	developer language override is exposed to admins.
+- Confirm active supported and unsupported languages show their native or exact
+	English fallback behavior, installed unsupported languages remain visible,
+	no rule language selector exists, and generated language follows the active
+	FreePBX language.
+- Remove one required English prompt and confirm Alert Call activation is
+	blocked with the fallback-language error even when a language directory and a
+	complete French native profile exist.
+- Restore a complete `en`, `en_GB`, `en_AU`, or `en_NZ` inventory and confirm Alert Call
+	can be enabled and unsupported languages resolve to that one complete locale.
+- Confirm English locale lookup only uses exact installed candidate directories.
+	Confirm `en`, `en_GB`, `en_AU`, and `en_NZ` are selected only when that exact
+	directory exists and contains the complete required English prompt inventory.
+- Confirm `en`, `en_GB`, `en_AU`, and `en_NZ` retain the established English
+	playback, retry, acceptance, decline, timeout, and accepted-elsewhere behavior.
 
 Timeout and stage-timing checks:
 
 - Confirm an unanswered Alert Call attempt is capped at approximately 30
-	seconds in 1.0.1, even when the downstream destination is configured for a
+	seconds, even when the downstream destination is configured for a
 	longer ring interval.
 - In Ordered mode, confirm the next stage is not attempted immediately after a
 	non-accepting outcome and that real wall-clock stage-to-stage delay can be
@@ -118,7 +192,7 @@ Timeout and stage-timing checks:
 
 ## Upgrade and Preservation
 
-38. Run the supported update sequence:
+39. Run the supported update sequence:
 
 ```bash
 cd /var/www/html/admin/modules/repeatcaller
@@ -128,28 +202,28 @@ fwconsole ma install repeatcaller
 fwconsole chown
 fwconsole reload
 ```
-39. Confirm rules, incidents, and history remain intact.
-40. Review uninstall warning and cleanup expectations before removal.
+40. Confirm rules, incidents, and history remain intact.
+41. Review uninstall warning and cleanup expectations before removal.
 
 ## Caller ID Managed Elsewhere Check
 
-41. Create or edit a rule with Alert Call enabled.
-42. Enter an Alert Call Caller ID.
-43. Tick `Caller ID managed elsewhere`.
-44. Confirm the Caller ID field becomes blank and disabled and the placeholder disappears.
-45. Untick it and confirm the previous value returns.
-46. Tick it again and save.
-47. Reopen the rule and confirm the field is blank and the previous value has been forgotten.
+42. Create or edit a rule with Alert Call enabled.
+43. Enter an Alert Call Caller ID.
+44. Tick `Caller ID managed elsewhere`.
+45. Confirm the Caller ID field becomes blank and disabled and the placeholder disappears.
+46. Untick it and confirm the previous value returns.
+47. Tick it again and save.
+48. Reopen the rule and confirm the field is blank and the previous value has been forgotten.
 
-## Final 1.0.1 Regression Checks
+## Final 1.0.2 Regression Checks
 
-48. In the rule editor, add an Alert Call destination using Add, then repeat using Enter; confirm both methods behave the same.
-49. Confirm Alert Call destination changes keep the associated Ignore these callers entry consistent without creating duplicate destinations.
-50. In Caller Includes and Caller Excludes, enter values using a mix of spaces, commas, and new lines; save and reload; confirm include/exclude meaning is preserved.
-51. Reload the Repeat Caller page and confirm Run Now shows the correct initial availability state.
-52. Add an Alert Call destination and confirm the self-trigger warning remains visible for approximately six seconds before disappearing.
-53. With Alert Call enabled and Caller ID managed elsewhere disabled, set or change an Alert Call Caller ID and save; confirm the Caller ID is added to Ignore these callers as an external return-path safeguard when the safeguard is triggered, without creating duplicate entries.
-54. Remove a Caller ID-generated Ignore these callers entry, change an unrelated rule setting, save, and confirm the Ignore entry is not silently recreated.
+49. In the rule editor, add an Alert Call destination using Add, then repeat using Enter; confirm both methods behave the same.
+50. Confirm Alert Call destination changes keep the associated Ignore these callers entry consistent without creating duplicate destinations.
+51. In Caller Includes and Caller Excludes, enter values using a mix of spaces, commas, and new lines; save and reload; confirm include/exclude meaning is preserved.
+52. Reload the Repeat Caller page and confirm Run Now shows the correct initial availability state.
+53. Add an Alert Call destination and confirm the self-trigger warning remains visible for approximately six seconds before disappearing.
+54. With Alert Call enabled and Caller ID managed elsewhere disabled, set or change an Alert Call Caller ID and save; confirm the Caller ID is added to Ignore these callers as an external return-path safeguard when the safeguard is triggered, without creating duplicate entries.
+55. Remove a Caller ID-generated Ignore these callers entry, change an unrelated rule setting, save, and confirm the Ignore entry is not silently recreated.
 
 ## Useful Checks
 

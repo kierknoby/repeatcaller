@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace FreePBX\modules\Repeatcaller;
 
+require_once __DIR__ . '/AlertCallPromptResolver.php';
+
 interface AlertCallAgiTransport {
 	public function setVariable(string $name, string $value): void;
 	public function streamFile(string $file, string $escapeDigits): string;
@@ -18,6 +20,14 @@ final class AlertCallAgiSession {
 	private const ESCAPE_DIGITS = '0123456789*#';
 	private const MAX_ATTEMPTS = 3;
 
+	private AlertCallPromptResolver $promptResolver;
+	/** @var array{invalid:string,retry:string,thankyou:string,goodbye:string,remote_accepted:string} */
+	private array $interactionPrompts;
+
+	public function __construct(?AlertCallPromptResolver $promptResolver = null) {
+		$this->promptResolver = $promptResolver ?? new AlertCallPromptResolver();
+	}
+
 	/**
 	 * @param callable():bool $isRemotelyAccepted
 	 * @return array{response:string,digit:string,accepted:bool}
@@ -25,6 +35,25 @@ final class AlertCallAgiSession {
 	public function run(array $context, AlertCallAgiTransport $transport, callable $isRemotelyAccepted): array {
 		$attempt = 1;
 		$lastInvalidDigit = '';
+		$playbackLanguage = trim((string)($context['playback_language'] ?? ''));
+		$recordingLanguage = trim((string)($context['recording_language'] ?? ''));
+		$availablePrompts = array_key_exists('available_prompts', $context) && is_array($context['available_prompts'])
+			? array_values($context['available_prompts'])
+			: null;
+		$fallbackPrompts = array_key_exists('fallback_prompts', $context) && is_array($context['fallback_prompts'])
+			? array_values($context['fallback_prompts'])
+			: null;
+		$promptResolution = $this->promptResolver->resolve($playbackLanguage, $availablePrompts, $context, $fallbackPrompts);
+		if ($promptResolution['profile'] === '') {
+			$transport->setVariable('REPEATCALLER_ALERT_COMPLETED', '1');
+			return ['response' => 'unavailable', 'digit' => '', 'accepted' => false];
+		}
+		$this->interactionPrompts = $this->promptResolver->interactionPrompts($promptResolution['profile']);
+		$generatedLanguage = $promptResolution['generated_language'];
+		if ($generatedLanguage !== '') {
+			$transport->setVariable('CHANNEL(language)', $generatedLanguage);
+		}
+		$remotePromptsConfigured = false;
 
 		while ($attempt <= self::MAX_ATTEMPTS) {
 			$result = $this->checkRemoteAccepted($transport, $isRemotelyAccepted);
@@ -47,6 +76,10 @@ final class AlertCallAgiSession {
 				$attempt++;
 				continue;
 			}
+			if (!$remotePromptsConfigured) {
+				$this->configureRemotePrompts($transport);
+				$remotePromptsConfigured = true;
+			}
 
 			$playbackTarget = trim((string)($context['playback_target'] ?? ''));
 			if ($playbackTarget !== '') {
@@ -54,7 +87,13 @@ final class AlertCallAgiSession {
 				if ($result !== null) {
 					return $result;
 				}
+				if ($recordingLanguage !== '') {
+					$transport->setVariable('CHANNEL(language)', $recordingLanguage);
+				}
 				$digit = $transport->streamFile($playbackTarget, self::ESCAPE_DIGITS);
+				if ($recordingLanguage !== '') {
+					$transport->setVariable('CHANNEL(language)', $generatedLanguage !== '' ? $generatedLanguage : $playbackLanguage);
+				}
 				$result = $this->handleDigit($digit, $transport, $isRemotelyAccepted, $lastInvalidDigit);
 				if ($result !== null) {
 					if ($result['response'] !== 'invalid') {
@@ -69,7 +108,7 @@ final class AlertCallAgiSession {
 				}
 			}
 
-			foreach ($this->summarySegments($context) as $segment) {
+			foreach ($this->promptResolver->summarySegments($context, $promptResolution['profile']) as $segment) {
 				$result = $this->checkRemoteAccepted($transport, $isRemotelyAccepted);
 				if ($result !== null) {
 					return $result;
@@ -131,64 +170,6 @@ final class AlertCallAgiSession {
 		return $this->terminalNoResponse($transport, $lastInvalidDigit);
 	}
 
-	/**
-	 * @return array<int,array{type:string,value:string|int}>
-	 */
-	private function summarySegments(array $context): array {
-		$mode = strtolower(trim((string)($context['summary_mode'] ?? 'repeat')));
-		$callCount = max(0, (int)($context['summary_call_count'] ?? 0));
-		$threshold = max(0, (int)($context['summary_threshold'] ?? 0));
-		$windowMinutes = max(0, (int)($context['summary_window_minutes'] ?? 0));
-		$callerKind = strtolower(trim((string)($context['summary_caller_kind'] ?? 'none')));
-		$callerValue = trim((string)($context['summary_caller_value'] ?? ''));
-		$didValue = trim((string)($context['summary_did_value'] ?? ''));
-
-		$segments = [
-			['type' => 'stream', 'value' => 'beep'],
-			['type' => 'stream', 'value' => 'beep'],
-			['type' => 'stream', 'value' => 'beep'],
-			['type' => 'stream', 'value' => 'warning'],
-			['type' => 'stream', 'value' => 'beep'],
-			['type' => 'stream', 'value' => 'beep'],
-			['type' => 'stream', 'value' => 'beep'],
-			['type' => 'stream', 'value' => 'this'],
-			['type' => 'stream', 'value' => 'alert'],
-			['type' => 'stream', 'value' => 'has-been'],
-			['type' => 'stream', 'value' => 'initiated'],
-			['type' => 'stream', 'value' => 'for'],
-		];
-
-		if ($mode === 'invert') {
-			$segments[] = ['type' => 'stream', 'value' => 'less-than'];
-			$segments[] = ['type' => 'number', 'value' => $threshold];
-			$segments[] = ['type' => 'stream', 'value' => $threshold === 1 ? 'call' : 'calls'];
-		} else {
-			$segments[] = ['type' => 'number', 'value' => $callCount];
-			$segments[] = ['type' => 'stream', 'value' => $callCount === 1 ? 'call' : 'calls'];
-		}
-
-		$segments[] = ['type' => 'stream', 'value' => 'within'];
-		$segments[] = ['type' => 'number', 'value' => $windowMinutes];
-		$segments[] = ['type' => 'stream', 'value' => $windowMinutes === 1 ? 'minute' : 'minutes'];
-
-		if ($callerKind === 'unknown') {
-			$segments[] = ['type' => 'stream', 'value' => 'from-unknown-caller'];
-		} elseif ($callerKind !== 'none' && $callerValue !== '') {
-			$segments[] = ['type' => 'stream', 'value' => 'from'];
-			$segments[] = ['type' => 'digits', 'value' => $callerValue];
-		}
-
-		if ($didValue !== '') {
-			$segments[] = ['type' => 'stream', 'value' => 'calling'];
-			$segments[] = ['type' => 'stream', 'value' => 'number'];
-			$segments[] = ['type' => 'digits', 'value' => $didValue];
-		}
-
-		$segments[] = ['type' => 'stream', 'value' => 'vqplus-accept'];
-
-		return $segments;
-	}
-
 	private function handleDigit(string $digit, AlertCallAgiTransport $transport, callable $isRemotelyAccepted, string &$lastInvalidDigit): ?array {
 		$digit = trim($digit);
 		if ($digit === '') {
@@ -217,7 +198,7 @@ final class AlertCallAgiSession {
 			return $result;
 		}
 
-		$digit = $transport->streamFile('sorry', self::ESCAPE_DIGITS);
+		$digit = $this->streamInteractionPrompt('invalid', self::ESCAPE_DIGITS, $transport);
 		$result = $this->handleDigit($digit, $transport, $isRemotelyAccepted, $lastInvalidDigit);
 		if ($result !== null && $result['response'] !== 'invalid') {
 			return $result;
@@ -228,7 +209,7 @@ final class AlertCallAgiSession {
 			return $result;
 		}
 
-		$digit = $transport->streamFile('please-try-again', self::ESCAPE_DIGITS);
+		$digit = $this->streamInteractionPrompt('retry', self::ESCAPE_DIGITS, $transport);
 		$result = $this->handleDigit($digit, $transport, $isRemotelyAccepted, $lastInvalidDigit);
 		if ($result !== null && $result['response'] !== 'invalid') {
 			return $result;
@@ -247,34 +228,53 @@ final class AlertCallAgiSession {
 
 	private function terminalAccepted(AlertCallAgiTransport $transport): array {
 		$transport->setVariable('REPEATCALLER_ALERT_COMPLETED', '1');
-		$transport->streamFile('auth-thankyou', '');
-		$transport->streamFile('goodbye', '');
+		$this->streamInteractionPrompt('thankyou', '', $transport);
+		$this->streamInteractionPrompt('goodbye', '', $transport);
 
 		return ['response' => 'accepted', 'digit' => self::ACCEPT_DIGIT, 'accepted' => true];
 	}
 
 	private function terminalDeclined(AlertCallAgiTransport $transport): array {
 		$transport->setVariable('REPEATCALLER_ALERT_COMPLETED', '1');
-		$transport->streamFile('auth-thankyou', '');
-		$transport->streamFile('goodbye', '');
+		$this->streamInteractionPrompt('thankyou', '', $transport);
+		$this->streamInteractionPrompt('goodbye', '', $transport);
 
 		return ['response' => 'declined', 'digit' => self::DECLINE_DIGIT, 'accepted' => false];
 	}
 
 	private function terminalNoResponse(AlertCallAgiTransport $transport, string $lastInvalidDigit): array {
 		$transport->setVariable('REPEATCALLER_ALERT_COMPLETED', '1');
-		$transport->streamFile('auth-thankyou', '');
-		$transport->streamFile('goodbye', '');
+		$this->streamInteractionPrompt('thankyou', '', $transport);
+		$this->streamInteractionPrompt('goodbye', '', $transport);
 
 		return ['response' => 'answered_no_response', 'digit' => $lastInvalidDigit, 'accepted' => false];
 	}
 
 	private function terminalRemoteAccepted(AlertCallAgiTransport $transport): array {
 		$transport->setVariable('REPEATCALLER_ALERT_COMPLETED', '1');
-		$transport->streamFile('incoming-call-no-longer-avail', '');
-		$transport->streamFile('auth-thankyou', '');
-		$transport->streamFile('goodbye', '');
+		$this->streamInteractionPrompt('remote_accepted', '', $transport);
+		$this->streamInteractionPrompt('thankyou', '', $transport);
+		$this->streamInteractionPrompt('goodbye', '', $transport);
 
 		return ['response' => 'remote_accepted', 'digit' => '', 'accepted' => false];
+	}
+
+	private function streamInteractionPrompt(string $name, string $escapeDigits, AlertCallAgiTransport $transport): string {
+		$prompt = $this->interactionPrompts[$name] ?? '';
+		return $prompt === '' ? '' : $transport->streamFile($prompt, $escapeDigits);
+	}
+
+	private function configureRemotePrompts(AlertCallAgiTransport $transport): void {
+		$englishPrompts = $this->promptResolver->interactionPrompts('english');
+		$variables = [
+			'remote_accepted' => 'REPEATCALLER_ALERT_REMOTE_PROMPT',
+			'thankyou' => 'REPEATCALLER_ALERT_THANKYOU_PROMPT',
+			'goodbye' => 'REPEATCALLER_ALERT_GOODBYE_PROMPT',
+		];
+		foreach ($variables as $promptName => $variableName) {
+			if ($this->interactionPrompts[$promptName] !== $englishPrompts[$promptName]) {
+				$transport->setVariable($variableName, $this->interactionPrompts[$promptName]);
+			}
+		}
 	}
 }

@@ -13,7 +13,7 @@ namespace FreePBX\modules;
 class Repeatcaller implements \BMO {
 
 	/** Fallback only. Authoritative version lives in module.xml. */
-	const VERSION = '1.0.1';
+	const VERSION = '1.0.2';
 	const CSRF_SESSION_KEY = 'repeatcaller_csrf_token';
 	const REPEAT_MODE_NEVER = 'never';
 	const REPEAT_MODE_FIVE_MINUTES = '5m';
@@ -22,6 +22,8 @@ class Repeatcaller implements \BMO {
 	const REPEAT_MODE_ESCALATING = 'escalating';
 	const AJAX_COMMANDS = [
 		'getenginestatus',
+		'getalertcalllanguagestatus',
+		'getalertcalllanguagesample',
 		'runmonitor',
 		'saveglobalsettings',
 		'getrules',
@@ -205,6 +207,7 @@ class Repeatcaller implements \BMO {
 			'alertHistory' => $data['alertHistory'],
 			'inboundRoutes' => $data['inboundRoutes'],
 			'systemRecordings' => $data['systemRecordings'],
+			'alertCallLanguageSupport' => $data['alertCallLanguageSupport'],
 			'csrfToken' => $this->createCsrfToken(),
 		]);
 	}
@@ -222,6 +225,8 @@ class Repeatcaller implements \BMO {
 		try {
 			switch ($command) {
 				case 'getenginestatus': return $this->rcHandleGetEngineStatus();
+				case 'getalertcalllanguagestatus': return $this->rcHandleGetAlertCallLanguageStatus();
+				case 'getalertcalllanguagesample': return $this->rcHandleGetAlertCallLanguageSample();
 				case 'runmonitor': return $this->rcHandleRunMonitor();
 				case 'saveglobalsettings': return $this->rcHandleSaveGlobalSettings();
 				case 'getrules': return $this->rcHandleGetRules();
@@ -334,7 +339,118 @@ class Repeatcaller implements \BMO {
 			'alertHistory' => $repository->loadIncidentAlertHistory(200),
 			'inboundRoutes' => $repository->loadInboundRoutes(),
 			'systemRecordings' => $this->loadSystemRecordingsForEditor(),
+			'alertCallLanguageSupport' => $this->alertCallLanguageSupportStatus(),
 		];
+	}
+
+	private function alertCallLanguageSupport(): \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport {
+		require_once __DIR__ . '/src/AlertCallLanguageSupport.php';
+		return new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($this->alertCallSoundsRoot());
+	}
+
+	private function alertCallSoundsRoot(): string {
+		try {
+			return rtrim((string)\FreePBX::Config()->get('ASTVARLIBDIR'), '/') . '/sounds';
+		} catch (\Throwable $e) {
+		}
+		return '';
+	}
+
+	private function alertCallLanguageSupportStatus(): array {
+		$support = $this->alertCallLanguageSupport();
+		$status = $support->status();
+		$activeLanguage = $this->resolveFreePBXDefaultLanguage();
+		return ['rows' => $this->alertCallLanguageStatusRows($support, $status, $activeLanguage)];
+	}
+
+	private function alertCallLanguageStatusRows(\FreePBX\modules\Repeatcaller\AlertCallLanguageSupport $support, array $status, string $activeLanguage): array {
+		$locales = array_values((array)($status['installed_languages'] ?? []));
+		if ($activeLanguage !== '' && !$this->containsAlertCallLocale($locales, $activeLanguage)) {
+			$locales[] = $activeLanguage;
+		}
+		natcasesort($locales);
+
+		$installedLanguages = (array)($status['installed_languages'] ?? []);
+		$rows = [];
+		foreach (array_values($locales) as $locale) {
+			$locale = (string)$locale;
+			$installed = $this->containsAlertCallLocale($installedLanguages, $locale);
+			$availableCodecs = $installed
+				? $support->availableCodecs($locale)
+				: [];
+			$active = $activeLanguage !== '' && strcasecmp(str_replace('-', '_', $activeLanguage), str_replace('-', '_', $locale)) === 0;
+			$selection = $support->resolve($locale);
+			$available = !empty($selection['available']);
+			$selectedLanguage = (string)($selection['language'] ?? '');
+			$resolvesToOwnLocale = $available && $this->containsAlertCallLocale([$selectedLanguage], $locale);
+			$evaluation = $support->languageEvaluation($locale);
+			$alertCallLabel = $available ? $this->alertCallLanguageLabel($selectedLanguage) : _('Unavailable');
+			if ($resolvesToOwnLocale && $evaluation['prompt_mapping_type'] === 'adapted') {
+				$statusLabel = _('Native but Adapted');
+			} elseif ($resolvesToOwnLocale && $evaluation['prompt_mapping_type'] === 'original') {
+				$statusLabel = _('Native and Original');
+			} elseif ($evaluation['evaluated']) {
+				$statusLabel = _('Rejected → Fallback');
+			} else {
+				$statusLabel = _('Untested → Fallback');
+			}
+			$rows[] = [
+				'language' => $this->alertCallLanguageLabel($locale),
+				'locale' => $locale,
+				'available_codecs' => $availableCodecs,
+				'alert_call_language' => $alertCallLabel,
+				'status' => $statusLabel,
+				'active' => $active,
+				'sample_locale' => $locale,
+				'sample_available' => $available,
+			];
+		}
+		return $rows;
+	}
+
+	private function containsAlertCallLocale(array $locales, string $target): bool {
+		$target = strtolower(str_replace('-', '_', trim($target)));
+		foreach ($locales as $locale) {
+			if (strtolower(str_replace('-', '_', trim((string)$locale))) === $target) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private function alertCallLanguageLabel(string $locale): string {
+		$normalised = strtolower(str_replace('-', '_', trim($locale)));
+		$labels = [
+			'cs' => _('Czech'),
+			'de_de' => _('German'),
+			'en' => _('English (US)'),
+			'en_au' => _('English (AU)'),
+			'en_gb' => _('English (UK)'),
+			'en_nz' => _('English (NZ)'),
+			'es' => _('Spanish'),
+			'es_419' => _('Spanish'),
+			'fa' => _('Persian'),
+			'fr' => _('French'),
+			'he' => _('Hebrew'),
+			'it' => _('Italian'),
+			'ja' => _('Japanese'),
+			'nl' => _('Dutch'),
+			'no' => _('Norwegian'),
+			'pl' => _('Polish'),
+			'ru' => _('Russian'),
+			'sv' => _('Swedish'),
+			'tr' => _('Turkish'),
+		];
+		return $labels[$normalised] ?? $locale;
+	}
+
+	private function canEnableAlertCall(): bool {
+		$support = $this->alertCallLanguageSupport();
+		return !empty($support->status()['fallback_available']);
+	}
+
+	private function alertCallFallbackError(): array {
+		return ['status' => false, 'message' => _('Alert Call cannot be enabled because the required fallback language prompts are unavailable.')];
 	}
 
 	private function loadSystemRecordingsForEditor(): array {
@@ -383,6 +499,30 @@ class Repeatcaller implements \BMO {
 		return ['status' => true, 'engineStatus' => $this->rcEngineStatus($this->rcSettings())];
 	}
 
+	private function rcHandleGetAlertCallLanguageStatus(): array {
+		$languageStatus = $this->alertCallLanguageSupportStatus();
+		return ['status' => true, 'rows' => (array)($languageStatus['rows'] ?? [])];
+	}
+
+	private function rcHandleGetAlertCallLanguageSample(): array {
+		require_once __DIR__ . '/src/AlertCallSampleBuilder.php';
+		$settings = $this->rcSettings();
+		$sample = (new \FreePBX\modules\Repeatcaller\AlertCallSampleBuilder($this->alertCallSoundsRoot()))->build(
+			(string)($_REQUEST['language'] ?? ''),
+			(string)($_REQUEST['scenario'] ?? ''),
+			(string)($settings['default_country_code'] ?? '')
+		);
+		if (empty($sample['available'])) {
+			return ['status' => false, 'message' => _('A complete playable sample is not available for this language.')];
+		}
+		return [
+			'status' => true,
+			'language' => (string)$sample['language'],
+			'scenario' => (string)$sample['scenario'],
+			'clips' => (array)$sample['clips'],
+		];
+	}
+
 	private function rcHandleRunMonitor(): array {
 		$result = $this->runBackgroundMonitorDetailed();
 		$settings = $this->rcSettings();
@@ -416,6 +556,15 @@ class Repeatcaller implements \BMO {
 		if ($enabled === '1' && !$this->rcIsValidDefaultCountryCode((string)($_REQUEST['default_country_code'] ?? ''))) {
 			return ['status' => false, 'message' => _('Repeat Caller cannot be enabled until Global Settings > Default Country Code contains a valid value.')];
 		}
+		$repository = $this->rcRepository();
+		if ($enabled === '1') {
+			foreach ($repository->loadRulesSummary() as $ruleSummary) {
+				$rule = $repository->loadRule((int)($ruleSummary['id'] ?? 0));
+				if (is_array($rule) && !empty($rule['alert_call_enabled']) && !$this->canEnableAlertCall()) {
+					return $this->alertCallFallbackError();
+				}
+			}
+		}
 
 		if ($enabled !== null) {
 			$this->setSetting('enabled', $enabled);
@@ -429,7 +578,6 @@ class Repeatcaller implements \BMO {
 		$this->setSetting('alert_history_prune_policy', $alertPrune);
 		$this->setSetting('suppression_history_prune_policy', $suppressionPrune);
 
-		$repository = $this->rcRepository();
 		if ($enabled !== null) {
 			$targetEnabled = $enabled === '1';
 			foreach ($repository->loadRulesSummary() as $rule) {
@@ -557,6 +705,9 @@ class Repeatcaller implements \BMO {
 		if (!empty($payload['alert_call_enabled']) && trim((string)$payload['alert_call_destinations']) === '') {
 			return ['status' => false, 'message' => _('Alert Call is enabled. Enter at least one Alert Call destination.')];
 		}
+		if (!empty($payload['alert_call_enabled']) && !$this->canEnableAlertCall()) {
+			return $this->alertCallFallbackError();
+		}
 		if (!empty($payload['alert_call_enabled']) && empty($payload['alert_call_handle_callerid_upstream'])) {
 			if (trim((string)$payload['alert_call_callerid']) === '') {
 				return ['status' => false, 'message' => _('Alert Call Caller ID is required when Alert Call is enabled and Caller ID managed elsewhere is disabled.')];
@@ -596,6 +747,9 @@ class Repeatcaller implements \BMO {
 		$shouldAttemptEnable = $targetEnabled === 1 && ($ruleId <= 0 || (int)($existingRule['enabled'] ?? 0) !== 1);
 		if ($shouldAttemptEnable && !$this->rcIsValidDefaultCountryCode((string)($this->rcSettings()['default_country_code'] ?? ''))) {
 			return ['status' => false, 'message' => _('Repeat Caller cannot be enabled until Global Settings > Default Country Code contains a valid value.')];
+		}
+		if ($shouldAttemptEnable && !empty($rule['alert_call_enabled']) && !$this->canEnableAlertCall()) {
+			return $this->alertCallFallbackError();
 		}
 
 		$ruleId = $repository->saveRule($payload, $this->now());
@@ -1191,10 +1345,12 @@ class Repeatcaller implements \BMO {
 			return ['status' => false, 'message' => 'Alert call destination is required.'];
 		}
 		$playbackTarget = '';
-		$playbackLanguage = $this->resolveAlertCallPlaybackLanguage($recordingId);
+		$playbackLanguage = $this->resolveFreePBXDefaultLanguage();
+		$recordingLanguage = '';
 		if (trim($recordingId) !== '') {
 			$recording = $this->resolveSystemRecordingPlayback($recordingId);
 			$playbackTarget = (string)($recording['target'] ?? '');
+			$recordingLanguage = (string)($recording['language'] ?? '');
 			if ($playbackTarget === '') {
 				return ['status' => false, 'message' => 'System Recording could not be resolved.'];
 			}
@@ -1225,7 +1381,7 @@ class Repeatcaller implements \BMO {
 			// Internal-only marker for Repeat Caller originated alert legs.
 			// This marker is intended for internal CDR filtering and does not survive PSTN hairpin/re-entry paths.
 			'Account' => 'repeatcaller_alert_internal',
-			'Variable' => 'REPEATCALLER_PLAYBACK_TARGET=' . $playbackTarget . ',REPEATCALLER_PLAYBACK_LANGUAGE=' . $playbackLanguage . ',REPEATCALLER_ALERT_HISTORY_ID=' . $historyId . ',REPEATCALLER_INCIDENT_ID=' . $incidentId . ',REPEATCALLER_ALERT_RECIPIENT=' . $recipient . ',REPEATCALLER_SUMMARY_MODE=' . $summaryMode . ',REPEATCALLER_SUMMARY_CALL_COUNT=' . $summaryCallCount . ',REPEATCALLER_SUMMARY_THRESHOLD=' . $summaryThreshold . ',REPEATCALLER_SUMMARY_WINDOW_MINUTES=' . $summaryWindowMinutes . ',REPEATCALLER_SUMMARY_CALLER_KIND=' . $summaryCallerKind . ',REPEATCALLER_SUMMARY_CALLER_VALUE=' . $summaryCallerValue . ',REPEATCALLER_SUMMARY_DID_VALUE=' . $summaryDidValue . ',REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1',
+			'Variable' => 'REPEATCALLER_PLAYBACK_TARGET=' . $playbackTarget . ',REPEATCALLER_PLAYBACK_LANGUAGE=' . $playbackLanguage . ',REPEATCALLER_RECORDING_LANGUAGE=' . $recordingLanguage . ',REPEATCALLER_ALERT_HISTORY_ID=' . $historyId . ',REPEATCALLER_INCIDENT_ID=' . $incidentId . ',REPEATCALLER_ALERT_RECIPIENT=' . $recipient . ',REPEATCALLER_SUMMARY_MODE=' . $summaryMode . ',REPEATCALLER_SUMMARY_CALL_COUNT=' . $summaryCallCount . ',REPEATCALLER_SUMMARY_THRESHOLD=' . $summaryThreshold . ',REPEATCALLER_SUMMARY_WINDOW_MINUTES=' . $summaryWindowMinutes . ',REPEATCALLER_SUMMARY_CALLER_KIND=' . $summaryCallerKind . ',REPEATCALLER_SUMMARY_CALLER_VALUE=' . $summaryCallerValue . ',REPEATCALLER_SUMMARY_DID_VALUE=' . $summaryDidValue . ',REPEATCALLER_INTERNAL_ORIGIN=1,__REPEATCALLER_INTERNAL_ORIGIN=1',
 		];
 		$callerId = trim($callerId);
 		if ($callerId !== '') {
@@ -1393,16 +1549,6 @@ class Repeatcaller implements \BMO {
 			'target' => ltrim(trim($target), '/'),
 			'language' => $this->sanitizePlaybackLanguage($language),
 		];
-	}
-
-	private function resolveAlertCallPlaybackLanguage(string $recordingId): string {
-		$recording = trim($recordingId) !== '' ? $this->resolveSystemRecordingPlayback($recordingId) : ['language' => ''];
-		$recordingLanguage = $this->sanitizePlaybackLanguage((string)($recording['language'] ?? ''));
-		if ($recordingLanguage !== '') {
-			return $recordingLanguage;
-		}
-
-		return $this->resolveFreePBXDefaultLanguage();
 	}
 
 	private function resolveFreePBXDefaultLanguage(): string {

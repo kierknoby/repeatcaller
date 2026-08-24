@@ -1855,13 +1855,24 @@ try {
 
 	$matchBoundsInvariantMethod = new ReflectionMethod(BackgroundProcessor::class, 'incidentMatchBounds');
 	$matchBoundsInvariantMethod->setAccessible(true);
+	$invariantLogPath = tempnam(sys_get_temp_dir(), 'repeatcaller_invariant_');
+	if ($invariantLogPath === false) {
+		throw new RuntimeException('Unable to create invariant log capture file');
+	}
+	$previousErrorLog = ini_get('error_log');
+	ini_set('error_log', $invariantLogPath);
 	$invariantTriggered = false;
 	try {
 		$matchBoundsInvariantMethod->invoke($processor7AcceptedLifecycle, []);
 	} catch (RuntimeException $e) {
 		$invariantTriggered = strpos($e->getMessage(), 'empty contributing match set') !== false;
+	} finally {
+		ini_set('error_log', $previousErrorLog !== false ? $previousErrorLog : '');
 	}
 	assert_true($invariantTriggered, 'repeat incident creation should treat an empty contributing match set as an invariant violation');
+	$invariantLog = file_get_contents($invariantLogPath);
+	unlink($invariantLogPath);
+	assert_true($invariantLog !== false && strpos($invariantLog, 'empty contributing match set') !== false, 'repeat incident invariant violation should be logged before it is raised');
 
 	$acceptedLifecycleStateAfterSuppressed = $repository7AcceptedLifecycle->loadSubjectState($acceptedLifecycleRuleId, $acceptedLifecycleSubjectKey);
 	assert_true(is_array($acceptedLifecycleStateAfterSuppressed), 'accepted lifecycle scenario should retain subject state after blocked re-trigger');

@@ -420,8 +420,90 @@ Alert Call flow:
 
 Operational notes:
 
+- The selected System Recording language takes priority over the global Sound Languages setting and remains independent of the generated summary language.
+- Multilingual summaries use installed standard Asterisk and FreePBX sounds only. Caller and DID values use Asterisk `SAY DIGITS`; counts and observation windows use `SAY NUMBER`.
+- French is an officially supported native profile with an approved adapted prompt mapping for its standard prompt vocabulary. Repeat alerts speak `conf-thereare`, count, optional DDI, observation window, and caller information; Invert alerts use `queue-less-than` and the threshold with the same essential details. Queue quantity and voicemail count prompts are not used.
+- Spanish and German use the entire established English generated message because their standard inventories do not provide a straightforward complete mapping for all required behavior. Repeat Caller does not ship or require translated recordings.
+- The Alert Call Language table in Global Settings gives administrators visibility of language availability, resolved playback language, and sample playback capability. The active row is highlighted.
+- **Language:** Friendly language name.
+- **Locale:** Raw Asterisk/FreePBX locale identifier.
+- **Available Codecs:** Shows the audio codecs available for the required Alert Call prompt set for this language/locale.
+- **Status:** Whether playback is Native and Original, Native but Adapted, Rejected → Fallback, or Untested → Fallback.
+- **Alert Call Language:** The actual language Repeat Caller will play.
+- **Sample:** Allows administrators to test the generated Alert Call audio. Each row's Sample play button rotates through Repeat, Invert, and acceptance audio in the displayed Alert Call language.
+- A locale can exist and contain audio files while its required Alert Call prompts remain incomplete, so its status may be Rejected → Fallback even though Alert Call Language shows the validated English playback language.
+- A locale may show available codecs for required prompts it contains but resolve to another Alert Call Language when the complete required set is unavailable.
+- Rules do not select an Alert Call language, and normal administrators are not given developer profile overrides. Generated messages automatically use the active FreePBX language when its supported native profile is complete; unsupported or incomplete languages use the validated English fallback.
+- Alert Call cannot be enabled unless a complete English fallback profile is installed. System Recordings can still use their selected language, but generated Alert Calls require a validated native profile or the validated English fallback.
+- Repeat Caller checks each requested locale directory independently, including nested prompt paths. Approved locale candidates are tried explicitly rather than silently borrowing files from a related directory. If prompt discovery is unavailable or any prompt needed for the native profile is missing, the optional System Recording still plays in its selected language and the complete generated message falls back to English. Native and English words are never mixed within one generated message.
 - Alert Call destinations and Alert Call Caller ID are administrator-controlled settings; only configure trusted values that are appropriate for your PBX.
-- In 1.0.1, Alert Call attempts use a fixed AMI unanswered timeout of 30000 ms
+
+## Alert Call Language Detection
+
+Languages are detected from locale directories under:
+
+```text
+/var/lib/asterisk/sounds
+```
+
+Detection is based on audio files that Repeat Caller can actually use for
+required Alert Call prompts. This is not the list of available or downloadable
+FreePBX language packs.
+
+If a language pack has been removed but still appears in the Alert Call language
+table:
+
+- Check `/var/lib/asterisk/sounds` for leftover locale directories.
+- Remove `/var/lib/asterisk/sounds/<locale>` if that language should no longer
+	appear.
+
+### Native and Original
+
+A complete required Alert Call prompt set is available from the original voice
+pack.
+
+### Native but Adapted
+
+A complete required Alert Call prompt set is available through an approved
+alternative mapping of source filenames or equivalent prompts.
+
+### Rejected → Fallback
+
+The locale has been evaluated against the required Alert Call prompt set but
+does not meet the requirements.
+
+### Untested → Fallback
+
+The locale exists locally but has not yet been evaluated against the required
+Alert Call prompt set.
+
+For both fallback states:
+
+- The Alert Call Language column shows the language that will actually be used.
+- Fallback selection behaviour is unchanged.
+
+### Available Codecs
+
+Available Codecs only reports codecs available for required Alert Call prompts.
+It does not report every codec found anywhere inside a language directory.
+
+## Alert Call Samples
+
+The Sample button previews the Alert Call experience using generated audio
+sequences. Samples rotate through:
+
+- Repeat
+- Invert
+- Acceptance
+
+Acceptance previews the completion sequence, including the accepted-elsewhere
+message, thank you prompt, and goodbye prompt.
+
+Samples are previews only and do not simulate a live Alert Call interaction.
+They do not include DTMF input, retries, escalation, or the full call handling
+flow.
+
+- Alert Call attempts use a fixed AMI unanswered timeout of 30000 ms
 	(approximately 30 seconds).
 - This timeout is a bounded safety control to prevent indefinite ringing
 	attempts, but it can end an unanswered attempt before a longer downstream

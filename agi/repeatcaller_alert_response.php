@@ -273,6 +273,8 @@ if (!is_file($repositoryPath)) {
 
 require_once $repositoryPath;
 require_once $moduleRoot . '/src/AlertCallAgiSession.php';
+require_once $moduleRoot . '/src/AlertCallPromptInventory.php';
+require_once $moduleRoot . '/src/AlertCallLanguageSupport.php';
 
 function repeatcallerAgiCreateTransport(): \FreePBX\modules\Repeatcaller\AlertCallAgiTransport {
 	return new class implements \FreePBX\modules\Repeatcaller\AlertCallAgiTransport {
@@ -308,6 +310,36 @@ function repeatcallerAgiCreateTransport(): \FreePBX\modules\Repeatcaller\AlertCa
 	};
 }
 
+/**
+ * @return array<int,string>|null
+ */
+function repeatcallerAgiAvailablePrompts(string $language): ?array {
+	try {
+		$soundsRoot = rtrim((string)\FreePBX::Config()->get('ASTVARLIBDIR'), '/') . '/sounds';
+	} catch (\Throwable $e) {
+		return null;
+	}
+
+	return \FreePBX\modules\Repeatcaller\AlertCallPromptInventory::discover($soundsRoot, $language);
+}
+
+/**
+ * @return array{language:string,prompts:array<int,string>|null}
+ */
+function repeatcallerAgiFallbackProfile(): array {
+	try {
+		$soundsRoot = rtrim((string)\FreePBX::Config()->get('ASTVARLIBDIR'), '/') . '/sounds';
+	} catch (\Throwable $e) {
+		return ['language' => '', 'prompts' => null];
+	}
+	$status = (new \FreePBX\modules\Repeatcaller\AlertCallLanguageSupport($soundsRoot))->status();
+	$language = (string)($status['fallback_language'] ?? '');
+	return [
+		'language' => $language,
+		'prompts' => $language !== '' ? repeatcallerAgiAvailablePrompts($language) : null,
+	];
+}
+
 use FreePBX\modules\Repeatcaller\RepeatCallerRepository;
 
 if ($historyId <= 0 || $incidentId <= 0 || !in_array($response, ['accepted', 'declined', 'timeout', 'hangup', 'answered_no_response', 'dialstatus', 'interactive'], true)) {
@@ -320,10 +352,17 @@ try {
 	$now = date('Y-m-d H:i:s');
 	if ($response === 'interactive') {
 		$agiEnv = repeatcallerAgiReadEnvironment();
+		$playbackLanguage = trim((string)($agiEnv['agi_language'] ?? ''));
+			$fallbackProfile = repeatcallerAgiFallbackProfile();
 		$interactiveSession = new \FreePBX\modules\Repeatcaller\AlertCallAgiSession();
 		$transport = repeatcallerAgiCreateTransport();
 		$sessionResult = $interactiveSession->run([
 			'playback_target' => (string)($argv[5] ?? ''),
+			'playback_language' => $playbackLanguage,
+			'recording_language' => (string)($argv[13] ?? ''),
+			'available_prompts' => repeatcallerAgiAvailablePrompts($playbackLanguage),
+			'fallback_language' => $fallbackProfile['language'],
+			'fallback_prompts' => $fallbackProfile['prompts'],
 			'summary_mode' => (string)($argv[6] ?? 'repeat'),
 			'summary_call_count' => (string)($argv[7] ?? '0'),
 			'summary_threshold' => (string)($argv[8] ?? '0'),

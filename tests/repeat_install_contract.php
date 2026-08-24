@@ -442,7 +442,7 @@ assert_true(strpos($installSource, 'Schema::install(') !== false, 'install.php m
 
 $moduleXml = file_get_contents($root . '/module.xml');
 assert_true($moduleXml !== false, 'module.xml should be readable');
-assert_true(strpos($moduleXml, '<version>1.0.1</version>') !== false, 'module version must declare 1.0.1 for the current release');
+assert_true(strpos($moduleXml, '<version>1.0.2</version>') !== false, 'module version must declare 1.0.2 for the current release');
 
 $schemaSource = file_get_contents($root . '/src/Schema.php');
 assert_true($schemaSource !== false, 'src/Schema.php should be readable');
@@ -573,10 +573,13 @@ assert_true(strpos($installSource, "'/repeatcaller_alert_response.php'") !== fal
 assert_true(strpos($installSource, '@copy($sourceAgiPath, $deployedAgiPath)') !== false, 'install hook must copy the AGI source into the Asterisk AGI directory');
 assert_true(strpos($installSource, '@chmod($deployedAgiPath, 0755)') !== false, 'install hook must explicitly enforce executable mode on the deployed AGI script');
 assert_true(strpos($installSource, 'U(repeatcaller-alert-playback^${REPEATCALLER_PLAYBACK_TARGET}') !== false, 'originate dialplan must route answered calls through the module playback subroutine');
+assert_same(1, substr_count($installSource, 'same => n,Dial(Local/${EXTEN}@from-internal/n,,U(repeatcaller-alert-playback^'), 'originate dialplan must launch exactly one answered-call playback subroutine');
 assert_true(strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_channel)=${CHANNEL(name)})') !== false && strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/launch_uniqueid)=${CHANNEL(uniqueid)})') !== false, 'launch dialplan must track live launch channel identifiers for acceptance-time hangup');
-assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12})') !== false, 'answered-call interaction must pass playback target and summary values via ARG parameters that were expanded at Dial() time, not via channel variables that are inaccessible on the a-leg in the U() subroutine');
+assert_true(strpos($installSource, 'AGI(__REPEATCALLER_AGI_SCRIPT__,${REPEATCALLER_ALERT_HISTORY_ID},${REPEATCALLER_INCIDENT_ID},interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12},${ARG13})') !== false, 'answered-call interaction must pass playback target, summary values, and recording language via ARG parameters expanded at Dial() time');
+assert_same(1, substr_count($installSource, 'interactive,${REPEATCALLER_ALERT_RECIPIENT},${ARG1},${ARG6},${ARG7},${ARG8},${ARG9},${ARG10},${ARG11},${ARG12},${ARG13})'), 'answered-call dialplan must invoke the interactive AGI exactly once');
 assert_true(strpos($installSource, 'Read(REPEATCALLER_DTMF') === false, 'answered-call interaction must no longer depend on dialplan Read()');
-assert_true(strpos($installSource, 'Background(auth-thankyou)') !== false && strpos($installSource, 'Background(goodbye)') !== false, 'remote accepted handling must still play thank-you then goodbye');
+assert_true(strpos($installSource, '${REPEATCALLER_ALERT_REMOTE_PROMPT}') !== false && strpos($installSource, 'incoming-call-no-longer-avail') !== false, 'remote accepted handling must support a profile-specific unavailable prompt with the unchanged English default');
+assert_true(strpos($installSource, '${REPEATCALLER_ALERT_THANKYOU_PROMPT}') !== false && strpos($installSource, 'auth-thankyou') !== false && strpos($installSource, '${REPEATCALLER_ALERT_GOODBYE_PROMPT}') !== false && strpos($installSource, 'goodbye') !== false, 'remote accepted handling must support profile-specific closing prompts with unchanged English defaults');
 assert_true(strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_channel)=${CHANNEL(name)})') !== false && strpos($installSource, 'Set(DB(repeatcaller/alertcall/${REPEATCALLER_ALERT_HISTORY_ID}/playback_uniqueid)=${CHANNEL(uniqueid)})') !== false, 'answered playback dialplan must track live playback channel identifiers for immediate remote acceptance redirect');
 assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'answered alert-call legs must have a dedicated remote_accepted redirect target to thank and disconnect the caller');
 assert_true(strpos($installSource, 'exten => remote_accepted,1,Set(REPEATCALLER_ALERT_COMPLETED=1)') !== false, 'playback context must expose a dedicated remote_accepted extension for AMI Redirect');
@@ -664,6 +667,23 @@ $agiSessionStub = '<?php' . "\n"
 	. '    }' . "\n"
 	. '}' . "\n";
 assert_true(file_put_contents($agiSessionStubPath, $agiSessionStub) !== false, 'AGI contract should write a fake AlertCallAgiSession class');
+
+$promptInventoryStubPath = $fakeSrcDir . '/AlertCallPromptInventory.php';
+$promptInventoryStub = '<?php' . "\n"
+	. 'namespace FreePBX\\modules\\Repeatcaller;' . "\n"
+	. 'class AlertCallPromptInventory {' . "\n"
+	. '    public static function discover(string $soundsRoot, string $language): ?array { return []; }' . "\n"
+	. '}' . "\n";
+assert_true(file_put_contents($promptInventoryStubPath, $promptInventoryStub) !== false, 'AGI contract should write a fake AlertCallPromptInventory class');
+
+$languageSupportStubPath = $fakeSrcDir . '/AlertCallLanguageSupport.php';
+$languageSupportStub = '<?php' . "\n"
+	. 'namespace FreePBX\\modules\\Repeatcaller;' . "\n"
+	. 'class AlertCallLanguageSupport {' . "\n"
+	. '    public function __construct(string $soundsRoot) {}' . "\n"
+	. "    public function status(): array { return ['fallback_language' => '']; }" . "\n"
+	. '}' . "\n";
+assert_true(file_put_contents($languageSupportStubPath, $languageSupportStub) !== false, 'AGI contract should write a fake AlertCallLanguageSupport class');
 
 $moduleStubPath = $fakeModuleRoot . '/Repeatcaller.class.php';
 $moduleStub = '<?php' . "\n"

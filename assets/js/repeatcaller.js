@@ -57,9 +57,16 @@
 		handleCallerIdUpstream: true,
 		callerId: ''
 	};
+	var alertCallSampleScenarioByLanguage = {};
+	var alertCallSampleSources = [];
+	var alertCallSampleContext = null;
+	var alertCallSampleLocked = false;
+	var alertCallSampleTimerId = null;
+	var alertCallSampleGeneration = 0;
+	var alertCallSamplePhase = 'idle';
+	var alertCallSampleActiveButton = null;
 	var editingRuleId = 0;
 
-	// Country caller number formats for help text examples
 	// Country caller formats - country code maps to country name and preferred local format example
 	// The backend accepts all three formats (local, international without +, international with +)
 	// The UI hint shows only the preferred local format to guide users
@@ -455,6 +462,148 @@
 				showMessage('Request failed.', 'error');
 			}
 			if (onComplete) { onComplete(); }
+		});
+	}
+
+	function renderAlertCallLanguageStatus(rows) {
+		rows = $.isArray(rows) ? rows : [];
+		var $body = $('#rc-alert-call-language-table tbody').empty();
+		var activeLanguage = 'Unknown';
+		$.each(rows, function (_, row) {
+			row = row || {};
+			var availableCodecs = $.isArray(row.available_codecs) ? row.available_codecs : [];
+			var $status = $('<td/>').text(String(row.status || ''));
+			var $sampleButton = $('<button/>', {
+				type: 'button',
+				'class': 'btn btn-xs btn-default rc-alert-call-language-sample',
+				'data-language': String(row.sample_locale || ''),
+				'data-sample-available': row.sample_available ? '1' : '0',
+				title: 'Play Alert Call language sample.',
+				'aria-label': 'Play Alert Call language sample.'
+			}).prop('disabled', alertCallSampleLocked || !row.sample_available).append($('<span/>', {'class': 'fa fa-play', 'aria-hidden': 'true'}));
+			var $row = $('<tr/>')
+				.append($('<td/>').text(String(row.language || '')))
+				.append($('<td/>').text(String(row.locale || '')))
+				.append($('<td/>').text(availableCodecs.length > 0 ? availableCodecs.join(', ') : '-'));
+			if (row.active) {
+				activeLanguage = String(row.language || 'Unknown');
+				$row.addClass('info');
+				$status.empty().append($('<strong/>').text(String(row.status || '')));
+			}
+			$body.append($row
+				.append($status)
+				.append($('<td/>').text(String(row.alert_call_language || '')))
+				.append($('<td/>').append($sampleButton)));
+		});
+		$('#rc-active-freepbx-language').text(activeLanguage);
+	}
+
+	function decodeAlertCallSample(context, source) {
+		return new Promise(function (resolve, reject) {
+			var encoded = String(source || '').split(',', 2)[1] || '';
+			var binary = window.atob(encoded);
+			var bytes = new Uint8Array(binary.length);
+			for (var index = 0; index < binary.length; index++) {
+				bytes[index] = binary.charCodeAt(index);
+			}
+			context.decodeAudioData(bytes.buffer, resolve, reject);
+		});
+	}
+
+	function updateAlertCallSampleButtons() {
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample').each(function () {
+			var $button = $(this);
+			var isStopControl = alertCallSamplePhase === 'playing' && alertCallSampleActiveButton !== null && $button.is(alertCallSampleActiveButton);
+			var disabled = $button.attr('data-sample-available') !== '1' || (alertCallSampleLocked && !isStopControl);
+			$button.prop('disabled', disabled).toggleClass('disabled', disabled);
+		});
+	}
+
+	function resetAlertCallSampleButtonAppearance() {
+		$('#rc-alert-call-language-table .rc-alert-call-language-sample')
+			.attr('title', 'Play Alert Call language sample.')
+			.attr('aria-label', 'Play Alert Call language sample.')
+			.find('.fa').removeClass('fa-spin fa-spinner fa-stop').addClass('fa-play');
+	}
+
+	function finishAlertCallSample(generation) {
+		if (generation !== alertCallSampleGeneration) {
+			return;
+		}
+		if (alertCallSampleTimerId !== null) {
+			window.clearTimeout(alertCallSampleTimerId);
+			alertCallSampleTimerId = null;
+		}
+		alertCallSampleSources = [];
+		alertCallSampleLocked = false;
+		alertCallSamplePhase = 'idle';
+		alertCallSampleActiveButton = null;
+		resetAlertCallSampleButtonAppearance();
+		updateAlertCallSampleButtons();
+	}
+
+	function stopAlertCallSample() {
+		alertCallSampleGeneration += 1;
+		if (alertCallSampleTimerId !== null) {
+			window.clearTimeout(alertCallSampleTimerId);
+			alertCallSampleTimerId = null;
+		}
+		$.each(alertCallSampleSources, function (_, source) {
+			try { source.onended = null; source.stop(); } catch (error) {}
+		});
+		alertCallSampleSources = [];
+		alertCallSampleLocked = false;
+		alertCallSamplePhase = 'idle';
+		alertCallSampleActiveButton = null;
+		resetAlertCallSampleButtonAppearance();
+		updateAlertCallSampleButtons();
+	}
+
+	function playAlertCallSample(clips, generation) {
+		if (!alertCallSampleContext || !$.isArray(clips) || clips.length === 0) {
+			showMessage('A playable sample is not available in this browser.', 'error');
+			finishAlertCallSample(generation);
+			return;
+		}
+		alertCallSampleContext.resume().then(function () {
+			return Promise.all($.map(clips, function (clip) {
+				return decodeAlertCallSample(alertCallSampleContext, clip);
+			}));
+		}).then(function (buffers) {
+			if (generation !== alertCallSampleGeneration || !alertCallSampleLocked) {
+				return;
+			}
+			var startsAt = alertCallSampleContext.currentTime;
+			$.each(buffers, function (_, buffer) {
+				var source = alertCallSampleContext.createBufferSource();
+				source.buffer = buffer;
+				source.connect(alertCallSampleContext.destination);
+				source.start(startsAt);
+				startsAt += buffer.duration;
+				alertCallSampleSources.push(source);
+			});
+			alertCallSamplePhase = 'playing';
+			if (alertCallSampleActiveButton !== null) {
+				alertCallSampleActiveButton
+					.attr('title', 'Stop Alert Call language sample.')
+					.attr('aria-label', 'Stop Alert Call language sample.')
+					.find('.fa').removeClass('fa-spin fa-spinner fa-play').addClass('fa-stop');
+			}
+			updateAlertCallSampleButtons();
+			if (alertCallSampleSources.length > 0) {
+				alertCallSampleSources[alertCallSampleSources.length - 1].onended = function () {
+					finishAlertCallSample(generation);
+				};
+			}
+			alertCallSampleTimerId = window.setTimeout(function () {
+				finishAlertCallSample(generation);
+			}, Math.max(0, (startsAt - alertCallSampleContext.currentTime) * 1000) + 250);
+		}).catch(function () {
+			if (generation !== alertCallSampleGeneration) {
+				return;
+			}
+			showMessage('The resolved Alert Call sample could not be played.', 'error');
+			finishAlertCallSample(generation);
 		});
 	}
 
@@ -2721,6 +2870,66 @@
 	}
 
 	function bindEvents() {
+		$(document).off('click.repeatcaller', '.rc-alert-call-language-sample').on('click.repeatcaller', '.rc-alert-call-language-sample', function () {
+			var $button = $(this);
+			if (alertCallSampleLocked) {
+				if (alertCallSamplePhase === 'playing' && alertCallSampleActiveButton !== null && $button.is(alertCallSampleActiveButton)) {
+					stopAlertCallSample();
+				}
+				return;
+			}
+			var AudioContext = window.AudioContext || window.webkitAudioContext;
+			if (!AudioContext) {
+				showMessage('A playable sample is not available in this browser.', 'error');
+				return;
+			}
+			try {
+				alertCallSampleContext = alertCallSampleContext || new AudioContext();
+			} catch (error) {
+				showMessage('A playable sample is not available in this browser.', 'error');
+				return;
+			}
+			var language = String($button.attr('data-language') || '');
+			var scenarios = ['repeat', 'invert', 'acceptance'];
+			var scenarioIndex = alertCallSampleScenarioByLanguage[language] || 0;
+			var scenario = scenarios[scenarioIndex];
+			var playbackStarted = false;
+			alertCallSampleLocked = true;
+			alertCallSamplePhase = 'loading';
+			alertCallSampleActiveButton = $button;
+			alertCallSampleGeneration += 1;
+			var generation = alertCallSampleGeneration;
+			alertCallSampleScenarioByLanguage[language] = (scenarioIndex + 1) % scenarios.length;
+			updateAlertCallSampleButtons();
+			$button.find('.fa').removeClass('fa-play').addClass('fa-spinner fa-spin');
+			ajax('getalertcalllanguagesample', {language: language, scenario: scenario}, function (response) {
+				if (generation !== alertCallSampleGeneration) {
+					return;
+				}
+				playbackStarted = true;
+				playAlertCallSample(response.clips || [], generation);
+			}, function () {
+				if (!playbackStarted) {
+					finishAlertCallSample(generation);
+				}
+			});
+		});
+
+		$('#rc-refresh-alert-call-language').off('click.repeatcaller').on('click.repeatcaller', function () {
+			stopAlertCallSample();
+			var $button = $(this);
+			$button.prop('disabled', true).addClass('disabled');
+			$button.find('.fa').addClass('fa-spin');
+			$button.find('.rc-refresh-label').text('Refreshing...');
+			ajax('getalertcalllanguagestatus', {}, function (response) {
+				renderAlertCallLanguageStatus(response.rows || []);
+			}, function () {
+				$button.prop('disabled', false).removeClass('disabled').blur();
+				$button.find('.fa').removeClass('fa-spin');
+				$button.find('.rc-refresh-label').text('Refresh');
+			});
+		});
+
 		$(document).off('click.repeatcaller', '.rc-table-show-more').on('click.repeatcaller', '.rc-table-show-more', function () {
 			var tableId = $.trim(String($(this).closest('.rc-table-batch-controls').attr('data-table-id') || ''));
 			if (tableId === '') {
