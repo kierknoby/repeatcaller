@@ -1013,12 +1013,18 @@ fwconsole reload
 
 GPLv3+. See LICENSE.
 
-## AI Disclosure
+## AI-Assisted Contributions and Disclosure
 
-This module has been developed with AI assistance for code generation, review,
-testing, and documentation. Changes should still be reviewed, tested, and
-accepted by a human maintainer before deployment.
+This module has been developed with AI assistance for code generation, review, testing, and documentation. From 26 August 2026, generative AI assistance must be disclosed in every commit containing AI-assisted changes:
+
+```text
+Assisted-by: AGENT_NAME:MODEL_VERSION
+```
+
+For example: `Assisted-by: GitHub-Copilot:gpt-5.6-sol`
+
+The human contributor remains solely responsible for the contribution. AI tools must not be listed as co-authors.
 
 ## Author
 
-@kierknoby, Kieran Knowles-Byrne // FreePBX UK
+[@kierknoby](https://github.com/kierknoby), Kieran Knowles-Byrne // [FreePBX UK](https://github.com/freepbxUK)
