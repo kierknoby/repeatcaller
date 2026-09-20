@@ -628,7 +628,11 @@ Check:
 - Email enabled for the rule
 - recipients configured
 - FreePBX mail settings
-- Email From Address
+- Email From Address in Advanced Settings: use a bare address such as
+  `asterisk@demodomain.name` to use the configured FreePBX dashboard brand, or
+  `PBX-123 <asterisk@demodomain.name>` to preserve an explicit display name.
+  FreePBX 17 HTML-encoded identities are supported, `Repeat Caller` is the final
+  display-name fallback, and malformed or unsafe From identities are rejected.
 - PBX mail logs
 - Alert History status (Sent or Failed)
 
@@ -681,4 +685,4 @@ Check:
 
 - [README.md](README.md)
 - [TESTING.md](TESTING.md)
-- GitHub Issues: https://github.com/kierknoby/repeatcaller/issues
+- GitHub Issues: https://github.com/freepbxUK/repeatcaller/issues

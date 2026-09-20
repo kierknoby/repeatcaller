@@ -1631,7 +1631,7 @@
 			var statusKey = normalizeCode(rawStatus);
 			var detail = $.trim(String(rawFailureDetail || ''));
 
-			if (statusKey === 'accepted' || statusKey === 'accepted') {
+			if (statusKey === 'accepted') {
 				return 'Incident accepted';
 			}
 			if (statusKey === 'declined') {

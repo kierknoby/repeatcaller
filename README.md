@@ -1,6 +1,13 @@
-# Repeat Caller 1.0.2 for FreePBX 16 and 17
+# Repeat Caller 1.0.3 for FreePBX 16 and 17
 
-**Release date:** 24 August 2026
+**Release date:** 20 September 2026
+
+## Signed Release
+
+Repeat Caller 1.0.3 is the first signed FreePBX UK release of the module.
+Releases are signed with the author's developer GPG key, which is signed by the
+FreePBX Module Signing v2 master key, allowing FreePBX to verify module
+authenticity and integrity.
 
 ## Introduction
 
@@ -45,7 +52,12 @@ the first stable release.
 - Inbound Routes configured for DID/CID route matching
 - FreePBX Job runner enabled for scheduled background processing
 - FreePBX mail support configured for email notifications
-- Email From Address configured in Advanced Settings for email sending
+- Email From Address configured in Advanced Settings for email sending, using
+  either `asterisk@demodomain.name` or
+  `PBX-123 <asterisk@demodomain.name>`. A bare address uses the configured
+  FreePBX dashboard brand as its display name, an explicit display name is
+  preserved, and `Repeat Caller` is the final display-name fallback. Malformed
+  or unsafe From identities are rejected.
 - Asterisk Manager access available for Alert Call originate
 - Optional FreePBX System Recordings for introductory Alert Call playback
 
@@ -115,7 +127,7 @@ Then run the following commands as root:
 
 ```sh
 cd /var/www/html/admin/modules
-git clone https://github.com/kierknoby/repeatcaller.git repeatcaller
+git clone https://github.com/freepbxUK/repeatcaller.git repeatcaller
 cd ~
 fwconsole ma install repeatcaller
 fwconsole chown
@@ -822,6 +834,24 @@ Future release consideration:
   routing policy while preserving bounded fail-safe behavior.
 
 ## Release History
+
+### 1.0.3, patch release, 20 September 2026
+
+Released by `@kierknoby, Kieran Knowles-Byrne // FreePBX UK`.
+
+* First signed FreePBX UK release of Repeat Caller.
+* Updates publisher, repository, licence, and module metadata for the move to
+  FreePBX UK.
+* Preserves explicitly configured display names from FreePBX's Email "From:"
+  Address and supports FreePBX 17 HTML-encoded sender identities while
+  retaining strict email-address and header-injection validation.
+* Uses the configured FreePBX dashboard brand for a bare sender address, with
+  `Repeat Caller` as the final display-name fallback.
+* Corrects the FreePBX 16 and 17 module metadata declarations.
+* Corrects the redundant Alert History `accepted` JavaScript condition without
+  changing its behaviour.
+* Adds regression coverage for sender identity parsing, email delivery,
+  recipient compatibility, release metadata, and the Alert History condition.
 
 ### 1.0.2, patch release, 24 August 2026
 

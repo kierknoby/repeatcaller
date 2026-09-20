@@ -1370,6 +1370,8 @@ $cssSource = file_get_contents(__DIR__ . '/../assets/css/repeatcaller.css');
 assert_true($cssSource !== false, 'repeatcaller.css source should be readable');
 $jsSource = file_get_contents(__DIR__ . '/../assets/js/repeatcaller.js');
 assert_true($jsSource !== false, 'repeatcaller.js source should be readable');
+assert_true(strpos($jsSource, "if (statusKey === 'accepted') {") !== false, 'Alert History should retain the accepted status summary condition');
+assert_true(strpos($jsSource, "statusKey === 'accepted' || " . "statusKey === 'accepted'") === false, 'Alert History accepted status condition must not contain a redundant duplicate branch');
 
 assert_true(strpos($jsSource, "syncLiveClockFromValue('pbx', $('#rc-pbx-time').text(), true);") !== false, 'page initialization must seed PBX clock from existing DOM text');
 assert_true(strpos($jsSource, "syncLiveClockFromValue('pbx', engine.pbx_time || '-', false);") !== false, 'renderEngine must resync PBX baseline from authoritative engine value');
@@ -2201,7 +2203,8 @@ const context = {
 vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
 source = source.replace('function ajax(command, payload, done, onComplete, options) {', 'function ajax(command, payload, done, onComplete, options) { var interceptor = (globalThis && globalThis.__testAjaxInterceptor) || (globalThis && globalThis.window && globalThis.window.__testAjaxInterceptor); if (interceptor && typeof interceptor === \'function\') { return interceptor(command, payload, done, onComplete, options); }');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState };\n})(jQuery);');
+source = source.replace('function renderAlertHistory(items) {', 'function renderAlertHistory(items) { window.__alertCallFailureSummary = alertCallFailureSummary;');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 context.ajax = function (command, payload, done, onComplete, options) {
 	payload = payload || {};
@@ -2283,6 +2286,8 @@ if (context.$ && typeof context.$.ajax === 'function') {
 	};
 }
 const hooks = context.window.__hooks;
+hooks.renderAlertHistory([]);
+assert(context.window.__alertCallFailureSummary('accepted', '') === 'Incident accepted', 'accepted Alert History status should render as Incident accepted');
 const warningNotieAlerts = [];
 const genericToasts = [];
 const fallbackTimeoutsMs = [];

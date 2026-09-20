@@ -215,7 +215,7 @@ fwconsole reload
 47. Tick it again and save.
 48. Reopen the rule and confirm the field is blank and the previous value has been forgotten.
 
-## Final 1.0.2 Regression Checks
+## Final 1.0.3 Regression Checks
 
 49. In the rule editor, add an Alert Call destination using Add, then repeat using Enter; confirm both methods behave the same.
 50. Confirm Alert Call destination changes keep the associated Ignore these callers entry consistent without creating duplicate destinations.
@@ -224,6 +224,20 @@ fwconsole reload
 53. Add an Alert Call destination and confirm the self-trigger warning remains visible for approximately six seconds before disappearing.
 54. With Alert Call enabled and Caller ID managed elsewhere disabled, set or change an Alert Call Caller ID and save; confirm the Caller ID is added to Ignore these callers as an external return-path safeguard when the safeguard is triggered, without creating duplicate entries.
 55. Remove a Caller ID-generated Ignore these callers entry, change an unrelated rule setting, save, and confirm the Ignore entry is not silently recreated.
+
+56. Set Email From Address to `asterisk@demodomain.name`; confirm From and Reply-To use the dashboard brand and Return-Path uses that address. Repeat with an empty brand and confirm `Repeat Caller` is used.
+57. Set it to `JaCoTec TK-System <pbx@mydomain.de>`; confirm From and Reply-To preserve the explicit name and Return-Path uses the extracted address.
+58. Test the FreePBX 17 value `PBX-123 &lt;asterisk@demodomain.name&gt;`; confirm the decoded identity is used.
+59. Test malformed brackets, invalid addresses, and raw or HTML-encoded CR/LF injection; confirm sending fails with the existing missing From address message.
+60. Confirm comma, semicolon, and whitespace-separated recipients, deduplication, and invalid-recipient filtering behave as before.
+61. Confirm Alert History still renders an `accepted` Alert Call status as `Incident accepted` after the redundant JavaScript condition was simplified.
+62. Inspect module metadata and confirm the dependency minimum is FreePBX 16.0 while supported versions list FreePBX 16.0 and 17.0 separately.
+
+Run the focused sender contract before the existing PHP contracts:
+
+```bash
+php tests/repeat_email_from_contract.php
+```
 
 ## Useful Checks
 

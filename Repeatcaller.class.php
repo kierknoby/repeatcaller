@@ -13,7 +13,7 @@ namespace FreePBX\modules;
 class Repeatcaller implements \BMO {
 
 	/** Fallback only. Authoritative version lives in module.xml. */
-	const VERSION = '1.0.2';
+	const VERSION = '1.0.3';
 	const CSRF_SESSION_KEY = 'repeatcaller_csrf_token';
 	const REPEAT_MODE_NEVER = 'never';
 	const REPEAT_MODE_FIVE_MINUTES = '5m';
@@ -1302,11 +1302,12 @@ class Repeatcaller implements \BMO {
 			if (!class_exists('\CI_Email')) {
 				return ['status' => false, 'message' => 'CI_Email is not available.'];
 			}
-			$from = $this->getNotificationFromAddress();
+			$sender = $this->getNotificationSenderIdentity();
+			$from = $sender['address'];
 			if ($from === '') {
 				return ['status' => false, 'message' => 'Email "From:" Address is not configured in Advanced Settings.'];
 			}
-			$senderName = $this->getNotificationSenderName();
+			$senderName = $sender['name'];
 			$email = new \CI_Email();
 			if ($this->emailFromSupportsReturnPath($email)) {
 				$email->from($from, $senderName, $from);
@@ -1590,22 +1591,42 @@ class Repeatcaller implements \BMO {
 		return ['status' => false, 'message' => 'Originate failed.'];
 	}
 
-	private function getNotificationFromAddress(): string {
+	private function getNotificationSenderIdentity(): array {
 		try {
 			$value = (string)\FreePBX::Config()->get('AMPUSERMANEMAILFROM');
-			return $this->normaliseEmailAddress($value);
 		} catch (\Throwable $e) {
-			return '';
+			$value = '';
 		}
-	}
-
-	private function getNotificationSenderName(): string {
 		try {
 			$brand = (string)\FreePBX::Config()->get('DASHBOARD_FREEPBX_BRAND');
-			return $brand !== '' ? $brand : 'Repeat Caller';
 		} catch (\Throwable $e) {
-			return 'Repeat Caller';
+			$brand = '';
 		}
+		$brand = strpbrk($brand, "\r\n") === false ? trim($brand) : '';
+		return $this->normaliseNotificationSenderIdentity($value, $brand !== '' ? $brand : 'Repeat Caller');
+	}
+
+	private function normaliseNotificationSenderIdentity(string $value, string $fallbackName): array {
+		$invalid = ['address' => '', 'name' => $fallbackName];
+		$value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+		// Check before trimming so surrounding header delimiters cannot disappear.
+		if (preg_match('/[\x00-\x08\x0A-\x1F\x7F]/', $value)) {
+			return $invalid;
+		}
+		$value = trim($value);
+		$name = $fallbackName;
+		if (strpos($value, '<') !== false || strpos($value, '>') !== false) {
+			if (!preg_match('/^([^<>]*)<([^<>]+)>$/u', $value, $matches)) {
+				return $invalid;
+			}
+			$explicitName = trim($matches[1]);
+			$name = $explicitName !== '' ? $explicitName : $fallbackName;
+			$value = trim($matches[2]);
+		}
+		if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+			return $invalid;
+		}
+		return ['address' => $value, 'name' => $name];
 	}
 
 	private function emailFromSupportsReturnPath($email): bool {
