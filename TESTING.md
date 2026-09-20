@@ -232,6 +232,7 @@ fwconsole reload
 60. Confirm comma, semicolon, and whitespace-separated recipients, deduplication, and invalid-recipient filtering behave as before.
 61. Confirm Alert History still renders an `accepted` Alert Call status as `Incident accepted` after the redundant JavaScript condition was simplified.
 62. Inspect module metadata and confirm the dependency minimum is FreePBX 16.0 while supported versions list FreePBX 16.0 and 17.0 separately.
+63. Open the rule editor and confirm Inbound Routes initially shows `Select an inbound route…` with Confirm and Exclude Route disabled. In Selected DIDs only mode, select the first real route and confirm Confirm immediately adds it, then resets the selector. Repeat in All DIDs mode with Exclude Route and confirm duplicate routes remain blocked.
 
 Run the focused sender contract before the existing PHP contracts:
 

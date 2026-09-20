@@ -44,7 +44,6 @@
 		'#rc-schedule-table'
 	];
 	var ruleStatusTimers = {};
-	var didRouteActionMode = '';
 	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 	var alertCallCallerIdSelfTriggerWarning = 'Alert Call Caller IDs are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 	var alertCallSelfTriggerWarningDurationSeconds = 6;
@@ -1758,7 +1757,7 @@
 
 	function addRouteToList($list, route, listType) {
 		if (!route || !route.route_key) {
-			return;
+			return false;
 		}
 		var exists = false;
 		$list.find('li').each(function () {
@@ -1768,7 +1767,7 @@
 			}
 		});
 		if (exists) {
-			return;
+			return false;
 		}
 		var $li = $('<li/>').text((route.route_label || route.route_key) + ' [' + route.route_key + ']');
 		$li.data('route', route);
@@ -1776,8 +1775,10 @@
 		$li.append(' ');
 		$li.append($('<button type="button" class="btn btn-xs btn-link">remove</button>').on('click', function () {
 			$li.remove();
+			updateDidRouteActionButtonState();
 		}));
 		$list.append($li);
+		return true;
 	}
 
 	function normaliseAlertCallDestinationEntries(rawValue, defaultKeepTryingEnabled) {
@@ -2255,44 +2256,62 @@
 	}
 
 	function clearDidRouteActionState() {
-		didRouteActionMode = '';
-		$('#rc-add-did-include, #rc-add-did-exclude').removeClass('rc-route-action-active');
-		$('#rc-route-pick').prop('disabled', true).addClass('rc-control-disabled').attr('aria-disabled', 'true');
+		$('#rc-route-pick').val('');
+		$('#rc-route-pick').prop('disabled', false).removeClass('rc-control-disabled').attr('aria-disabled', 'false');
+		updateDidRouteActionButtonState();
 	}
 
-	function activateDidRouteAction(actionMode) {
+	function routeListContains($list, routeKey) {
+		var exists = false;
+		$list.find('li').each(function () {
+			var route = $(this).data('route');
+			if (route && String(route.route_key) === String(routeKey)) {
+				exists = true;
+				return false;
+			}
+		});
+		return exists;
+	}
+
+	function updateDidRouteActionButtonState() {
+		var selectedMode = $('#rc-rule-did-mode').val() === 'selected';
+		var routeKey = $.trim(String($('#rc-route-pick').val() || ''));
+		var route = routeKey !== '' ? findRoute(routeKey) : null;
+		var canInclude = selectedMode && !!route && !routeListContains($('#rc-did-include-list'), routeKey);
+		var canExclude = !selectedMode && !!route && !routeListContains($('#rc-did-exclude-list'), routeKey);
+
+		$('#rc-add-did-include').prop('disabled', !canInclude).toggleClass('disabled', !canInclude).show();
+		$('#rc-add-did-exclude').prop('disabled', !canExclude).toggleClass('disabled', !canExclude).show();
+	}
+
+	function applyDidRouteAction(actionMode) {
 		if (actionMode !== 'include' && actionMode !== 'exclude') {
-			return;
+			return false;
 		}
 		if (actionMode === 'include' && $('#rc-add-did-include').prop('disabled')) {
-			return;
+			return false;
 		}
 		if (actionMode === 'exclude' && $('#rc-add-did-exclude').prop('disabled')) {
-			return;
+			return false;
 		}
-		didRouteActionMode = actionMode;
-		$('#rc-add-did-include, #rc-add-did-exclude').removeClass('rc-route-action-active');
-		if (actionMode === 'include') {
-			$('#rc-add-did-include').addClass('rc-route-action-active');
-		} else {
-			$('#rc-add-did-exclude').addClass('rc-route-action-active');
+		var routeKey = $.trim(String($('#rc-route-pick').val() || ''));
+		if (routeKey === '') {
+			return false;
 		}
-		$('#rc-route-pick').prop('disabled', false).removeClass('rc-control-disabled').attr('aria-disabled', 'false');
+		var route = findRoute(routeKey);
+		var added = actionMode === 'include'
+			? addRouteToList($('#rc-did-include-list'), route, 'include')
+			: addRouteToList($('#rc-did-exclude-list'), route, 'exclude');
+		if (added) {
+			clearDidRouteActionState();
+		}
+		return added;
 	}
 
 	function updateDidScopeEditorState() {
 		var didMode = $('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all';
 		var selectedMode = didMode === 'selected';
 		clearDidRouteActionState();
-
-		$('#rc-add-did-include')
-			.prop('disabled', !selectedMode)
-			.toggleClass('disabled', !selectedMode)
-			.show();
-		$('#rc-add-did-exclude')
-			.prop('disabled', selectedMode)
-			.toggleClass('disabled', selectedMode)
-			.show();
 
 		$('#rc-did-include-col').toggle(selectedMode);
 		$('#rc-did-exclude-col').toggle(!selectedMode);
@@ -2801,11 +2820,11 @@
 
 	function loadInboundRoutes() {
 		ajax('getinboundroutes', {}, function (response) {
-			var options = [];
+			var options = ['<option value="" selected>Select an inbound route…</option>'];
 			$.each(response.routes || [], function (_, r) {
 				options.push('<option value="' + esc(r.route_key) + '">' + esc((r.route_label || r.route_key) + ' [' + r.route_key + ']') + '</option>');
 			});
-			$('#rc-route-pick').html(options.join(''));
+			$('#rc-route-pick').html(options.join('')).val('');
 			window._rcInboundRoutes = response.routes || [];
 			updateDidScopeEditorState();
 		});
@@ -3188,20 +3207,13 @@
 		});
 
 		$('#rc-add-did-include').off('click.repeatcaller').on('click.repeatcaller', function () {
-			activateDidRouteAction('include');
+			applyDidRouteAction('include');
 		});
 		$('#rc-add-did-exclude').off('click.repeatcaller').on('click.repeatcaller', function () {
-			activateDidRouteAction('exclude');
+			applyDidRouteAction('exclude');
 		});
 		$('#rc-route-pick').off('change.repeatcaller').on('change.repeatcaller', function () {
-			var route = findRoute($('#rc-route-pick').val());
-			if (didRouteActionMode === 'include') {
-				addRouteToList($('#rc-did-include-list'), route, 'include');
-				return;
-			}
-			if (didRouteActionMode === 'exclude') {
-				addRouteToList($('#rc-did-exclude-list'), route, 'exclude');
-			}
+			updateDidRouteActionButtonState();
 		});
 
 		$(document).off('click.repeatcaller', '.rc-edit-rule').on('click.repeatcaller', '.rc-edit-rule', function () {

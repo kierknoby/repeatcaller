@@ -1395,7 +1395,10 @@ assert_true(strpos($viewSource, '$initialRunNowEnabled = $initialMonitoringEnabl
 assert_true(strpos($viewSource, 'id="rc-run-now"<?php echo $initialRunNowEnabled ? \'\' : \' disabled\'; ?>') !== false, 'Run Now should include disabled attribute in markup when global state makes it unavailable');
 assert_true(strpos($viewSource, 'class="btn btn-warning" id="rc-run-now"') !== false, 'Run Now should use the existing amber/yellow warning button class');
 assert_true(strpos($viewSource, 'id="rc-enable"') === false && strpos($viewSource, 'id="rc-disable"') === false && strpos($viewSource, 'id="rc-resume"') === false, 'legacy separate Enable Rules, Disable Rules and Resume controls should be removed from Engine Status');
-assert_true(strpos($viewSource, 'id="rc-add-did-include"') !== false && strpos($viewSource, 'id="rc-add-did-exclude"') !== false, 'rule editor DID scope controls should keep Include Route and Exclude Route buttons visible');
+assert_true(strpos($viewSource, 'id="rc-add-did-include"') !== false && strpos($viewSource, 'id="rc-add-did-exclude"') !== false, 'rule editor DID scope controls should keep both route action buttons visible');
+assert_true((bool)preg_match('/id="rc-add-did-include" disabled/', $viewSource) && (bool)preg_match('/id="rc-add-did-exclude" disabled/', $viewSource), 'both route actions should be disabled in the initial server-rendered placeholder state');
+assert_true((bool)preg_match('/id="rc-add-did-include"[^>]*>\s*<\?php echo _\(\'Confirm\'\); \?>/', $viewSource), 'primary route action button should be labelled Confirm');
+assert_true(strpos($viewSource, "_('Include Route')") === false, 'Include Route should no longer be rendered as the primary button label');
 assert_true(strpos($viewSource, 'Enable Monitoring') === false, 'legacy Enable Monitoring button label should be removed from the view');
 assert_true(strpos($viewSource, 'Disable Monitoring') === false, 'legacy Disable Monitoring button label should be removed from the view');
 assert_true(substr_count($viewSource, 'class="btn btn-primary rc-snooze"') === 8, 'Engine Status should render exactly eight Snooze buttons');
@@ -1498,20 +1501,18 @@ assert_true(strpos($jsSource, "$('#rc-reset-rule')") === false, 'legacy Clear Ed
 assert_true(strpos($jsSource, "$('#rc-rule-caller-mode').off('change.repeatcaller').on('change.repeatcaller', function () { updateCallerScopeEditorState(); });") !== false, 'Caller Scope selector should bind explicit change handling for caller field availability');
 assert_true(strpos($jsSource, 'function clearOppositeDidScopeRows(nextMode) {') !== false, 'DID scope mode switching should clear stale opposite-mode route rows in the editor state');
 assert_true(strpos($jsSource, 'function clearDidRouteActionState() {') !== false, 'DID scope switching should clear active route-action state');
-assert_true(strpos($jsSource, "didRouteActionMode = '';") !== false, 'DID route action mode should reset to inactive state');
-assert_true(strpos($jsSource, "$('#rc-route-pick').prop('disabled', true).addClass('rc-control-disabled').attr('aria-disabled', 'true');") !== false, 'route picker should start disabled and be reset disabled on scope changes');
+assert_true(strpos($jsSource, "var options = ['<option value=\"\" selected>Select an inbound route…</option>'];") !== false, 'inbound route selector should begin with a selected empty placeholder');
+assert_true(strpos($jsSource, "$('#rc-route-pick').html(options.join('')).val('');") !== false, 'loaded inbound routes should leave the placeholder selected');
+assert_true(strpos($jsSource, "$('#rc-route-pick').val('');") !== false, 'successful route actions and scope changes should reset the route placeholder');
 assert_true(strpos($jsSource, "$('#rc-rule-did-mode').off('change.repeatcaller').on('change.repeatcaller', function () {") !== false && strpos($jsSource, 'clearOppositeDidScopeRows(') !== false, 'DID scope selector change handler should clear opposite-mode selections before toggling controls');
-assert_true(strpos($jsSource, 'clearDidRouteActionState();') !== false, 'scope switching should clear active Include/Exclude action and disable route picker');
-assert_true(strpos($jsSource, "$('#rc-add-did-include')") !== false && strpos($jsSource, ".prop('disabled', !selectedMode)") !== false && strpos($jsSource, ".show();") !== false, 'Include Route button should remain visible and be disabled in All DIDs mode');
-assert_true(strpos($jsSource, "$('#rc-add-did-exclude')") !== false && strpos($jsSource, ".prop('disabled', selectedMode)") !== false && strpos($jsSource, ".show();") !== false, 'Exclude Route button should remain visible and be disabled in Selected DIDs mode');
+assert_true(strpos($jsSource, 'clearDidRouteActionState();') !== false, 'scope switching should reset route selection and action availability');
+assert_true(strpos($jsSource, 'function updateDidRouteActionButtonState() {') !== false, 'route action availability should be derived from the current selector value and DID scope');
+assert_true(strpos($jsSource, "var routeKey = $.trim(String($('#rc-route-pick').val() || ''));") !== false, 'empty route selector values should be treated as no route selected');
 assert_true(strpos($jsSource, "$('#rc-did-include-col').toggle(selectedMode);") !== false && strpos($jsSource, "$('#rc-did-exclude-col').toggle(!selectedMode);") !== false, 'DID route lists should switch between include-only and exclude-only presentations by mode');
-assert_true(strpos($jsSource, 'function activateDidRouteAction(actionMode) {') !== false, 'valid DID action buttons should activate route picker mode');
-assert_true(strpos($jsSource, "if (actionMode === 'include' && $('#rc-add-did-include').prop('disabled')) {") !== false && strpos($jsSource, "if (actionMode === 'exclude' && $('#rc-add-did-exclude').prop('disabled')) {") !== false, 'disabled DID action button must not activate route picker mode');
-assert_true(strpos($jsSource, "$('#rc-add-did-include').addClass('rc-route-action-active');") !== false && strpos($jsSource, "$('#rc-add-did-exclude').addClass('rc-route-action-active');") !== false, 'pressing the valid DID action should highlight it as active');
-assert_true(strpos($jsSource, "$('#rc-route-pick').prop('disabled', false).removeClass('rc-control-disabled').attr('aria-disabled', 'false');") !== false, 'pressing the valid DID action should enable route picker for selection');
-assert_true(strpos($jsSource, "$('#rc-route-pick').off('change.repeatcaller').on('change.repeatcaller', function () {") !== false, 'route picker should add route entries via selection while action mode is active');
-assert_true(strpos($jsSource, "if (didRouteActionMode === 'include') {") !== false && strpos($jsSource, "addRouteToList($('#rc-did-include-list'), route, 'include');") !== false, 'include action mode should add routes to Included Routes list');
-assert_true(strpos($jsSource, "if (didRouteActionMode === 'exclude') {") !== false && strpos($jsSource, "addRouteToList($('#rc-did-exclude-list'), route, 'exclude');") !== false, 'exclude action mode should add routes to Excluded Routes list');
+assert_true(strpos($jsSource, 'function applyDidRouteAction(actionMode) {') !== false, 'route action handlers should validate and apply the currently selected route');
+assert_true(strpos($jsSource, "if (routeKey === '') {") !== false, 'route action path should reject the empty placeholder independently of button state');
+assert_true(strpos($jsSource, "? addRouteToList($('#rc-did-include-list'), route, 'include')") !== false, 'Confirm should retain the existing include-route semantics');
+assert_true(strpos($jsSource, ": addRouteToList($('#rc-did-exclude-list'), route, 'exclude');") !== false, 'Exclude Route should retain the existing exclude-route semantics');
 assert_true(strpos($jsSource, "var didScopeMode = $('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all';") !== false && strpos($jsSource, 'var dids = didScopeMode === \'selected\' ? didIncludes : didExcludes;') !== false, 'save payload should submit include rows only for Selected DIDs and exclude rows only for All DIDs');
 assert_true(strpos($jsSource, "if (didScopeMode === 'selected' && didIncludes.length < 1) {") !== false, 'Selected DIDs only mode should require at least one included route before save');
 assert_true(strpos($jsSource, "$('#rc-rule-did-mode').val(rule.did_scope_mode || 'all');") !== false && strpos($jsSource, 'updateDidScopeEditorState();') !== false, 'loading a rule should restore DID mode and route lists without auto-activating picker mode');
@@ -1701,6 +1702,8 @@ class Element {
 		this.id = id;
 		this.classes = new Set(classes.filter(Boolean));
 		this.attrs = {};
+		this.dataStore = {};
+		this.eventHandlers = {};
 		this.props = {};
 		this.children = [];
 		this.parent = null;
@@ -1860,6 +1863,15 @@ class Wrap {
 		});
 		return this;
 	}
+	data(name, value) {
+		if (value === undefined) {
+			return this.els[0] ? this.els[0].dataStore[name] : undefined;
+		}
+		this.els.forEach(function (element) {
+			element.dataStore[name] = value;
+		});
+		return this;
+	}
 	val(value) {
 		if (value === undefined) {
 			return this.els[0] ? this.els[0].value : '';
@@ -1949,7 +1961,20 @@ class Wrap {
 		return descendantMatch(this.els[0], selector);
 	}
 	off() { return this; }
-	on() { return this; }
+	on(eventName, handler) {
+		this.els.forEach(function (element) {
+			element.eventHandlers[eventName] = handler;
+		});
+		return this;
+	}
+	trigger(eventName) {
+		this.els.forEach(function (element) {
+			if (typeof element.eventHandlers[eventName] === 'function') {
+				element.eventHandlers[eventName].call(element);
+			}
+		});
+		return this;
+	}
 	remove() {
 		this.els.forEach(function (element) {
 			if (element.parent) {
@@ -2204,7 +2229,7 @@ vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
 source = source.replace('function ajax(command, payload, done, onComplete, options) {', 'function ajax(command, payload, done, onComplete, options) { var interceptor = (globalThis && globalThis.__testAjaxInterceptor) || (globalThis && globalThis.window && globalThis.window.__testAjaxInterceptor); if (interceptor && typeof interceptor === \'function\') { return interceptor(command, payload, done, onComplete, options); }');
 source = source.replace('function renderAlertHistory(items) {', 'function renderAlertHistory(items) { window.__alertCallFailureSummary = alertCallFailureSummary;');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory };\n})(jQuery);');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory, loadInboundRoutes: loadInboundRoutes, updateDidScopeEditorState: updateDidScopeEditorState, updateDidRouteActionButtonState: updateDidRouteActionButtonState, applyDidRouteAction: applyDidRouteAction };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 context.ajax = function (command, payload, done, onComplete, options) {
 	payload = payload || {};
@@ -2288,6 +2313,61 @@ if (context.$ && typeof context.$.ajax === 'function') {
 const hooks = context.window.__hooks;
 hooks.renderAlertHistory([]);
 assert(context.window.__alertCallFailureSummary('accepted', '') === 'Incident accepted', 'accepted Alert History status should render as Incident accepted');
+
+const inboundRoutes = [
+	{route_key: 'first|', route_label: 'First Route', did_value: 'first', cid_value: ''},
+	{route_key: 'second|', route_label: 'Second Route', did_value: 'second', cid_value: ''}
+];
+const defaultAjax = context.ajax;
+context.ajax = function (command, payload, done) {
+	if (command === 'getinboundroutes') {
+		done({routes: inboundRoutes});
+		return {done: function () { return this; }, fail: function () { return this; }};
+	}
+	return defaultAjax(command, payload, done);
+};
+hooks.loadInboundRoutes();
+assert($('#rc-route-pick').html().indexOf('<option value="" selected>Select an inbound route…</option>') === 0, 'route selector should render the selected empty placeholder first');
+assert($('#rc-route-pick').val() === '', 'route selector should initially select the empty placeholder');
+assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'placeholder should keep both route actions disabled');
+assert(hooks.applyDidRouteAction('include') === false && hooks.applyDidRouteAction('exclude') === false, 'placeholder should be rejected by both route action paths');
+
+$('#rc-rule-did-mode').val('selected');
+hooks.updateDidScopeEditorState();
+$('#rc-route-pick').val('first|');
+hooks.updateDidRouteActionButtonState();
+assert($('#rc-add-did-include').prop('disabled') === false, 'selecting the first real route should enable Confirm in Selected DIDs mode');
+assert($('#rc-add-did-exclude').prop('disabled') === true, 'Selected DIDs mode should keep Exclude Route unavailable');
+assert(hooks.applyDidRouteAction('include') === true, 'Confirm should add the selected first route');
+assert($('#rc-did-include-list').find('li').length === 1, 'Confirm should preserve include-route list behavior');
+assert($('#rc-route-pick').val() === '', 'successful Confirm should reset the route selector to its placeholder');
+assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'route actions should be disabled again after Confirm resets the selector');
+$('#rc-route-pick').val('first|');
+hooks.updateDidRouteActionButtonState();
+assert($('#rc-add-did-include').prop('disabled') === true, 'an already included route should remain protected from duplication');
+assert(hooks.applyDidRouteAction('include') === false && $('#rc-did-include-list').find('li').length === 1, 'duplicate Confirm should leave the included-route list unchanged');
+$('#rc-did-include-list').find('button').trigger('click');
+assert($('#rc-route-pick').val() === 'first|', 'removing an included route should leave the selected route unchanged');
+assert($('#rc-add-did-include').prop('disabled') === false, 'removing the selected included route should immediately re-enable Confirm');
+assert(hooks.applyDidRouteAction('include') === true && $('#rc-did-include-list').find('li').length === 1, 'Confirm should add the route again after its existing row is removed');
+
+$('#rc-rule-did-mode').val('all');
+hooks.updateDidScopeEditorState();
+$('#rc-route-pick').val('first|');
+hooks.updateDidRouteActionButtonState();
+assert($('#rc-add-did-include').prop('disabled') === true, 'All DIDs mode should keep Confirm unavailable');
+assert($('#rc-add-did-exclude').prop('disabled') === false, 'selecting the first real route should enable Exclude Route in All DIDs mode');
+assert(hooks.applyDidRouteAction('exclude') === true, 'Exclude Route should add the selected first route');
+assert($('#rc-did-exclude-list').find('li').length === 1, 'Exclude Route should preserve excluded-route list behavior');
+assert($('#rc-route-pick').val() === '', 'successful exclusion should reset the route selector to its placeholder');
+assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'route actions should be disabled again after exclusion resets the selector');
+$('#rc-route-pick').val('first|');
+hooks.updateDidRouteActionButtonState();
+assert($('#rc-add-did-exclude').prop('disabled') === true, 'an already excluded route should remain protected from duplication');
+$('#rc-did-exclude-list').find('button').trigger('click');
+assert($('#rc-route-pick').val() === 'first|', 'removing an excluded route should leave the selected route unchanged');
+assert($('#rc-add-did-exclude').prop('disabled') === false, 'removing the selected excluded route should immediately re-enable Exclude Route');
+assert(hooks.applyDidRouteAction('exclude') === true && $('#rc-did-exclude-list').find('li').length === 1, 'Exclude Route should add the route again after its existing row is removed');
 const warningNotieAlerts = [];
 const genericToasts = [];
 const fallbackTimeoutsMs = [];
@@ -2919,7 +2999,6 @@ assert_true(strpos($cssSource, '.repeatcaller .btn[disabled],') !== false && str
 assert_true(strpos($cssSource, '.repeatcaller .btn[disabled]:hover,') !== false && strpos($cssSource, '.repeatcaller .btn[disabled]:focus,') !== false && strpos($cssSource, '.repeatcaller .btn[disabled]:active,') !== false, 'disabled buttons should explicitly neutralize hover, focus, and active affordances');
 assert_true(strpos($cssSource, 'outline: none;') !== false && strpos($cssSource, 'box-shadow: none;') !== false, 'disabled control styling should remove focus outlines/rings and active shadows');
 assert_true(strpos($cssSource, '.repeatcaller .rc-rule-status:not([disabled]),') !== false && strpos($cssSource, '.repeatcaller .rc-rule-status:not([disabled]):hover,') !== false, 'Status button hover/focus/active styling should apply only when the control is enabled');
-assert_true(strpos($cssSource, '.repeatcaller .rc-route-actions .btn.rc-route-action-active:not([disabled]),') !== false, 'active DID action styling should not apply when the route-action button is disabled');
 assert_true(strpos($cssSource, '.repeatcaller .form-control[disabled]:focus,') !== false && strpos($cssSource, '.repeatcaller .form-control.rc-control-disabled:focus,') !== false, 'disabled form controls should suppress focus ring and preserve muted disabled visuals');
 
 $rootPos = strpos($viewSource, '<div class="repeatcaller"');

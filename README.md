@@ -850,6 +850,8 @@ Released by `@kierknoby, Kieran Knowles-Byrne // FreePBX UK`.
 * Corrects the FreePBX 16 and 17 module metadata declarations.
 * Corrects the redundant Alert History `accepted` JavaScript condition without
   changing its behaviour.
+* Improves the Selected DIDs route selector so the first inbound route can be
+  chosen immediately.
 * Adds regression coverage for sender identity parsing, email delivery,
   recipient compatibility, release metadata, and the Alert History condition.
 
