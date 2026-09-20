@@ -688,7 +688,6 @@ class Repeatcaller implements \BMO {
 		if (!empty($payload['alert_call_handle_callerid_upstream'])) {
 			$payload['alert_call_callerid'] = '';
 		}
-		$payload['dids'] = $this->rcFilterDidsForScopeMode($payload['dids'], $payload['did_scope_mode']);
 		if (!empty($payload['email_enabled'])) {
 			$rawRecipients = trim((string)($_REQUEST['email_recipients'] ?? ''));
 			$recipients = $this->normaliseRecipients($rawRecipients);
@@ -1156,24 +1155,6 @@ class Repeatcaller implements \BMO {
 				'cid_value' => (string)$route['cid_value'],
 			];
 		}
-		return $normalized;
-	}
-
-	private function rcFilterDidsForScopeMode(array $dids, string $didScopeMode): array {
-		$mode = $didScopeMode === 'selected' ? 'selected' : 'all';
-		$allowedListType = $mode === 'selected' ? 'include' : 'exclude';
-		$normalized = [];
-		foreach ($dids as $did) {
-			if (!is_array($did)) {
-				continue;
-			}
-			$listType = (string)($did['list_type'] ?? '');
-			if ($listType !== $allowedListType) {
-				continue;
-			}
-			$normalized[] = $did;
-		}
-
 		return $normalized;
 	}
 

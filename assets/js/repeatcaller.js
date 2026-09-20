@@ -2245,16 +2245,6 @@
 		return /^\+?\d+$/.test(candidate);
 	}
 
-	function clearOppositeDidScopeRows(nextMode) {
-		if (nextMode === 'selected') {
-			$('#rc-did-exclude-list').empty();
-			return;
-		}
-		if (nextMode === 'all') {
-			$('#rc-did-include-list').empty();
-		}
-	}
-
 	function clearDidRouteActionState() {
 		$('#rc-route-pick').val('');
 		$('#rc-route-pick').prop('disabled', false).removeClass('rc-control-disabled').attr('aria-disabled', 'false');
@@ -2274,11 +2264,10 @@
 	}
 
 	function updateDidRouteActionButtonState() {
-		var selectedMode = $('#rc-rule-did-mode').val() === 'selected';
 		var routeKey = $.trim(String($('#rc-route-pick').val() || ''));
 		var route = routeKey !== '' ? findRoute(routeKey) : null;
-		var canInclude = selectedMode && !!route && !routeListContains($('#rc-did-include-list'), routeKey);
-		var canExclude = !selectedMode && !!route && !routeListContains($('#rc-did-exclude-list'), routeKey);
+		var canInclude = !!route && !routeListContains($('#rc-did-include-list'), routeKey);
+		var canExclude = !!route && !routeListContains($('#rc-did-exclude-list'), routeKey);
 
 		$('#rc-add-did-include').prop('disabled', !canInclude).toggleClass('disabled', !canInclude).show();
 		$('#rc-add-did-exclude').prop('disabled', !canExclude).toggleClass('disabled', !canExclude).show();
@@ -2309,14 +2298,9 @@
 	}
 
 	function updateDidScopeEditorState() {
-		var didMode = $('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all';
-		var selectedMode = didMode === 'selected';
 		clearDidRouteActionState();
-
-		$('#rc-did-include-col').toggle(selectedMode);
-		$('#rc-did-exclude-col').toggle(!selectedMode);
-		$('#rc-did-include-list').toggleClass('rc-control-disabled', !selectedMode).attr('aria-disabled', selectedMode ? 'false' : 'true');
-		$('#rc-did-exclude-list').toggleClass('rc-control-disabled', selectedMode).attr('aria-disabled', selectedMode ? 'true' : 'false');
+		$('#rc-did-include-col, #rc-did-exclude-col').show();
+		$('#rc-did-include-list, #rc-did-exclude-list').removeClass('rc-control-disabled').attr('aria-disabled', 'false');
 	}
 
 	function updateCallerScopeEditorState() {
@@ -2615,7 +2599,7 @@
 		var didScopeMode = $('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all';
 		var didIncludes = collectRouteList($('#rc-did-include-list'));
 		var didExcludes = collectRouteList($('#rc-did-exclude-list'));
-		var dids = didScopeMode === 'selected' ? didIncludes : didExcludes;
+		var dids = didIncludes.concat(didExcludes);
 		if (didScopeMode === 'selected' && didIncludes.length < 1) {
 			showMessage('Selected DID scope requires at least one included inbound route.', 'error');
 			if (onDone) { onDone(); }
@@ -3166,7 +3150,6 @@
 		$('#rc-add-schedule').off('click.repeatcaller').on('click.repeatcaller', function () { addScheduleRow(); });
 		$('#rc-rule-caller-mode').off('change.repeatcaller').on('change.repeatcaller', function () { updateCallerScopeEditorState(); });
 		$('#rc-rule-did-mode').off('change.repeatcaller').on('change.repeatcaller', function () {
-			clearOppositeDidScopeRows($('#rc-rule-did-mode').val() === 'selected' ? 'selected' : 'all');
 			updateDidScopeEditorState();
 		});
 		$('#rc-rule-alert-call-enabled').off('change.repeatcaller').on('change.repeatcaller', function () {

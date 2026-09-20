@@ -553,7 +553,7 @@ try {
 	], '2026-07-13 09:06:00');
 	$didScopeAllReload = $repo->loadRule($didScopeSwitchRuleId);
 	assert_same('all', (string)$didScopeAllReload['did_scope_mode'], 'all-DID mode should persist during save');
-	assert_same(0, count($didScopeAllReload['did_lists']['include']), 'all-DID mode should clear stored include rows');
+	assert_same(1, count($didScopeAllReload['did_lists']['include']), 'all-DID mode should preserve stored include rows');
 	assert_same(1, count($didScopeAllReload['did_lists']['exclude']), 'all-DID mode should persist exclusions');
 
 	$repo->saveRule([
@@ -585,7 +585,7 @@ try {
 	$didScopeSelectedReload = $repo->loadRule($didScopeSwitchRuleId);
 	assert_same('selected', (string)$didScopeSelectedReload['did_scope_mode'], 'selected-DID mode should persist during save');
 	assert_same(1, count($didScopeSelectedReload['did_lists']['include']), 'selected-DID mode should persist includes');
-	assert_same(0, count($didScopeSelectedReload['did_lists']['exclude']), 'selected-DID mode should clear stored exclude rows');
+	assert_same(1, count($didScopeSelectedReload['did_lists']['exclude']), 'selected-DID mode should preserve stored exclude rows');
 
 	$firstSeen = [
 		'call_identity' => 'linkedid-100',
