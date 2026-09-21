@@ -114,6 +114,15 @@ class Repeatcaller implements \BMO {
 		}
 
 		try {
+			$hasCurrentDidSemantics = false;
+			if (!empty($backup['settings']) && is_array($backup['settings'])) {
+				foreach ($backup['settings'] as $row) {
+					if (is_array($row) && (string)($row['setting_key'] ?? '') === 'did_scope_semantics_migrated_1_0_3') {
+						$hasCurrentDidSemantics = true;
+						break;
+					}
+				}
+			}
 			if (!empty($backup['settings']) && is_array($backup['settings'])) {
 				foreach ($backup['settings'] as $row) {
 					if (isset($row['setting_key']) && array_key_exists((string)$row['setting_key'], $this->settingsDefaults)) {
@@ -126,6 +135,13 @@ class Repeatcaller implements \BMO {
 				foreach ($backup['rules'] as $rule) {
 					if (!is_array($rule) || empty($rule['name'])) {
 						continue;
+					}
+					$didScopeMode = (string)($rule['did_scope_mode'] ?? 'all') === 'selected' ? 'selected' : 'all';
+					$didIncludes = $rule['did_lists']['include'] ?? [];
+					$didExcludes = $rule['did_lists']['exclude'] ?? [];
+					if (!$hasCurrentDidSemantics && $didScopeMode === 'all' && !empty($didExcludes)) {
+						$didScopeMode = 'selected';
+						$didIncludes = [];
 					}
 					$repository->saveRule([
 						'name' => (string)$rule['name'],
@@ -146,7 +162,7 @@ class Repeatcaller implements \BMO {
 						'observation_window_minutes' => (int)($rule['observation_window_minutes'] ?? 60),
 						'caller_mode' => (string)($rule['caller_mode'] ?? 'any'),
 						'exclude_withheld' => !empty($rule['exclude_withheld']) ? 1 : 0,
-						'did_scope_mode' => (string)($rule['did_scope_mode'] ?? 'all'),
+						'did_scope_mode' => $didScopeMode,
 						'alert_reminder_mode_override' => (string)($rule['alert_reminder_mode_override'] ?? ''),
 						'suppression_minutes_override' => $rule['suppression_minutes_override'] !== null && $rule['suppression_minutes_override'] !== ''
 							? (int)$rule['suppression_minutes_override']
@@ -163,10 +179,10 @@ class Repeatcaller implements \BMO {
 						'dids' => array_merge(
 							array_map(function ($row) {
 								return ['list_type' => 'include', 'route_key' => (string)$row['route_key'], 'route_label' => (string)$row['route_label'], 'did_value' => $row['did_value'], 'cid_value' => $row['cid_value']];
-							}, $rule['did_lists']['include'] ?? []),
+							}, $didIncludes),
 							array_map(function ($row) {
 								return ['list_type' => 'exclude', 'route_key' => (string)$row['route_key'], 'route_label' => (string)$row['route_label'], 'did_value' => $row['did_value'], 'cid_value' => $row['cid_value']];
-							}, $rule['did_lists']['exclude'] ?? [])
+							}, $didExcludes)
 						),
 					], $this->now());
 				}
@@ -729,28 +745,11 @@ class Repeatcaller implements \BMO {
 				return ['status' => false, 'message' => _('Specific caller mode requires at least one included caller.')];
 			}
 		}
-		if ($payload['did_scope_mode'] === 'selected') {
-			$hasIncludedRoute = false;
-			foreach ($payload['dids'] as $did) {
-				if ((string)$did['list_type'] === 'include') {
-					$hasIncludedRoute = true;
-					break;
-				}
-			}
-			if (!$hasIncludedRoute) {
-				return ['status' => false, 'message' => _('Selected DID scope requires at least one included inbound route.')];
-			}
-		}
-
 		$targetEnabled = !empty($payload['enabled']) ? 1 : 0;
 		$shouldAttemptEnable = $targetEnabled === 1 && ($ruleId <= 0 || (int)($existingRule['enabled'] ?? 0) !== 1);
 		if ($shouldAttemptEnable && !$this->rcIsValidDefaultCountryCode((string)($this->rcSettings()['default_country_code'] ?? ''))) {
 			return ['status' => false, 'message' => _('Repeat Caller cannot be enabled until Global Settings > Default Country Code contains a valid value.')];
 		}
-		if ($shouldAttemptEnable && !empty($rule['alert_call_enabled']) && !$this->canEnableAlertCall()) {
-			return $this->alertCallFallbackError();
-		}
-
 		$ruleId = $repository->saveRule($payload, $this->now());
 		return [
 			'status' => true,

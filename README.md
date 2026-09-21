@@ -1,6 +1,6 @@
 # Repeat Caller 1.0.3 for FreePBX 16 and 17
 
-**Release date:** 20 September 2026
+**Release date:** 21 September 2026
 
 ## Signed Release
 
@@ -839,7 +839,7 @@ Future release consideration:
 
 ## Release History
 
-### 1.0.3, patch release, 20 September 2026
+### 1.0.3, patch release, 21 September 2026
 
 Released by `@kierknoby, Kieran Knowles-Byrne // FreePBX UK`.
 

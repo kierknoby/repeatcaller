@@ -363,6 +363,113 @@ assert_same('01234567890, 07876543210', implode(', ', array_map(function (array 
 assert_same('01234567890, 02079460000', implode(', ', array_map(function (array $row): string {
 	return (string)($row['raw_value'] ?? '');
 }, $browserCallerReloadedRule['caller_lists']['exclude'] ?? [])), 'exclude callers should remain in canonical comma-space presentation order after reload');
+
+foreach ([['blocked', 'Blocked'], ['included', 'Included'], ['shared', 'Shared']] as $controllerRoute) {
+	$browserCallerSaveDb->prepare('INSERT INTO incoming (extension, cidnum, description) VALUES (?, ?, ?)')->execute([
+		$controllerRoute[0], '', $controllerRoute[1],
+	]);
+}
+$didSaveCases = [
+	['name' => 'Selected Empty Routes', 'dids' => [], 'include' => 0, 'exclude' => 0],
+	['name' => 'Selected Exclusions Only', 'dids' => [
+		['list_type' => 'exclude', 'route_key' => 'blocked|', 'route_label' => 'Blocked', 'did_value' => 'blocked', 'cid_value' => ''],
+	], 'include' => 0, 'exclude' => 1],
+	['name' => 'Selected Includes Only', 'dids' => [
+		['list_type' => 'include', 'route_key' => 'included|', 'route_label' => 'Included', 'did_value' => 'included', 'cid_value' => ''],
+	], 'include' => 1, 'exclude' => 0],
+	['name' => 'Selected Includes And Exclusions', 'dids' => [
+		['list_type' => 'include', 'route_key' => 'shared|', 'route_label' => 'Shared Include', 'did_value' => 'shared', 'cid_value' => ''],
+		['list_type' => 'exclude', 'route_key' => 'shared|', 'route_label' => 'Shared Exclude', 'did_value' => 'shared', 'cid_value' => ''],
+	], 'include' => 1, 'exclude' => 1],
+];
+foreach ($didSaveCases as $didSaveCase) {
+	$_REQUEST = [
+		'rule_id' => '0', 'name' => $didSaveCase['name'], 'enabled' => '0',
+		'email_enabled' => '0', 'alert_call_enabled' => '0', 'alert_call_destinations' => '',
+		'alert_call_strategy' => 'ringall', 'alert_call_recording_id' => '', 'mode' => 'repeat',
+		'threshold_count' => '2', 'observation_window_minutes' => '60', 'caller_mode' => 'any',
+		'exclude_withheld' => '0', 'did_scope_mode' => 'selected', 'alert_reminder_mode_override' => 'never',
+		'email_recipients' => '', 'suppression_minutes_override' => '', 'schedules' => '[]',
+		'callers' => '[]', 'dids' => json_encode($didSaveCase['dids']),
+	];
+	$didSaveResponse = $browserCallerSaveMethod->invoke($browserCallerSaveController);
+	assert_true(($didSaveResponse['status'] ?? false) === true, $didSaveCase['name'] . ' should save through the controller');
+	$didSavedRule = $browserCallerSaveRepo->loadRule((int)($didSaveResponse['rule']['id'] ?? 0));
+	assert_same('selected', (string)($didSavedRule['did_scope_mode'] ?? ''), $didSaveCase['name'] . ' should remain selected after reload');
+	assert_same($didSaveCase['include'], count($didSavedRule['did_lists']['include'] ?? []), $didSaveCase['name'] . ' should preserve real includes');
+	assert_same($didSaveCase['exclude'], count($didSavedRule['did_lists']['exclude'] ?? []), $didSaveCase['name'] . ' should preserve real exclusions');
+	foreach (array_merge($didSavedRule['did_lists']['include'] ?? [], $didSavedRule['did_lists']['exclude'] ?? []) as $didRow) {
+		assert_true(!in_array((string)($didRow['route_key'] ?? ''), ['All DIDs', 'No DIDs'], true), 'semantic defaults must never persist as route rows');
+	}
+}
+$_REQUEST = $savedRequest;
+
+$backupRule = static function (string $name, string $scope, array $includes, array $excludes): array {
+	return [
+		'name' => $name, 'enabled' => 0, 'email_enabled' => 0, 'email_recipients' => '',
+		'alert_call_enabled' => 0, 'alert_call_destinations' => '', 'alert_call_strategy' => 'ringall',
+		'alert_call_keep_trying' => 0, 'alert_call_recording_id' => null,
+		'alert_call_handle_callerid_upstream' => 1, 'alert_call_callerid' => '',
+		'mode' => 'repeat', 'threshold_count' => 2, 'observation_window_minutes' => 60,
+		'caller_mode' => 'any', 'exclude_withheld' => 0, 'did_scope_mode' => $scope,
+		'alert_reminder_mode_override' => 'never', 'suppression_minutes_override' => null,
+		'schedules' => [], 'caller_lists' => ['include' => [], 'exclude' => []],
+		'did_lists' => ['include' => $includes, 'exclude' => $excludes],
+	];
+};
+$routeRow = static function (string $type, string $key): array {
+	return ['list_type' => $type, 'route_key' => $key, 'route_label' => $key, 'did_value' => rtrim($key, '|'), 'cid_value' => ''];
+};
+
+$legacyRestoreDb = make_db();
+FreePBX::setDatabase($legacyRestoreDb);
+$legacyRestoreController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$legacyRestoreController->restore(['settings' => [], 'rules' => [
+	$backupRule('Legacy All', 'all', [], []),
+	$backupRule('Legacy All Minus', 'all', [], [$routeRow('exclude', 'blocked|')]),
+	$backupRule('Legacy Selected', 'selected', [$routeRow('include', 'included|')], []),
+]]);
+$legacyRestoreRepo = new RepeatCallerRepository($legacyRestoreDb);
+$legacyRestored = [];
+foreach ($legacyRestoreRepo->loadRulesSummary() as $restoredSummary) {
+	$legacyRestored[(string)$restoredSummary['name']] = $legacyRestoreRepo->loadRule((int)$restoredSummary['id']);
+}
+assert_same('all', (string)$legacyRestored['Legacy All']['did_scope_mode'], 'legacy backup all without exclusions should restore as all');
+assert_same('selected', (string)$legacyRestored['Legacy All Minus']['did_scope_mode'], 'legacy backup all with exclusions should restore as selected');
+assert_same(0, count($legacyRestored['Legacy All Minus']['did_lists']['include']), 'legacy all-minus restore should keep includes empty');
+assert_same('blocked|', (string)$legacyRestored['Legacy All Minus']['did_lists']['exclude'][0]['route_key'], 'legacy all-minus restore should preserve exclusions');
+assert_same('selected', (string)$legacyRestored['Legacy Selected']['did_scope_mode'], 'legacy selected backup should remain selected');
+assert_same('included|', (string)$legacyRestored['Legacy Selected']['did_lists']['include'][0]['route_key'], 'legacy selected backup should preserve includes');
+
+$currentRestoreDb = make_db();
+FreePBX::setDatabase($currentRestoreDb);
+$currentRestoreController = new \FreePBX\modules\Repeatcaller(new stdClass());
+$currentRestoreController->restore(['settings' => [[
+	'setting_key' => 'did_scope_semantics_migrated_1_0_3', 'setting_value' => '1', 'updated_at' => '2026-09-21 00:00:00',
+]], 'rules' => [
+	$backupRule('Current Dormant All', 'all', [$routeRow('include', 'dormant-in|')], [$routeRow('exclude', 'dormant-out|')]),
+	$backupRule('Current Selected Both', 'selected', [$routeRow('include', 'shared|')], [$routeRow('exclude', 'shared|')]),
+]]);
+$currentRestoreRepo = new RepeatCallerRepository($currentRestoreDb);
+$currentRestored = [];
+foreach ($currentRestoreRepo->loadRulesSummary() as $restoredSummary) {
+	$currentRestored[(string)$restoredSummary['name']] = $currentRestoreRepo->loadRule((int)$restoredSummary['id']);
+}
+assert_same('all', (string)$currentRestored['Current Dormant All']['did_scope_mode'], 'current marked backup should preserve all mode exactly');
+assert_same(1, count($currentRestored['Current Dormant All']['did_lists']['include']), 'current marked all backup should preserve dormant includes');
+assert_same(1, count($currentRestored['Current Dormant All']['did_lists']['exclude']), 'current marked all backup should preserve dormant exclusions');
+assert_same('selected', (string)$currentRestored['Current Selected Both']['did_scope_mode'], 'current selected backup should remain selected');
+assert_same(1, count($currentRestored['Current Selected Both']['did_lists']['include']), 'current selected backup should preserve includes');
+assert_same(1, count($currentRestored['Current Selected Both']['did_lists']['exclude']), 'current selected backup should preserve exclusions');
+$currentRestoreDb->prepare('INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute([
+	'did_scope_semantics_migrated_1_0_3', '1', '2026-09-21 00:00:00',
+]);
+$currentBackup = $currentRestoreController->backup();
+$currentBackupSettingKeys = array_map(static function (array $row): string {
+	return (string)($row['setting_key'] ?? '');
+}, $currentBackup['settings'] ?? []);
+assert_true(in_array('did_scope_semantics_migrated_1_0_3', $currentBackupSettingKeys, true), 'backup should export the DID semantic generation marker');
+
 FreePBX::setDatabase($db);
 
 $mixedListRuleId = $parserRepo->saveRule([
@@ -1356,6 +1463,12 @@ assert_same('0', (string)($bulkRuleAAfterSingleToggle['enabled'] ?? '0'), 'indiv
 // Focused contract: persisted snooze-selection state semantics.
 $controllerSource = file_get_contents(__DIR__ . '/../Repeatcaller.class.php');
 assert_true($controllerSource !== false, 'Repeatcaller controller source should be readable');
+$saveMethodStart = strpos($controllerSource, 'private function rcHandleSaveRule(): array');
+$saveMethodEnd = strpos($controllerSource, 'private function rcHandleDeleteRule(): array', $saveMethodStart !== false ? $saveMethodStart : 0);
+$saveMethodSource = $saveMethodStart !== false && $saveMethodEnd !== false ? substr($controllerSource, $saveMethodStart, $saveMethodEnd - $saveMethodStart) : '';
+assert_true(strpos($saveMethodSource, 'Selected DID scope requires at least one included inbound route.') === false, 'controller save must allow Select DIDs with an empty include list');
+assert_true(strpos($saveMethodSource, '$rule[\'alert_call_enabled\']') === false, 'controller save must not reference an undefined rule variable during Alert Call validation');
+assert_true(strpos($controllerSource, "did_scope_semantics_migrated_1_0_3") !== false, 'restore must classify backup DID semantics using the exported migration marker');
 
 assert_true((bool)preg_match('/in_array\(\$seconds, \[300, 900, 1800, 3600, 10800, 21600, 43200, 86400\], true\)/', $controllerSource), 'snooze handler must accept existing durations and longer 3h/6h/12h/24h durations up to 86400 seconds');
 assert_true((bool)preg_match('/setSetting\(\'global_snooze_selected_seconds\', \(string\)\$seconds\);/', $controllerSource), 'setting a snooze duration must persist global_snooze_selected_seconds (e.g. "900" for 15m)');
@@ -2234,7 +2347,7 @@ vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
 source = source.replace('function ajax(command, payload, done, onComplete, options) {', 'function ajax(command, payload, done, onComplete, options) { var interceptor = (globalThis && globalThis.__testAjaxInterceptor) || (globalThis && globalThis.window && globalThis.window.__testAjaxInterceptor); if (interceptor && typeof interceptor === \'function\') { return interceptor(command, payload, done, onComplete, options); }');
 source = source.replace('function renderAlertHistory(items) {', 'function renderAlertHistory(items) { window.__alertCallFailureSummary = alertCallFailureSummary;');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory, loadInboundRoutes: loadInboundRoutes, updateDidScopeEditorState: updateDidScopeEditorState, updateDidRouteActionButtonState: updateDidRouteActionButtonState, applyDidRouteAction: applyDidRouteAction };\n})(jQuery);');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, collectRouteList: collectRouteList, updateDidRouteListDefaults: updateDidRouteListDefaults, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory, loadInboundRoutes: loadInboundRoutes, updateDidScopeEditorState: updateDidScopeEditorState, updateDidRouteActionButtonState: updateDidRouteActionButtonState, applyDidRouteAction: applyDidRouteAction };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 context.ajax = function (command, payload, done, onComplete, options) {
 	payload = payload || {};
@@ -2339,6 +2452,10 @@ assert($('#rc-route-pick').prop('disabled') === true && $('#rc-route-pick').els[
 assert(hooks.applyDidRouteAction('include') === false && hooks.applyDidRouteAction('exclude') === false, 'placeholder should be rejected by both route action paths');
 assert($('#rc-did-include-list').find('li').length === 1 && $('#rc-did-include-list').find('li').text() === 'All DIDs', 'empty Included Routes should display the All DIDs visual default');
 assert($('#rc-did-exclude-list').find('li').length === 1 && $('#rc-did-exclude-list').find('li').text() === 'No DIDs', 'empty Excluded Routes should display the No DIDs visual default');
+assert(hooks.collectRouteList($('#rc-did-include-list')).length === 0 && hooks.collectRouteList($('#rc-did-exclude-list')).length === 0, 'semantic defaults must not be collected as real route rows');
+$('#rc-did-include-list, #rc-did-exclude-list').empty();
+hooks.updateDidRouteListDefaults();
+assert($('#rc-did-include-list').find('li').text() === 'All DIDs' && $('#rc-did-exclude-list').find('li').text() === 'No DIDs', 'restoring empty saved route lists should show both semantic defaults');
 
 $('#rc-rule-did-mode').val('selected');
 hooks.updateDidScopeEditorState();
@@ -2349,6 +2466,7 @@ hooks.updateDidRouteActionButtonState();
 assert($('#rc-add-did-include').prop('disabled') === false && $('#rc-add-did-exclude').prop('disabled') === false, 'selecting the first real route should enable both available route actions');
 assert(hooks.applyDidRouteAction('include') === true, 'Include Route should add the selected first route');
 assert($('#rc-did-include-list').find('li').length === 1, 'Include Route should add to Included Routes');
+assert($('#rc-did-include-list').find('li').text() !== 'All DIDs', 'adding the first include should remove the All DIDs semantic default');
 assert($('#rc-route-pick').val() === '', 'successful Include Route should reset the route selector to its placeholder');
 assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'route actions should be disabled again after Include Route resets the selector');
 $('#rc-route-pick').val('first|');
@@ -2358,6 +2476,7 @@ assert($('#rc-add-did-exclude').prop('disabled') === false, 'a route already inc
 assert(hooks.applyDidRouteAction('include') === false && $('#rc-did-include-list').find('li').length === 1, 'duplicate Include Route should leave the included-route list unchanged');
 $('#rc-did-include-list').find('button').trigger('click');
 assert($('#rc-route-pick').val() === 'first|', 'removing an included route should leave the selected route unchanged');
+assert($('#rc-did-include-list').find('li').text() === 'All DIDs', 'removing the final include should immediately restore All DIDs');
 assert($('#rc-add-did-include').prop('disabled') === false, 'removing the selected included route should immediately re-enable Include Route');
 assert(hooks.applyDidRouteAction('include') === true && $('#rc-did-include-list').find('li').length === 1, 'Include Route should add the route again after its existing row is removed');
 
@@ -2366,6 +2485,7 @@ hooks.updateDidRouteActionButtonState();
 assert($('#rc-add-did-exclude').prop('disabled') === false, 'the same selected route should remain available for Exclude Route');
 assert(hooks.applyDidRouteAction('exclude') === true, 'Exclude Route should add the selected first route');
 assert($('#rc-did-exclude-list').find('li').length === 1, 'Exclude Route should preserve excluded-route list behavior');
+assert($('#rc-did-exclude-list').find('li').text() !== 'No DIDs', 'adding the first exclusion should remove the No DIDs semantic default');
 assert($('#rc-route-pick').val() === '', 'successful exclusion should reset the route selector to its placeholder');
 assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'route actions should be disabled again after exclusion resets the selector');
 $('#rc-route-pick').val('first|');
@@ -2374,6 +2494,7 @@ assert($('#rc-add-did-exclude').prop('disabled') === true, 'an already excluded 
 assert(hooks.applyDidRouteAction('exclude') === false && $('#rc-did-exclude-list').find('li').length === 1, 'duplicate Exclude Route should leave the excluded-route list unchanged');
 $('#rc-did-exclude-list').find('button').trigger('click');
 assert($('#rc-route-pick').val() === 'first|', 'removing an excluded route should leave the selected route unchanged');
+assert($('#rc-did-exclude-list').find('li').text() === 'No DIDs', 'removing the final exclusion should immediately restore No DIDs');
 assert($('#rc-add-did-exclude').prop('disabled') === false, 'removing the selected excluded route should immediately re-enable Exclude Route');
 assert(hooks.applyDidRouteAction('exclude') === true && $('#rc-did-exclude-list').find('li').length === 1, 'Exclude Route should add the route again after its existing row is removed');
 
