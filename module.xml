@@ -9,7 +9,7 @@
 	<description>Repeat Caller detects repeated inbound call journeys, creates actionable incidents, and supports GUI, email, and Alert Call notifications for FreePBX/PBXact 16 and 17.</description>
 	<more-info>https://github.com/freepbxUK/repeatcaller</more-info>
 	<changelog>
-*1.0.3* First signed FreePBX UK release. Moves publisher and repository metadata to FreePBX UK, preserves explicit Email "From:" display names including FreePBX 17 HTML-encoded identities, corrects separate FreePBX 16 and 17 support declarations, fixes first-route selection in the DID editor, and removes a redundant Alert History JavaScript condition.
+*1.0.3* First signed FreePBX UK release. Moves publisher and repository metadata to FreePBX UK, preserves explicit Email "From:" display names including FreePBX 17 HTML-encoded identities, corrects separate FreePBX 16 and 17 support declarations, fixes DID route selection and legacy exclusion compatibility, and removes a redundant Alert History JavaScript condition.
 *1.0.2* Improves multilingual Alert Call handling, adds a native French profile with coherent English fallback, preserves System Recording language, and adds installed-language status and sample playback.
 *1.0.1* Improves Alert Reminder sequencing, rule-editor reliability, DID scope controls, accepted-incident suppression, snooze controls, and global rule controls.
 	</changelog>

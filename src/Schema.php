@@ -134,6 +134,33 @@ final class Schema {
 		self::addColumnIfMissing($pdo, 'repeatcaller_incidents', 'observation_window_minutes', 'INT UNSIGNED NOT NULL DEFAULT 0');
 		self::addColumnIfMissing($pdo, 'repeatcaller_incident_suppression_history', 'cleared_at', 'DATETIME NULL');
 		self::ensureScheduleDayOfWeekIsSigned($pdo);
+		self::migrateLegacyDidScopeSemantics($pdo);
+	}
+
+	private static function migrateLegacyDidScopeSemantics(PDO $pdo): void {
+		$migrationKey = 'did_scope_semantics_migrated_1_0_3';
+		$stmt = $pdo->prepare('SELECT setting_value FROM repeatcaller_settings WHERE setting_key = ? LIMIT 1');
+		$stmt->execute([$migrationKey]);
+		if ($stmt->fetchColumn() !== false) {
+			return;
+		}
+
+		$pdo->exec(
+			"UPDATE repeatcaller_rules
+			 SET did_scope_mode = 'selected'
+			 WHERE did_scope_mode = 'all'
+			   AND EXISTS (
+				SELECT 1
+				FROM repeatcaller_rule_dids
+				WHERE repeatcaller_rule_dids.rule_id = repeatcaller_rules.id
+				  AND repeatcaller_rule_dids.list_type = 'exclude'
+			   )"
+		);
+
+		$stmt = $pdo->prepare(
+			'INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)'
+		);
+		$stmt->execute([$migrationKey, '1', date('Y-m-d H:i:s')]);
 	}
 
 	private static function ensureScheduleDayOfWeekIsSigned(PDO $pdo): void {

@@ -209,6 +209,12 @@ body:has(.repeatcaller) #page_body.default-page {
 	opacity: 1;
 }
 
+.repeatcaller #rc-did-route-actions-col.rc-control-disabled,
+.repeatcaller #rc-did-include-col.rc-control-disabled,
+.repeatcaller #rc-did-exclude-col.rc-control-disabled {
+	color: #777;
+}
+
 .repeatcaller .rc-list {
 	list-style: none;
 	padding-left: 0;

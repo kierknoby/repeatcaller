@@ -543,7 +543,7 @@ try {
 		'enabled' => '1',
 		'default_country_code' => '44',
 	]);
-	assert_same(1, $didExcludeSummary['incidents_created'], 'all DID scope exclusions should prevent excluded routes from matching');
+	assert_same(2, $didExcludeSummary['incidents_created'], 'Include All DIDs should ignore preserved route rows and match every inbound route');
 
 	$dbPathDidSelected = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPathDidSelected === false) {
@@ -555,11 +555,11 @@ try {
 	insert_rule($dbDidSelected, [
 		'name' => 'Selected DID Rule',
 		'mode' => 'repeat',
-		'threshold_count' => 2,
+		'threshold_count' => 1,
 		'observation_window_minutes' => 60,
 		'caller_mode' => 'any',
 		'did_scope_mode' => 'selected',
-		'include_routes' => ['18005550001|'],
+		'include_routes' => [],
 		'exclude_routes' => ['18005550001|'],
 		'schedules' => [['day' => 1, 'start' => '09:00', 'end' => '17:00']],
 	]);
@@ -570,7 +570,7 @@ try {
 		'enabled' => '1',
 		'default_country_code' => '44',
 	]);
-	assert_same(1, $didSelectedSummary['incidents_created'], 'selected DID scope should use include routes only and ignore exclusion rows');
+	assert_same(1, $didSelectedSummary['incidents_created'], 'Select DIDs with no includes should match all routes except explicit exclusions');
 
 	$dbPathRouteNoActive = tempnam(sys_get_temp_dir(), 'repeatcaller_runtime_');
 	if ($dbPathRouteNoActive === false) {

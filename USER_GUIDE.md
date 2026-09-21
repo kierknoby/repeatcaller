@@ -98,10 +98,12 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Exclude withheld callers: excludes withheld identities from this rule.
 - Caller Includes: callers to include when using specific-caller scope. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
 - Caller Excludes: callers to exclude. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
-- DID Scope: All DIDs or Selected DIDs only.
+- DID Scope: Include All DIDs or Select DIDs.
 - Inbound Routes: route selector used for DID include/exclude actions.
-- Included Routes: routes monitored when Selected DIDs only is used.
-- Excluded Routes: routes excluded when All DIDs is used.
+- Included Routes: the starting route set when Select DIDs is used. If empty,
+  it displays `All DIDs` and starts from every route.
+- Excluded Routes: routes removed from that starting set. If empty, it displays
+  `No DIDs`. Exclusion wins when a route is in both lists.
 - Schedules: day/time periods when calls count for this rule.
 - GUI: always enabled history action.
 - Alert Call: optional phone-call notifications.
@@ -191,11 +193,13 @@ Caller controls:
 
 Route controls:
 
-- All DIDs with optional Excluded Routes
-- Selected DIDs only via Included Routes
+- Include All DIDs without route-level filtering
+- Select DIDs with independent Included Routes and Excluded Routes
 
-All DIDs matches every inbound route except routes listed in Excluded Routes.
-Selected DIDs only matches routes listed in Included Routes.
+Include All DIDs matches every inbound route and leaves saved route rows inactive.
+Select DIDs starts with Included Routes, or all routes when that list is empty,
+then removes Excluded Routes. Both route lists remain stored when scope is
+changed.
 Route scope follows your FreePBX Inbound Routes configuration.
 
 ## Schedules
@@ -666,7 +670,7 @@ Check:
 - Rule Name present
 - valid threshold and window
 - caller includes present for Specific callers
-- route includes present for Selected DIDs only
+- Select DIDs route lists reflect the intended starting set and exclusions
 - valid schedule rows
 - no overnight schedule range
 

@@ -561,11 +561,12 @@ final class BackgroundProcessor {
 			}
 			$route = (string)$journey['route_key'];
 			$didScopeMode = ($rule['did_scope_mode'] ?? 'all') === 'selected' ? 'selected' : 'all';
-			if ($didScopeMode === 'selected' && !in_array($route, $rule['include_routes'] ?? [], true)) {
-				continue;
-			}
-			if ($didScopeMode === 'all' && in_array($route, $rule['exclude_routes'] ?? [], true)) {
-				continue;
+			if ($didScopeMode === 'selected') {
+				$includeRoutes = $rule['include_routes'] ?? [];
+				$excludeRoutes = $rule['exclude_routes'] ?? [];
+				if (($includeRoutes && !in_array($route, $includeRoutes, true)) || in_array($route, $excludeRoutes, true)) {
+					continue;
+				}
 			}
 			if ($routeScopeKey !== '' && $route !== $routeScopeKey) {
 				continue;

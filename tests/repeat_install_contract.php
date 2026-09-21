@@ -468,6 +468,17 @@ assert_true(strpos($schemaSource, 'self::ensureScheduleDayOfWeekIsSigned($pdo);'
 $legacyDb = new SchemaUpgradePDO();
 schemaUpgradeCreateLegacyTables($legacyDb);
 
+$insertLegacyRule = $legacyDb->prepare('INSERT INTO repeatcaller_rules (name, enabled, mode, threshold_count, observation_window_minutes, caller_mode, did_scope_mode, exclude_withheld, created_at, updated_at) VALUES (?, 1, ?, 2, 60, ?, ?, 0, ?, ?)');
+$insertLegacyRule->execute(['Legacy All', 'repeat', 'any', 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+$legacyAllRuleId = (int)$legacyDb->lastInsertId();
+$insertLegacyRule->execute(['Legacy All Minus Route', 'repeat', 'any', 'all', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+$legacyAllMinusRuleId = (int)$legacyDb->lastInsertId();
+$insertLegacyRule->execute(['Legacy Selected', 'repeat', 'any', 'selected', '2026-07-13 09:00:00', '2026-07-13 09:00:00']);
+$legacySelectedRuleId = (int)$legacyDb->lastInsertId();
+$insertLegacyDid = $legacyDb->prepare('INSERT INTO repeatcaller_rule_dids (rule_id, list_type, route_key, route_label, did_value, cid_value, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+$insertLegacyDid->execute([$legacyAllMinusRuleId, 'exclude', 'blocked|', 'Blocked Route', 'blocked', '', '2026-07-13 09:00:00']);
+$insertLegacyDid->execute([$legacySelectedRuleId, 'include', 'included|', 'Included Route', 'included', '', '2026-07-13 09:00:00']);
+
 $legacyDb->prepare('INSERT INTO repeatcaller_incidents (rule_id, subject_key, active_subject_key, subject_label, caller_normalized, caller_display, withheld_caller, mode, first_matched_at, last_matched_at, matched_call_count, state, accepted_by, accepted_at, accept_source, suppression_expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')->execute([
 	7,
 	'+441234567890',
@@ -517,6 +528,13 @@ FreePBX::$database = $legacyDb;
 $upgradeModule = new Repeatcaller(new stdClass());
 $upgradeModule->install();
 
+assert_same('all', (string)$legacyDb->query('SELECT did_scope_mode FROM repeatcaller_rules WHERE id = ' . $legacyAllRuleId)->fetchColumn(), 'legacy Include All DIDs rules without exclusions must remain all');
+assert_same('selected', (string)$legacyDb->query('SELECT did_scope_mode FROM repeatcaller_rules WHERE id = ' . $legacyAllMinusRuleId)->fetchColumn(), 'legacy all-DID rules with exclusions must migrate to Select DIDs');
+assert_same('selected', (string)$legacyDb->query('SELECT did_scope_mode FROM repeatcaller_rules WHERE id = ' . $legacySelectedRuleId)->fetchColumn(), 'legacy selected-DID rules must remain selected');
+assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_rule_dids WHERE rule_id = ' . $legacyAllMinusRuleId . " AND list_type = 'exclude'")->fetchColumn(), 'legacy exclusions must survive DID scope migration');
+assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_rule_dids WHERE rule_id = ' . $legacySelectedRuleId . " AND list_type = 'include'")->fetchColumn(), 'legacy selected includes must survive DID scope migration');
+assert_same(1, (int)$legacyDb->query("SELECT COUNT(*) FROM repeatcaller_settings WHERE setting_key = 'did_scope_semantics_migrated_1_0_3'")->fetchColumn(), 'DID scope compatibility migration must record its one-time marker');
+
 $incidentColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_incidents');
 assert_true(in_array('cleared_at', $incidentColumnsAfterUpgrade, true), 'upgrade migration must add cleared_at to repeatcaller_incidents');
 $suppressionColumnsAfterUpgrade = schemaUpgradeColumnList($legacyDb, 'repeatcaller_incident_suppression_history');
@@ -537,6 +555,8 @@ assert_same(null, $legacySuppression['cleared_at'], 'new suppression-history cle
 $upgradeModule->install();
 assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_incidents')->fetchColumn(), 'running the schema migration twice must not duplicate existing incident rows');
 assert_same(1, (int)$legacyDb->query('SELECT COUNT(*) FROM repeatcaller_incident_suppression_history')->fetchColumn(), 'running the schema migration twice must not duplicate suppression-history rows');
+assert_same('selected', (string)$legacyDb->query('SELECT did_scope_mode FROM repeatcaller_rules WHERE id = ' . $legacyAllMinusRuleId)->fetchColumn(), 'running DID scope migration twice must preserve the migrated mode');
+assert_same(1, (int)$legacyDb->query("SELECT COUNT(*) FROM repeatcaller_settings WHERE setting_key = 'did_scope_semantics_migrated_1_0_3'")->fetchColumn(), 'running DID scope migration twice must preserve exactly one marker');
 
 $freshInstallDb = new SchemaInstallPathPDO();
 Schema::install($freshInstallDb);

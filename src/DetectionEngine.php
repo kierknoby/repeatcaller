@@ -195,11 +195,14 @@ final class DetectionEngine {
 		$route = (string)$journey['route_key'];
 		$didScopeMode = ($rule['did_scope_mode'] ?? 'all') === 'selected' ? 'selected' : 'all';
 		if ($didScopeMode === 'selected') {
-			if (!in_array($route, $rule['include_routes'] ?? [], true)) {
+			$includeRoutes = $rule['include_routes'] ?? [];
+			$excludeRoutes = $rule['exclude_routes'] ?? [];
+			if ($includeRoutes && !in_array($route, $includeRoutes, true)) {
 				return null;
 			}
-		} elseif (in_array($route, $rule['exclude_routes'] ?? [], true)) {
-			return null;
+			if (in_array($route, $excludeRoutes, true)) {
+				return null;
+			}
 		}
 
 		$journey['withheld'] = $withheld;

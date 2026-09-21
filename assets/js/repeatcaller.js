@@ -1200,7 +1200,7 @@
 	}
 
 	function didScopeSummary(rule) {
-		return String(rule.did_scope_mode || 'all') === 'selected' ? 'Selected routes' : 'All routes';
+		return String(rule.did_scope_mode || 'all') === 'selected' ? 'Select DIDs' : 'Include All DIDs';
 	}
 
 	function actionsSummary(rule) {
@@ -1755,6 +1755,26 @@
 		return items;
 	}
 
+	function updateDidRouteListDefaults() {
+		$.each([
+			{selector: '#rc-did-include-list', label: 'All DIDs'},
+			{selector: '#rc-did-exclude-list', label: 'No DIDs'}
+		], function (_, config) {
+			var $list = $(config.selector);
+			var hasRoutes = false;
+			$list.find('li').each(function () {
+				if ($(this).data('route')) {
+					hasRoutes = true;
+					return false;
+				}
+			});
+			$list.find('.rc-route-list-default').remove();
+			if (!hasRoutes) {
+				$list.append($('<li class="rc-route-list-default"/>').text(config.label));
+			}
+		});
+	}
+
 	function addRouteToList($list, route, listType) {
 		if (!route || !route.route_key) {
 			return false;
@@ -1769,14 +1789,20 @@
 		if (exists) {
 			return false;
 		}
+		$list.find('.rc-route-list-default').remove();
 		var $li = $('<li/>').text((route.route_label || route.route_key) + ' [' + route.route_key + ']');
 		$li.data('route', route);
 		$li.data('listType', listType);
 		$li.append(' ');
-		$li.append($('<button type="button" class="btn btn-xs btn-link">remove</button>').on('click', function () {
+		var $removeButton = $('<button type="button" class="btn btn-xs btn-link">remove</button>').prop('disabled', $('#rc-rule-did-mode').val() !== 'selected').on('click', function () {
+			if ($('#rc-rule-did-mode').val() !== 'selected') {
+				return;
+			}
 			$li.remove();
+			updateDidRouteListDefaults();
 			updateDidRouteActionButtonState();
-		}));
+		});
+		$li.append($removeButton);
 		$list.append($li);
 		return true;
 	}
@@ -2220,6 +2246,7 @@
 		$('#rc-rule-alert-call-callerid').val('');
 		$('#rc-did-include-list').empty();
 		$('#rc-did-exclude-list').empty();
+		updateDidRouteListDefaults();
 		$('#rc-schedule-table tbody').empty();
 		addScheduleRow(-1, '00:00', '24:00', true);
 		updateAlertCallAndEmailState();
@@ -2264,10 +2291,11 @@
 	}
 
 	function updateDidRouteActionButtonState() {
+		var routeEditorEnabled = $('#rc-rule-did-mode').val() === 'selected';
 		var routeKey = $.trim(String($('#rc-route-pick').val() || ''));
 		var route = routeKey !== '' ? findRoute(routeKey) : null;
-		var canInclude = !!route && !routeListContains($('#rc-did-include-list'), routeKey);
-		var canExclude = !!route && !routeListContains($('#rc-did-exclude-list'), routeKey);
+		var canInclude = routeEditorEnabled && !!route && !routeListContains($('#rc-did-include-list'), routeKey);
+		var canExclude = routeEditorEnabled && !!route && !routeListContains($('#rc-did-exclude-list'), routeKey);
 
 		$('#rc-add-did-include').prop('disabled', !canInclude).toggleClass('disabled', !canInclude).show();
 		$('#rc-add-did-exclude').prop('disabled', !canExclude).toggleClass('disabled', !canExclude).show();
@@ -2298,9 +2326,14 @@
 	}
 
 	function updateDidScopeEditorState() {
+		var routeEditorEnabled = $('#rc-rule-did-mode').val() === 'selected';
 		clearDidRouteActionState();
 		$('#rc-did-include-col, #rc-did-exclude-col').show();
-		$('#rc-did-include-list, #rc-did-exclude-list').removeClass('rc-control-disabled').attr('aria-disabled', 'false');
+		$('#rc-route-pick').prop('disabled', !routeEditorEnabled).toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
+		$('#rc-did-route-actions-col, #rc-did-include-col, #rc-did-exclude-col').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
+		$('#rc-did-include-list, #rc-did-exclude-list').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
+		$('#rc-did-include-list, #rc-did-exclude-list').find('button').prop('disabled', !routeEditorEnabled);
+		updateDidRouteActionButtonState();
 	}
 
 	function updateCallerScopeEditorState() {
@@ -2600,11 +2633,6 @@
 		var didIncludes = collectRouteList($('#rc-did-include-list'));
 		var didExcludes = collectRouteList($('#rc-did-exclude-list'));
 		var dids = didIncludes.concat(didExcludes);
-		if (didScopeMode === 'selected' && didIncludes.length < 1) {
-			showMessage('Selected DID scope requires at least one included inbound route.', 'error');
-			if (onDone) { onDone(); }
-			return;
-		}
 		updateAlertCallDestinationHiddenField();
 		var callDestinations = normaliseAlertCallDestinationEntries($('#rc-rule-alert-call-destinations').val(), true);
 		var alertCallCallerId = $.trim(String($('#rc-rule-alert-call-callerid').val() || ''));
@@ -2725,6 +2753,7 @@
 			$('#rc-did-exclude-list').empty();
 			$.each((rule.did_lists && rule.did_lists.include) || [], function (_, row) { addRouteToList($('#rc-did-include-list'), row, 'include'); });
 			$.each((rule.did_lists && rule.did_lists.exclude) || [], function (_, row) { addRouteToList($('#rc-did-exclude-list'), row, 'exclude'); });
+			updateDidRouteListDefaults();
 
 			$('#rc-schedule-table tbody').empty();
 			$.each(rule.schedules || [], function (_, s) {
@@ -2810,6 +2839,7 @@
 			});
 			$('#rc-route-pick').html(options.join('')).val('');
 			window._rcInboundRoutes = response.routes || [];
+			updateDidRouteListDefaults();
 			updateDidScopeEditorState();
 		});
 	}

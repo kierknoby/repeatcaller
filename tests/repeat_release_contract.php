@@ -203,7 +203,9 @@ assert_true($viewSource !== false, 'views/main.php should be readable');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-strategy"') !== false, 'rule editor must expose alert_call_strategy selector');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-keep-trying"') === false, 'rule editor should not expose deprecated global alert_call_keep_trying toggle');
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-destination-list"') !== false, 'rule editor must expose ordered destination list UI');
-assert_true(strpos($viewSource, 'Selected DIDs only') !== false, 'rule editor DID scope selector should use Selected DIDs only wording');
+assert_true(strpos($viewSource, '<option value="all"><?php echo _(\'Include All DIDs\'); ?></option>') !== false, 'rule editor should label the compatible all value as Include All DIDs');
+assert_true(strpos($viewSource, '<option value="selected"><?php echo _(\'Select DIDs\'); ?></option>') !== false, 'rule editor should label the compatible selected value as Select DIDs');
+assert_true(strpos($viewSource, 'Selected DIDs only') === false, 'rule editor should remove the legacy Selected DIDs only wording');
 
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
@@ -311,8 +313,8 @@ assert_true(strpos($userGuideSource, 'Rule-level Suppression override replaces t
 assert_true(strpos($userGuideSource, 'Clear Alert History is an immediate manual action. Prune Alert History is the') !== false, 'USER_GUIDE.md should distinguish clear alert history from automatic pruning');
 assert_true(strpos($userGuideSource, 'Clear Suppression affects current suppression state for that rule/subject.') !== false, 'USER_GUIDE.md should distinguish clear suppression from suppression-history pruning');
 assert_true((bool) preg_match('/Repeat Caller automatically removes old internal detection records during\s+pruning to prevent unnecessary database growth\./', $userGuideSource), 'USER_GUIDE.md should document automatic internal detection-record cleanup during pruning');
-assert_true(strpos($userGuideSource, 'All DIDs with optional Excluded Routes') !== false, 'USER_GUIDE.md should document All DIDs as an exclusions-only route model');
-assert_true(strpos($userGuideSource, 'Selected DIDs only via Included Routes') !== false, 'USER_GUIDE.md should document Selected DIDs as an inclusions-only route model');
+assert_true(strpos($userGuideSource, 'Include All DIDs without route-level filtering') !== false, 'USER_GUIDE.md should document inactive route filtering for Include All DIDs');
+assert_true(strpos($userGuideSource, 'Select DIDs with independent Included Routes and Excluded Routes') !== false, 'USER_GUIDE.md should document both route lists for Select DIDs');
 assert_true(strpos($userGuideSource, 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing accepted-capability wording');
 assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md should link back to README.md');
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');

@@ -132,18 +132,30 @@ $allDidsWithExclusionsResult = DetectionEngine::evaluateRepeat([
 	build_cdr(['linkedid' => 'XDID-A', 'calldate' => '2026-07-13 09:00:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
 	build_cdr(['linkedid' => 'XDID-B', 'calldate' => '2026-07-13 09:20:00', 'route_key' => '18005550002|', 'did' => '18005550002']),
 ], $allDidsWithExclusionsRule, '44');
-assert_same(0, count($allDidsWithExclusionsResult['incidents']), 'all DID scope exclusions should prevent excluded routes from matching');
+assert_same(1, count($allDidsWithExclusionsResult['incidents']), 'Include All DIDs should ignore preserved route rows and match every inbound route');
 
-$selectedOnlyIncludesRule = build_rule([
+$selectedExclusionWinsRule = build_rule([
 	'did_scope_mode' => 'selected',
 	'include_routes' => ['18005550001|'],
 	'exclude_routes' => ['18005550001|'],
 ]);
-$selectedOnlyIncludesResult = DetectionEngine::evaluateRepeat([
+$selectedExclusionWinsResult = DetectionEngine::evaluateRepeat([
 	build_cdr(['linkedid' => 'SID-A', 'calldate' => '2026-07-13 09:00:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
 	build_cdr(['linkedid' => 'SID-B', 'calldate' => '2026-07-13 09:20:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
-], $selectedOnlyIncludesRule, '44');
-assert_same(1, count($selectedOnlyIncludesResult['incidents']), 'selected DID scope should match included routes only and not apply exclusion rows');
+], $selectedExclusionWinsRule, '44');
+assert_same(0, count($selectedExclusionWinsResult['incidents']), 'Select DIDs exclusions should win when a route appears in both lists');
+
+$selectedEmptyIncludesRule = build_rule([
+	'did_scope_mode' => 'selected',
+	'include_routes' => [],
+	'exclude_routes' => ['18005550002|'],
+]);
+$selectedEmptyIncludesResult = DetectionEngine::evaluateRepeat([
+	build_cdr(['linkedid' => 'SEI-A', 'calldate' => '2026-07-13 09:00:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
+	build_cdr(['linkedid' => 'SEI-B', 'calldate' => '2026-07-13 09:20:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
+	build_cdr(['linkedid' => 'SEI-C', 'calldate' => '2026-07-13 09:25:00', 'route_key' => '18005550002|', 'did' => '18005550002']),
+], $selectedEmptyIncludesRule, '44');
+assert_same(1, count($selectedEmptyIncludesResult['incidents']), 'Select DIDs with no includes should start from all routes and subtract exclusions');
 
 $excludedCallerRule = build_rule([
 	'exclude_callers' => ['+441230000003'],
