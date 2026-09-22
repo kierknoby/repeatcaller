@@ -243,9 +243,10 @@ Canonical Repeat Caller tables:
   toggles.
 - `repeatcaller_rule_schedules`: per-rule day/time windows.
 - `repeatcaller_rule_callers`: per-rule caller include/exclude lists.
-- `repeatcaller_rule_dids`: preserved per-rule inbound route include/exclude rows;
-  route selection is active when Select DIDs is chosen. Empty lists are stored
-  as no rows; `All DIDs` and `No DIDs` are visual editor defaults only.
+- `repeatcaller_rule_dids`: per-rule inbound route include/exclude rows. With
+  Select DIDs, exclusions apply only when no explicit includes exist; explicit
+  includes form the exact route set. Empty lists are stored as no rows; `All
+  DIDs` and `No DIDs` are visual editor defaults only.
 - `repeatcaller_seen_calls`: deduplicated inbound call journeys already
   processed.
 - `repeatcaller_rule_subject_state`: per-rule/subject evaluation state,
@@ -324,9 +325,9 @@ Invert activation timing:
 Matching can include:
 
 - caller scope (any, withheld-only, specific caller lists). Caller lists accept spaces, commas or new lines as separators and save back as comma-separated values.
-- inbound route scope (Include All DIDs, or Select DIDs with independent route
-  include/exclude lists; an empty include list means all routes before
-  exclusions are applied)
+- inbound route scope (Include All DIDs, or Select DIDs where an empty include
+  list means all routes minus exclusions and explicit includes form the exact
+  route set)
 - schedule windows (day/time segments)
 
 Subject identity is tracked per rule and matched caller/route context so the
@@ -705,10 +706,10 @@ Reports > Repeat Caller includes these main sections:
   The actions checklist order is GUI, Alert Call, then Email, and the email
   recipient field appears directly above Save Rule. The editor title switches
   to Editing Rule when modifying an existing rule. DID scope uses Include All
-  DIDs for unrestricted matching, or Select DIDs for independent Include Route
-  and Exclude Route configuration. In Select DIDs, configured inclusions form
-  the starting set; with no inclusions the starting set is all routes, and
-  exclusions are then removed. Exclusion wins if a route appears in both lists.
+  DIDs for unrestricted matching, or Select DIDs for route filtering. In Select
+  DIDs, an empty Included Routes list means all routes minus Excluded Routes.
+  Once an explicit Included Route is added, the included routes become the exact
+  route set and exclusions are cleared and disabled.
 - Rule controls: each rule row includes Status, Edit, and X (delete). While an
   existing rule is being edited, those row actions are greyed out and cannot be
   used until editing is cancelled or saved.
@@ -854,8 +855,8 @@ Released by `@kierknoby, Kieran Knowles-Byrne // FreePBX UK`.
 * Corrects the FreePBX 16 and 17 module metadata declarations.
 * Corrects the redundant Alert History `accepted` JavaScript condition without
   changing its behaviour.
-* Improves the inbound-route editor so Select DIDs supports independent Include
-  Route and Exclude Route handling, including immediate first-route selection,
+* Improves the inbound-route editor so Select DIDs supports all-routes-minus-
+  exclusions or an exact explicit include set, including immediate first-route selection,
   and migrates legacy All-DIDs exclusions without changing effective matching.
 * Adds regression coverage for sender identity parsing, email delivery,
   recipient compatibility, release metadata, and the Alert History condition.

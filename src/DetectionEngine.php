@@ -197,10 +197,7 @@ final class DetectionEngine {
 		if ($didScopeMode === 'selected') {
 			$includeRoutes = $rule['include_routes'] ?? [];
 			$excludeRoutes = $rule['exclude_routes'] ?? [];
-			if ($includeRoutes && !in_array($route, $includeRoutes, true)) {
-				return null;
-			}
-			if (in_array($route, $excludeRoutes, true)) {
+			if ($includeRoutes ? !in_array($route, $includeRoutes, true) : in_array($route, $excludeRoutes, true)) {
 				return null;
 			}
 		}

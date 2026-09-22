@@ -380,7 +380,7 @@ $didSaveCases = [
 	['name' => 'Selected Includes And Exclusions', 'dids' => [
 		['list_type' => 'include', 'route_key' => 'shared|', 'route_label' => 'Shared Include', 'did_value' => 'shared', 'cid_value' => ''],
 		['list_type' => 'exclude', 'route_key' => 'shared|', 'route_label' => 'Shared Exclude', 'did_value' => 'shared', 'cid_value' => ''],
-	], 'include' => 1, 'exclude' => 1],
+	], 'include' => 1, 'exclude' => 0],
 ];
 foreach ($didSaveCases as $didSaveCase) {
 	$_REQUEST = [
@@ -449,6 +449,7 @@ $currentRestoreController->restore(['settings' => [[
 ]], 'rules' => [
 	$backupRule('Current Dormant All', 'all', [$routeRow('include', 'dormant-in|')], [$routeRow('exclude', 'dormant-out|')]),
 	$backupRule('Current Selected Both', 'selected', [$routeRow('include', 'shared|')], [$routeRow('exclude', 'shared|')]),
+	$backupRule('Current Selected Exclusions', 'selected', [], [$routeRow('exclude', 'blocked|')]),
 ]]);
 $currentRestoreRepo = new RepeatCallerRepository($currentRestoreDb);
 $currentRestored = [];
@@ -457,10 +458,12 @@ foreach ($currentRestoreRepo->loadRulesSummary() as $restoredSummary) {
 }
 assert_same('all', (string)$currentRestored['Current Dormant All']['did_scope_mode'], 'current marked backup should preserve all mode exactly');
 assert_same(1, count($currentRestored['Current Dormant All']['did_lists']['include']), 'current marked all backup should preserve dormant includes');
-assert_same(1, count($currentRestored['Current Dormant All']['did_lists']['exclude']), 'current marked all backup should preserve dormant exclusions');
+assert_same(0, count($currentRestored['Current Dormant All']['did_lists']['exclude']), 'current marked backup with dormant includes should discard contradictory exclusions');
 assert_same('selected', (string)$currentRestored['Current Selected Both']['did_scope_mode'], 'current selected backup should remain selected');
 assert_same(1, count($currentRestored['Current Selected Both']['did_lists']['include']), 'current selected backup should preserve includes');
-assert_same(1, count($currentRestored['Current Selected Both']['did_lists']['exclude']), 'current selected backup should preserve exclusions');
+assert_same(0, count($currentRestored['Current Selected Both']['did_lists']['exclude']), 'current selected backup with includes should discard contradictory exclusions');
+assert_same(0, count($currentRestored['Current Selected Exclusions']['did_lists']['include']), 'current exclusions-only backup should keep includes empty');
+assert_same(1, count($currentRestored['Current Selected Exclusions']['did_lists']['exclude']), 'current exclusions-only backup should preserve exclusions');
 $currentRestoreDb->prepare('INSERT INTO repeatcaller_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)')->execute([
 	'did_scope_semantics_migrated_1_0_3', '1', '2026-09-21 00:00:00',
 ]);
@@ -1616,18 +1619,18 @@ assert_true(strpos($jsSource, "$('#rc-reset-rule')") === false, 'legacy Clear Ed
 assert_true(strpos($jsSource, "$('#rc-rule-caller-mode').off('change.repeatcaller').on('change.repeatcaller', function () { updateCallerScopeEditorState(); });") !== false, 'Caller Scope selector should bind explicit change handling for caller field availability');
 assert_true(strpos($jsSource, 'function clearDidRouteActionState() {') !== false, 'route action state reset should clear the route selection and recalculate action availability');
 assert_true(strpos($jsSource, "var options = ['<option value=\"\" selected>Select an inbound route…</option>'];") !== false, 'inbound route selector should begin with a selected empty placeholder');
-assert_true(strpos($jsSource, "$('#rc-route-pick').html(options.join('')).val('');") !== false, 'loaded inbound routes should leave the placeholder selected');
+assert_true(strpos($jsSource, "$('#rc-route-pick').html(options.join(''));") !== false, 'route inventory refresh should rebuild the selector from available routes');
 assert_true(strpos($jsSource, "$('#rc-route-pick').val('');") !== false, 'successful route actions and scope changes should reset the route placeholder');
 assert_true(strpos($jsSource, "$('#rc-rule-did-mode').off('change.repeatcaller').on('change.repeatcaller', function () {") !== false, 'DID scope selector should refresh route action state without discarding either route list');
 assert_true(strpos($jsSource, 'clearDidRouteActionState();') !== false, 'scope switching should reset route selection and action availability');
-assert_true(strpos($jsSource, 'function updateDidRouteActionButtonState() {') !== false, 'each route action should derive availability from the selected route and its presence in the corresponding route list');
+assert_true(strpos($jsSource, 'function updateDidRouteActionButtonState() {') !== false, 'route actions should derive availability from the selected unused route and include-list state');
 assert_true(strpos($jsSource, "var routeKey = $.trim(String($('#rc-route-pick').val() || ''));") !== false, 'empty route selector values should be treated as no route selected');
 assert_true(strpos($jsSource, "$('#rc-did-include-col, #rc-did-exclude-col').show();") !== false, 'Included Routes and Excluded Routes should remain visible in every DID scope mode');
 assert_true(strpos($jsSource, 'function applyDidRouteAction(actionMode) {') !== false, 'route action handlers should validate and apply the currently selected route');
 assert_true(strpos($jsSource, "if (routeKey === '') {") !== false, 'route action path should reject the empty placeholder independently of button state');
 assert_true(strpos($jsSource, "? addRouteToList($('#rc-did-include-list'), route, 'include')") !== false, 'Include Route should add to the included-route list');
 assert_true(strpos($jsSource, ": addRouteToList($('#rc-did-exclude-list'), route, 'exclude');") !== false, 'Exclude Route should retain the existing exclude-route semantics');
-assert_true(strpos($jsSource, 'var dids = didIncludes.concat(didExcludes);') !== false, 'save payload should preserve both included and excluded route rows regardless of DID scope mode');
+assert_true(strpos($jsSource, 'var dids = didIncludes.concat(didExcludes);') !== false, 'save payload should collect the valid route rows shown by the editor');
 assert_true(strpos($jsSource, "Selected DID scope requires at least one included inbound route.") === false, 'Select DIDs should allow an empty include list for all-routes-minus-exclusions semantics');
 assert_true(strpos($jsSource, "{selector: '#rc-did-include-list', label: 'All DIDs'}") !== false && strpos($jsSource, "{selector: '#rc-did-exclude-list', label: 'No DIDs'}") !== false, 'empty route lists should render their semantic visual defaults');
 assert_true(strpos($jsSource, "$('#rc-rule-did-mode').val(rule.did_scope_mode || 'all');") !== false && strpos($jsSource, 'updateDidScopeEditorState();') !== false, 'loading a rule should restore DID mode and route lists without auto-activating picker mode');
@@ -2461,58 +2464,59 @@ $('#rc-rule-did-mode').val('selected');
 hooks.updateDidScopeEditorState();
 assert($('#rc-did-include-col').els[0].hidden === false && $('#rc-did-exclude-col').els[0].hidden === false, 'both DID route lists should remain visible in Select DIDs mode');
 assert($('#rc-route-pick').prop('disabled') === false && !$('#rc-route-pick').els[0].classes.has('rc-control-disabled'), 'Select DIDs should enable the inbound route selector');
+
 $('#rc-route-pick').val('first|');
 hooks.updateDidRouteActionButtonState();
-assert($('#rc-add-did-include').prop('disabled') === false && $('#rc-add-did-exclude').prop('disabled') === false, 'selecting the first real route should enable both available route actions');
-assert(hooks.applyDidRouteAction('include') === true, 'Include Route should add the selected first route');
-assert($('#rc-did-include-list').find('li').length === 1, 'Include Route should add to Included Routes');
-assert($('#rc-did-include-list').find('li').text() !== 'All DIDs', 'adding the first include should remove the All DIDs semantic default');
-assert($('#rc-route-pick').val() === '', 'successful Include Route should reset the route selector to its placeholder');
-assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'route actions should be disabled again after Include Route resets the selector');
+assert($('#rc-add-did-include').prop('disabled') === false && $('#rc-add-did-exclude').prop('disabled') === false, 'an unused route should be available for either action when includes are empty');
+assert(hooks.applyDidRouteAction('exclude') === true, 'Exclude Route should add an exclusion while includes are empty');
+assert($('#rc-route-pick').html().indexOf('value="first|"') === -1, 'adding an exclusion should remove that route from the shared selector inventory');
+assert(hooks.collectRouteList($('#rc-did-exclude-list')).length === 1, 'the exclusion should be represented as one real route');
+
+$('#rc-route-pick').val('second|');
+hooks.updateDidRouteActionButtonState();
+assert(hooks.applyDidRouteAction('include') === true, 'adding the first explicit include should succeed');
+assert(hooks.collectRouteList($('#rc-did-include-list')).length === 1, 'the explicit include should be retained');
+assert(hooks.collectRouteList($('#rc-did-exclude-list')).length === 0, 'adding the first explicit include should clear existing exclusions');
+assert($('#rc-did-exclude-list').find('li').text() === 'No DIDs', 'cleared exclusions should restore the No DIDs semantic row');
+assert($('#rc-route-pick').html().indexOf('value="second|"') === -1, 'the included route should remain unavailable in the shared selector');
+assert($('#rc-add-did-exclude').prop('disabled') === true, 'Exclude Route should be disabled while explicit includes exist');
+assert($('#rc-did-exclude-col').els[0].classes.has('rc-control-disabled'), 'Excluded Routes should use the existing greyed style while explicit includes exist');
 $('#rc-route-pick').val('first|');
 hooks.updateDidRouteActionButtonState();
-assert($('#rc-add-did-include').prop('disabled') === true, 'an already included route should remain protected from duplication');
-assert($('#rc-add-did-exclude').prop('disabled') === false, 'a route already included should still be available for the distinct exclude list');
-assert(hooks.applyDidRouteAction('include') === false && $('#rc-did-include-list').find('li').length === 1, 'duplicate Include Route should leave the included-route list unchanged');
+assert($('#rc-add-did-include').prop('disabled') === false && $('#rc-add-did-exclude').prop('disabled') === true, 'additional includes should remain available without enabling exclusions');
+assert(hooks.applyDidRouteAction('exclude') === false, 'Exclude Route must reject actions while explicit includes exist');
+
 $('#rc-did-include-list').find('button').trigger('click');
-assert($('#rc-route-pick').val() === 'first|', 'removing an included route should leave the selected route unchanged');
 assert($('#rc-did-include-list').find('li').text() === 'All DIDs', 'removing the final include should immediately restore All DIDs');
-assert($('#rc-add-did-include').prop('disabled') === false, 'removing the selected included route should immediately re-enable Include Route');
-assert(hooks.applyDidRouteAction('include') === true && $('#rc-did-include-list').find('li').length === 1, 'Include Route should add the route again after its existing row is removed');
+assert(!$('#rc-did-exclude-col').els[0].classes.has('rc-control-disabled'), 'removing the final include should re-enable Excluded Routes');
+$('#rc-route-pick').val('second|');
+hooks.updateDidRouteActionButtonState();
+assert($('#rc-add-did-include').prop('disabled') === false && $('#rc-add-did-exclude').prop('disabled') === false, 'removing an include should make its route available again');
+assert(hooks.collectRouteList($('#rc-did-exclude-list')).length === 0, 'previously cleared exclusions must not reappear');
 
 $('#rc-route-pick').val('first|');
 hooks.updateDidRouteActionButtonState();
-assert($('#rc-add-did-exclude').prop('disabled') === false, 'the same selected route should remain available for Exclude Route');
-assert(hooks.applyDidRouteAction('exclude') === true, 'Exclude Route should add the selected first route');
-assert($('#rc-did-exclude-list').find('li').length === 1, 'Exclude Route should preserve excluded-route list behavior');
-assert($('#rc-did-exclude-list').find('li').text() !== 'No DIDs', 'adding the first exclusion should remove the No DIDs semantic default');
-assert($('#rc-route-pick').val() === '', 'successful exclusion should reset the route selector to its placeholder');
-assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'route actions should be disabled again after exclusion resets the selector');
-$('#rc-route-pick').val('first|');
-hooks.updateDidRouteActionButtonState();
-assert($('#rc-add-did-exclude').prop('disabled') === true, 'an already excluded route should remain protected from duplication');
-assert(hooks.applyDidRouteAction('exclude') === false && $('#rc-did-exclude-list').find('li').length === 1, 'duplicate Exclude Route should leave the excluded-route list unchanged');
+assert(hooks.applyDidRouteAction('exclude') === true, 'exclusions should be usable again after the final include is removed');
+assert($('#rc-route-pick').html().indexOf('value="first|"') === -1, 'an excluded route should remain unavailable to both actions');
 $('#rc-did-exclude-list').find('button').trigger('click');
-assert($('#rc-route-pick').val() === 'first|', 'removing an excluded route should leave the selected route unchanged');
 assert($('#rc-did-exclude-list').find('li').text() === 'No DIDs', 'removing the final exclusion should immediately restore No DIDs');
-assert($('#rc-add-did-exclude').prop('disabled') === false, 'removing the selected excluded route should immediately re-enable Exclude Route');
-assert(hooks.applyDidRouteAction('exclude') === true && $('#rc-did-exclude-list').find('li').length === 1, 'Exclude Route should add the route again after its existing row is removed');
+$('#rc-route-pick').val('first|');
+hooks.updateDidRouteActionButtonState();
+assert($('#rc-add-did-include').prop('disabled') === false && $('#rc-add-did-exclude').prop('disabled') === false, 'removing an exclusion should make its route available again');
 
+$('#rc-route-pick').val('first|');
+hooks.updateDidRouteActionButtonState();
+assert(hooks.applyDidRouteAction('exclude') === true, 'a valid exclusions-only configuration should be restorable');
 $('#rc-rule-did-mode').val('all');
 hooks.updateDidScopeEditorState();
-assert($('#rc-did-include-col').els[0].hidden === false && $('#rc-did-exclude-col').els[0].hidden === false, 'both DID route lists should remain visible in Include All DIDs mode');
 assert($('#rc-route-pick').prop('disabled') === true, 'Include All DIDs should disable inbound route selection');
 assert($('#rc-add-did-include').prop('disabled') === true && $('#rc-add-did-exclude').prop('disabled') === true, 'Include All DIDs should disable both route actions');
-assert($('#rc-did-include-col').els[0].classes.has('rc-control-disabled') && $('#rc-did-exclude-col').els[0].classes.has('rc-control-disabled'), 'Include All DIDs should grey out both visible route lists');
-assert($('#rc-did-include-list').find('button').prop('disabled') === true && $('#rc-did-exclude-list').find('button').prop('disabled') === true, 'Include All DIDs should disable route-row controls');
-assert($('#rc-did-include-list').find('li').length === 1 && $('#rc-did-exclude-list').find('li').length === 1, 'Include All DIDs should preserve both editor route lists');
-
+assert(hooks.collectRouteList($('#rc-did-exclude-list')).length === 1, 'scope switching should retain a valid exclusions-only configuration');
 $('#rc-rule-did-mode').val('selected');
 hooks.updateDidScopeEditorState();
-assert($('#rc-route-pick').prop('disabled') === false, 'Select DIDs should re-enable inbound route selection');
-assert(!$('#rc-did-include-col').els[0].classes.has('rc-control-disabled') && !$('#rc-did-exclude-col').els[0].classes.has('rc-control-disabled'), 'Select DIDs should re-enable both route lists');
-assert($('#rc-did-include-list').find('button').prop('disabled') === false && $('#rc-did-exclude-list').find('button').prop('disabled') === false, 'Select DIDs should re-enable route-row controls');
-assert($('#rc-did-include-list').find('li').length === 1 && $('#rc-did-exclude-list').find('li').length === 1, 'switching back to Select DIDs should retain both editor route lists');
+assert(hooks.collectRouteList($('#rc-did-exclude-list')).length === 1, 'switching back to Select DIDs should retain the valid exclusions-only configuration');
+assert(!$('#rc-did-exclude-col').els[0].classes.has('rc-control-disabled'), 'exclusions-only configuration should re-enable exclusion controls');
+
 const warningNotieAlerts = [];
 const genericToasts = [];
 const fallbackTimeoutsMs = [];

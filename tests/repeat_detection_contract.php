@@ -134,16 +134,16 @@ $allDidsWithExclusionsResult = DetectionEngine::evaluateRepeat([
 ], $allDidsWithExclusionsRule, '44');
 assert_same(1, count($allDidsWithExclusionsResult['incidents']), 'Include All DIDs should ignore preserved route rows and match every inbound route');
 
-$selectedExclusionWinsRule = build_rule([
+$selectedIncludesAuthoritativeRule = build_rule([
 	'did_scope_mode' => 'selected',
 	'include_routes' => ['18005550001|'],
 	'exclude_routes' => ['18005550001|'],
 ]);
-$selectedExclusionWinsResult = DetectionEngine::evaluateRepeat([
+$selectedIncludesAuthoritativeResult = DetectionEngine::evaluateRepeat([
 	build_cdr(['linkedid' => 'SID-A', 'calldate' => '2026-07-13 09:00:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
 	build_cdr(['linkedid' => 'SID-B', 'calldate' => '2026-07-13 09:20:00', 'route_key' => '18005550001|', 'did' => '18005550001']),
-], $selectedExclusionWinsRule, '44');
-assert_same(0, count($selectedExclusionWinsResult['incidents']), 'Select DIDs exclusions should win when a route appears in both lists');
+], $selectedIncludesAuthoritativeRule, '44');
+assert_same(1, count($selectedIncludesAuthoritativeResult['incidents']), 'Select DIDs explicit includes should be authoritative over contradictory exclusions');
 
 $selectedEmptyIncludesRule = build_rule([
 	'did_scope_mode' => 'selected',

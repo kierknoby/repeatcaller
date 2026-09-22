@@ -314,7 +314,7 @@ assert_true(strpos($userGuideSource, 'Clear Alert History is an immediate manual
 assert_true(strpos($userGuideSource, 'Clear Suppression affects current suppression state for that rule/subject.') !== false, 'USER_GUIDE.md should distinguish clear suppression from suppression-history pruning');
 assert_true((bool) preg_match('/Repeat Caller automatically removes old internal detection records during\s+pruning to prevent unnecessary database growth\./', $userGuideSource), 'USER_GUIDE.md should document automatic internal detection-record cleanup during pruning');
 assert_true(strpos($userGuideSource, 'Include All DIDs without route-level filtering') !== false, 'USER_GUIDE.md should document inactive route filtering for Include All DIDs');
-assert_true(strpos($userGuideSource, 'Select DIDs with independent Included Routes and Excluded Routes') !== false, 'USER_GUIDE.md should document both route lists for Select DIDs');
+assert_true(strpos($userGuideSource, 'Select DIDs using either exclusions from all routes or an exact include set') !== false, 'USER_GUIDE.md should document the mutually exclusive Select DIDs route models');
 assert_true(strpos($userGuideSource, 'This incident has not been accepted. You can accept it by phone if Alert Calls are enabled, or through the GUI.') !== false, 'USER_GUIDE.md should include current customer-facing accepted-capability wording');
 assert_true(strpos($userGuideSource, 'README.md') !== false, 'USER_GUIDE.md should link back to README.md');
 assert_true(strpos($userGuideSource, 'stage cadence') === false, 'USER_GUIDE.md must not expose internal stage cadence terminology');

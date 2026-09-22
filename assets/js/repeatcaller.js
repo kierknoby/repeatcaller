@@ -1775,19 +1775,37 @@
 		});
 	}
 
+	function refreshDidRoutePicker() {
+		var selectedRouteKey = $.trim(String($('#rc-route-pick').val() || ''));
+		var options = ['<option value="" selected>Select an inbound route…</option>'];
+		$.each(window._rcInboundRoutes || [], function (_, route) {
+			var routeKey = String(route.route_key || '');
+			if (!routeKey || routeListContains($('#rc-did-include-list'), routeKey) || routeListContains($('#rc-did-exclude-list'), routeKey)) {
+				return;
+			}
+			options.push('<option value="' + esc(routeKey) + '">' + esc((route.route_label || routeKey) + ' [' + routeKey + ']') + '</option>');
+		});
+		$('#rc-route-pick').html(options.join(''));
+		if (selectedRouteKey && findRoute(selectedRouteKey) && !routeListContains($('#rc-did-include-list'), selectedRouteKey) && !routeListContains($('#rc-did-exclude-list'), selectedRouteKey)) {
+			$('#rc-route-pick').val(selectedRouteKey);
+		} else {
+			$('#rc-route-pick').val('');
+		}
+	}
+
 	function addRouteToList($list, route, listType) {
 		if (!route || !route.route_key) {
 			return false;
 		}
-		var exists = false;
-		$list.find('li').each(function () {
-			if ($(this).data('route') && $(this).data('route').route_key === route.route_key) {
-				exists = true;
-				return false;
-			}
-		});
-		if (exists) {
+		if (routeListContains($('#rc-did-include-list'), route.route_key) || routeListContains($('#rc-did-exclude-list'), route.route_key)) {
 			return false;
+		}
+		if (listType === 'exclude' && collectRouteList($('#rc-did-include-list')).length) {
+			return false;
+		}
+		if (listType === 'include' && !collectRouteList($('#rc-did-include-list')).length) {
+			$('#rc-did-exclude-list').empty();
+			updateDidRouteListDefaults();
 		}
 		$list.find('.rc-route-list-default').remove();
 		var $li = $('<li/>').text((route.route_label || route.route_key) + ' [' + route.route_key + ']');
@@ -1800,10 +1818,13 @@
 			}
 			$li.remove();
 			updateDidRouteListDefaults();
+			refreshDidRoutePicker();
+			updateDidScopeEditorState();
 			updateDidRouteActionButtonState();
 		});
 		$li.append($removeButton);
 		$list.append($li);
+		refreshDidRoutePicker();
 		return true;
 	}
 
@@ -2292,10 +2313,12 @@
 
 	function updateDidRouteActionButtonState() {
 		var routeEditorEnabled = $('#rc-rule-did-mode').val() === 'selected';
+		var hasExplicitIncludes = collectRouteList($('#rc-did-include-list')).length > 0;
 		var routeKey = $.trim(String($('#rc-route-pick').val() || ''));
 		var route = routeKey !== '' ? findRoute(routeKey) : null;
-		var canInclude = routeEditorEnabled && !!route && !routeListContains($('#rc-did-include-list'), routeKey);
-		var canExclude = routeEditorEnabled && !!route && !routeListContains($('#rc-did-exclude-list'), routeKey);
+		var routeAlreadyUsed = !!route && (routeListContains($('#rc-did-include-list'), routeKey) || routeListContains($('#rc-did-exclude-list'), routeKey));
+		var canInclude = routeEditorEnabled && !!route && !routeAlreadyUsed;
+		var canExclude = routeEditorEnabled && !hasExplicitIncludes && !!route && !routeAlreadyUsed;
 
 		$('#rc-add-did-include').prop('disabled', !canInclude).toggleClass('disabled', !canInclude).show();
 		$('#rc-add-did-exclude').prop('disabled', !canExclude).toggleClass('disabled', !canExclude).show();
@@ -2320,19 +2343,21 @@
 			? addRouteToList($('#rc-did-include-list'), route, 'include')
 			: addRouteToList($('#rc-did-exclude-list'), route, 'exclude');
 		if (added) {
-			clearDidRouteActionState();
+			updateDidScopeEditorState();
 		}
 		return added;
 	}
 
 	function updateDidScopeEditorState() {
 		var routeEditorEnabled = $('#rc-rule-did-mode').val() === 'selected';
+		var exclusionsEnabled = routeEditorEnabled && collectRouteList($('#rc-did-include-list')).length === 0;
 		clearDidRouteActionState();
 		$('#rc-did-include-col, #rc-did-exclude-col').show();
 		$('#rc-route-pick').prop('disabled', !routeEditorEnabled).toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
-		$('#rc-did-route-actions-col, #rc-did-include-col, #rc-did-exclude-col').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
-		$('#rc-did-include-list, #rc-did-exclude-list').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
-		$('#rc-did-include-list, #rc-did-exclude-list').find('button').prop('disabled', !routeEditorEnabled);
+		$('#rc-did-route-actions-col, #rc-did-include-col').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
+		$('#rc-did-exclude-col').toggleClass('rc-control-disabled', !exclusionsEnabled).attr('aria-disabled', exclusionsEnabled ? 'false' : 'true');
+		$('#rc-did-include-list').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true').find('button').prop('disabled', !routeEditorEnabled);
+		$('#rc-did-exclude-list').toggleClass('rc-control-disabled', !exclusionsEnabled).attr('aria-disabled', exclusionsEnabled ? 'false' : 'true').find('button').prop('disabled', !exclusionsEnabled);
 		updateDidRouteActionButtonState();
 	}
 
@@ -2751,9 +2776,14 @@
 
 			$('#rc-did-include-list').empty();
 			$('#rc-did-exclude-list').empty();
-			$.each((rule.did_lists && rule.did_lists.include) || [], function (_, row) { addRouteToList($('#rc-did-include-list'), row, 'include'); });
-			$.each((rule.did_lists && rule.did_lists.exclude) || [], function (_, row) { addRouteToList($('#rc-did-exclude-list'), row, 'exclude'); });
+			var loadedDidIncludes = (rule.did_lists && rule.did_lists.include) || [];
+			$.each(loadedDidIncludes, function (_, row) { addRouteToList($('#rc-did-include-list'), row, 'include'); });
+			if (!loadedDidIncludes.length) {
+				$.each((rule.did_lists && rule.did_lists.exclude) || [], function (_, row) { addRouteToList($('#rc-did-exclude-list'), row, 'exclude'); });
+			}
 			updateDidRouteListDefaults();
+			refreshDidRoutePicker();
+			updateDidScopeEditorState();
 
 			$('#rc-schedule-table tbody').empty();
 			$.each(rule.schedules || [], function (_, s) {
@@ -2833,12 +2863,8 @@
 
 	function loadInboundRoutes() {
 		ajax('getinboundroutes', {}, function (response) {
-			var options = ['<option value="" selected>Select an inbound route…</option>'];
-			$.each(response.routes || [], function (_, r) {
-				options.push('<option value="' + esc(r.route_key) + '">' + esc((r.route_label || r.route_key) + ' [' + r.route_key + ']') + '</option>');
-			});
-			$('#rc-route-pick').html(options.join('')).val('');
 			window._rcInboundRoutes = response.routes || [];
+			refreshDidRoutePicker();
 			updateDidRouteListDefaults();
 			updateDidScopeEditorState();
 		});

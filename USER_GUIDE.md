@@ -100,10 +100,10 @@ Save the rule, place controlled test calls, then verify Active Incidents and Ale
 - Caller Excludes: callers to exclude. Enter caller numbers separated by spaces, commas or new lines. Mixed separators are supported. Values are saved in a normalized comma-separated format.
 - DID Scope: Include All DIDs or Select DIDs.
 - Inbound Routes: route selector used for DID include/exclude actions.
-- Included Routes: the starting route set when Select DIDs is used. If empty,
-  it displays `All DIDs` and starts from every route.
-- Excluded Routes: routes removed from that starting set. If empty, it displays
-  `No DIDs`. Exclusion wins when a route is in both lists.
+- Included Routes: the exact route set when one or more routes are listed. If
+  empty, it displays `All DIDs` and starts from every route.
+- Excluded Routes: routes removed when Included Routes is empty. If empty, it
+  displays `No DIDs`. Adding the first Included Route clears and disables this list.
 - Schedules: day/time periods when calls count for this rule.
 - GUI: always enabled history action.
 - Alert Call: optional phone-call notifications.
@@ -194,12 +194,13 @@ Caller controls:
 Route controls:
 
 - Include All DIDs without route-level filtering
-- Select DIDs with independent Included Routes and Excluded Routes
+- Select DIDs using either exclusions from all routes or an exact include set
 
 Include All DIDs matches every inbound route and leaves saved route rows inactive.
-Select DIDs starts with Included Routes, or all routes when that list is empty,
-then removes Excluded Routes. Both route lists remain stored when scope is
-changed.
+Select DIDs starts from all routes and removes Excluded Routes while Included
+Routes is empty. Once an Included Route is added, Included Routes becomes the
+complete route set and exclusions are cleared. Route selections remain stored
+when DID Scope is changed.
 Route scope follows your FreePBX Inbound Routes configuration.
 
 ## Schedules

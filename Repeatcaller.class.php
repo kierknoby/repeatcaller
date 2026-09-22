@@ -143,6 +143,9 @@ class Repeatcaller implements \BMO {
 						$didScopeMode = 'selected';
 						$didIncludes = [];
 					}
+					if (!empty($didIncludes)) {
+						$didExcludes = [];
+					}
 					$repository->saveRule([
 						'name' => (string)$rule['name'],
 						'enabled' => !empty($rule['enabled']) ? 1 : 0,
@@ -700,6 +703,18 @@ class Repeatcaller implements \BMO {
 		}
 		if (!in_array($payload['did_scope_mode'], ['all', 'selected'], true)) {
 			$payload['did_scope_mode'] = 'all';
+		}
+		$hasIncludedDid = false;
+		foreach ($payload['dids'] as $did) {
+			if ((string)($did['list_type'] ?? '') === 'include') {
+				$hasIncludedDid = true;
+				break;
+			}
+		}
+		if ($hasIncludedDid) {
+			$payload['dids'] = array_values(array_filter($payload['dids'], function (array $did): bool {
+				return (string)($did['list_type'] ?? '') === 'include';
+			}));
 		}
 		if (!empty($payload['alert_call_handle_callerid_upstream'])) {
 			$payload['alert_call_callerid'] = '';
