@@ -3068,6 +3068,10 @@ assert_true(strpos($viewSource, 'id="rc-rule-alert-call-strategy"') !== false, '
 assert_true(strpos($viewSource, 'id="rc-rule-alert-call-keep-trying"') === false, 'rule editor view should not render a global alert-call keep-trying field');
 assert_true(strpos($viewSource, '<select id="rc-rule-alert-call-recording-id" class="form-control">') !== false, 'rule editor view should render a FreePBX-style system recording selector');
 assert_true(substr_count($viewSource, 'id="rc-alert-call-language-table"') === 1, 'admin UI must render one Alert Call language table');
+assert_true(strpos($viewSource, '<tr<?php echo !empty($languageStatus[\'active\']) ? \' class="info"\' : \'\'; ?>>') !== false, 'initial active Alert Call language row must retain the info class');
+assert_true(strpos($jsSource, '$row.addClass(\'info\');') !== false, 'refreshed active Alert Call language rows must retain the info class');
+assert_true(strpos($cssSource, '.repeatcaller #rc-alert-call-language-table > tbody > tr.info > td {') !== false && strpos($cssSource, 'background-color: #d9edf7;') !== false, 'module CSS must define the Bootstrap 3 info background for active Alert Call language cells');
+assert_true(substr_count($cssSource, 'tr.info > td') === 1 && strpos($cssSource, '.repeatcaller .info') === false, 'active-language highlighting must remain scoped to the Alert Call language table without generic info styling');
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-support"') === false && strpos($viewSource, 'Alert Call Language Status') === false, 'admin UI must remove the old Alert Call Language Status panel');
 assert_true(strpos($viewSource, "_('Global Settings')") < strpos($viewSource, 'id="rc-alert-call-language-table"'), 'language table must be inside Global Settings');
 assert_true(strpos($viewSource, 'id="rc-alert-call-language-table"') < strpos($viewSource, "_('Default Country Code')"), 'language table must appear above Default Country Code');

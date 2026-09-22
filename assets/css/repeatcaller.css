@@ -234,6 +234,10 @@ body:has(.repeatcaller) #page_body.default-page {
 	border-bottom: none;
 }
 
+.repeatcaller #rc-alert-call-language-table > tbody > tr.info > td {
+	background-color: #d9edf7;
+}
+
 .repeatcaller .rc-alert-call-destination-list .rc-alert-call-destination-item {
 	display: flex;
 	align-items: center;
