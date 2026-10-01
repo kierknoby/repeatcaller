@@ -215,7 +215,7 @@ fwconsole reload
 47. Tick it again and save.
 48. Reopen the rule and confirm the field is blank and the previous value has been forgotten.
 
-## Final 1.0.3 Regression Checks
+## Final 1.1.0 Regression Checks
 
 49. In the rule editor, add an Alert Call destination using Add, then repeat using Enter; confirm both methods behave the same.
 50. Confirm Alert Call destination changes keep the associated Ignore these callers entry consistent without creating duplicate destinations.
@@ -233,6 +233,15 @@ fwconsole reload
 61. Confirm Alert History still renders an `accepted` Alert Call status as `Incident accepted` after the redundant JavaScript condition was simplified.
 62. Inspect module metadata and confirm the dependency minimum is FreePBX 16.0 while supported versions list FreePBX 16.0 and 17.0 separately.
 63. Open the rule editor and confirm DID Scope offers `Include All DIDs` (`all`) and `Select DIDs` (`selected`). Include All DIDs must grey out the full route editor without clearing valid saved selections and must match every route. Select DIDs must show `All DIDs` and `No DIDs` for empty lists. With no real rows, either action must be available. Once Included Routes or Excluded Routes contains a real route, the opposite action must remain disabled until the final route is removed. A route in either list must disappear from the selector and return when removed. Confirm synthetic defaults are never saved and the resulting configuration survives scope changes and save/reload. On upgrade, confirm legacy All-DIDs rules with exclusions become Select DIDs while preserving those exclusions and effective matching.
+64. Open an existing saved rule whose saved Email Recipients contain at least one valid address and confirm Test Email becomes available.
+65. Click Test Email and confirm the message is sent to the rule's saved recipients, not to any unsaved value in the field.
+66. Inspect the received message headers and confirm From and Reply-To use the same resolved identity as production alert email.
+67. Confirm the body begins `Repeat Caller test email from <system identifier>` using the configured FreePBX System Identifier, and includes the current time and `Source: manual test`.
+68. Confirm the success message states the local mailer accepted the message and does not claim external delivery.
+69. Edit the Email Recipients field without saving and confirm Test Email becomes unavailable.
+70. Reload the saved rule, then separately add and remove a DID route, add and remove a schedule row, and add, remove, and drag/drop reorder an Alert Call destination; confirm each change makes Test Email unavailable.
+71. Save the rule, reopen it, and confirm Test Email becomes available again when valid saved recipients exist.
+72. Open a rule with no valid saved recipients and confirm Test Email cannot be used.
 
 Run the focused sender contract before the existing PHP contracts:
 

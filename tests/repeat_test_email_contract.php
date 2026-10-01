@@ -276,4 +276,10 @@ assert_true((bool)preg_match('/ruleEditorDirty \|\| !hasValidRuleEmailRecipients
 // so a dirty edit made during the request keeps the button disabled.
 assert_true((bool)preg_match('/ajax\(\'testruleemail\',\s*\{\s*rule_id:[\s\S]*?\},\s*function \(response\) \{[\s\S]*?\}, function \(\) \{\s*done\(\);\s*updateRuleTestEmailState\(\);\s*endAction\(\);\s*\}\);/', $jsSource), 'Test Email completion callback must call updateRuleTestEmailState() after done() and before endAction(), so a mid-flight dirty edit is not overridden by withBusy() re-enabling the button');
 
+// Behavioural coverage of each custom mutation path lives in tests/repeat_admin_contract.php.
+assert_true((bool)preg_match('/function markRuleEditorDirty\(\) \{\s*ruleEditorDirty = true;\s*updateRuleTestEmailState\(\);\s*\}/', $jsSource), 'markRuleEditorDirty() must set the dirty flag and re-apply Test Email availability');
+assert_true((bool)preg_match('/\$\(\'\.rc-editor-panel\'\)\.off\(\'change\.repeatcaller-dirty input\.repeatcaller-dirty\'\)\.on\(\'change\.repeatcaller-dirty input\.repeatcaller-dirty\', function \(\) \{\s*markRuleEditorDirty\(\);\s*\}\);/', $jsSource), 'delegated input/change handler must use markRuleEditorDirty()');
+assert_true(substr_count($jsSource, 'markRuleEditorDirty();') >= 8, 'every custom rule-editor mutation path must call markRuleEditorDirty()');
+assert_true((bool)preg_match('/function loadRule\(id\) \{[\s\S]*?ruleEditorDirty = false;\s*updateRuleTestEmailState\(\);\s*scrollToRuleEditor\(\);/', $jsSource), 'loadRule() must leave the editor clean after rendering saved values');
+
 echo "Test Email contract tests passed.\n";

@@ -1821,6 +1821,7 @@
 			refreshDidRoutePicker();
 			updateDidScopeEditorState();
 			updateDidRouteActionButtonState();
+			markRuleEditorDirty();
 		});
 		$li.append($removeButton);
 		$list.append($li);
@@ -1993,6 +1994,7 @@
 			$li.remove();
 			updateAlertCallDestinationOrderLabels();
 			updateAlertCallDestinationAddButtonState();
+			markRuleEditorDirty();
 		});
 		$li.append($order).append($dragHandle).append($value).append($keepTryingToggle).append($remove);
 		$keepTryingToggle.toggleClass('rc-control-disabled', !orderedStrategy);
@@ -2022,6 +2024,7 @@
 				$li.before($source);
 			}
 			updateAlertCallDestinationOrderLabels();
+			markRuleEditorDirty();
 		});
 
 		return $li;
@@ -2090,8 +2093,11 @@
 		var raw = $('#rc-rule-alert-call-destination-input').val();
 		var defaultKeepTrying = $('#rc-rule-alert-call-strategy').val() === 'ordered';
 		var autoAddedIgnoreEntries = 0;
+		var addedDestinations = 0;
 		$.each(normaliseAlertCallDestinationEntries(raw, defaultKeepTrying), function (_, destinationRow) {
-			addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);
+			if (addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying)) {
+				addedDestinations += 1;
+			}
 			if (ensureCallerExcludeDestination(destinationRow.destination)) {
 				autoAddedIgnoreEntries += 1;
 			}
@@ -2099,6 +2105,9 @@
 		$('#rc-rule-alert-call-destination-input').val('');
 		if (autoAddedIgnoreEntries > 0) {
 			showAlertCallSelfTriggerWarning();
+		}
+		if (addedDestinations > 0 || autoAddedIgnoreEntries > 0) {
+			markRuleEditorDirty();
 		}
 		updateAlertCallDestinationAddButtonState();
 		return {
@@ -2347,6 +2356,7 @@
 			: addRouteToList($('#rc-did-exclude-list'), route, 'exclude');
 		if (added) {
 			updateDidScopeEditorState();
+			markRuleEditorDirty();
 		}
 		return added;
 	}
@@ -2488,6 +2498,7 @@
 			$row.remove();
 			normalizeScheduleEditorState();
 			updateTableRowBatching('#rc-schedule-table');
+			markRuleEditorDirty();
 		})));
 		$row.find('.rc-schedule-day, .rc-schedule-start-hour, .rc-schedule-start-minute').on('change', function () {
 			applyScheduleRowState($row);
@@ -2503,6 +2514,14 @@
 		$('#rc-schedule-table tbody').append($row);
 		normalizeScheduleEditorState();
 		updateTableRowBatching('#rc-schedule-table');
+	}
+
+	function addScheduleRowFromEditor() {
+		var rowCount = $('#rc-schedule-table tbody tr').length;
+		addScheduleRow();
+		if ($('#rc-schedule-table tbody tr').length > rowCount) {
+			markRuleEditorDirty();
+		}
 	}
 
 	function applyScheduleRowState($row) {
@@ -2648,6 +2667,11 @@
 
 	function updateRuleTestEmailState() {
 		$('#rc-rule-test-email').prop('disabled', ruleEditorDirty || !hasValidRuleEmailRecipients());
+	}
+
+	function markRuleEditorDirty() {
+		ruleEditorDirty = true;
+		updateRuleTestEmailState();
 	}
 
 	function saveRule(onDone) {
@@ -3227,7 +3251,7 @@
 		});
 
 		$('#rc-cancel-edit').off('click.repeatcaller').on('click.repeatcaller', function () { resetRuleEditor(); });
-		$('#rc-add-schedule').off('click.repeatcaller').on('click.repeatcaller', function () { addScheduleRow(); });
+		$('#rc-add-schedule').off('click.repeatcaller').on('click.repeatcaller', function () { addScheduleRowFromEditor(); });
 		$('#rc-rule-caller-mode').off('change.repeatcaller').on('change.repeatcaller', function () { updateCallerScopeEditorState(); });
 		$('#rc-rule-did-mode').off('change.repeatcaller').on('change.repeatcaller', function () {
 			updateDidScopeEditorState();
@@ -3253,8 +3277,7 @@
 		});
 		$('#rc-rule-email-enabled').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
 		$('.rc-editor-panel').off('change.repeatcaller-dirty input.repeatcaller-dirty').on('change.repeatcaller-dirty input.repeatcaller-dirty', function () {
-			ruleEditorDirty = true;
-			updateRuleTestEmailState();
+			markRuleEditorDirty();
 		});
 		$('#rc-rule-test-email').off('click.repeatcaller').on('click.repeatcaller', function () {
 			var $button = $(this);

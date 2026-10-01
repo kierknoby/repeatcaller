@@ -1956,6 +1956,9 @@ class Wrap {
 	constructor(elements) {
 		this.els = (elements || []).filter(Boolean);
 		this.length = this.els.length;
+		this.els.forEach(function (element, index) {
+			this[index] = element;
+		}, this);
 	}
 	each(callback) {
 		this.els.forEach(function (element, index) {
@@ -2085,14 +2088,20 @@ class Wrap {
 		});
 		return this;
 	}
-	trigger(eventName) {
+	trigger(eventName, eventArg) {
 		this.els.forEach(function (element) {
 			if (typeof element.eventHandlers[eventName] === 'function') {
-				element.eventHandlers[eventName].call(element);
+				element.eventHandlers[eventName].call(element, eventArg);
 			}
 		});
 		return this;
 	}
+	index() {
+		const element = this.els[0];
+		return element && element.parent ? element.parent.children.indexOf(element) : -1;
+	}
+	after(content) { return moveBesideSibling(this, content, 1); }
+	before(content) { return moveBesideSibling(this, content, 0); }
 	remove() {
 		this.els.forEach(function (element) {
 			if (element.parent) {
@@ -2144,6 +2153,23 @@ class Wrap {
 		}
 		return new Wrap([next]);
 	}
+}
+
+function moveBesideSibling(targetWrap, content, offset) {
+	const target = targetWrap.els[0];
+	if (!target || !target.parent) {
+		return targetWrap;
+	}
+	const moving = content instanceof Wrap ? content.els : [content];
+	moving.forEach(function (node) {
+		if (node.parent) {
+			node.parent.removeChild(node);
+		}
+		const siblings = target.parent.children;
+		siblings.splice(siblings.indexOf(target) + offset, 0, node);
+		node.parent = target.parent;
+	});
+	return targetWrap;
 }
 
 function $(selector) {
@@ -2290,6 +2316,7 @@ createGeneric('rc-rule-alert-call-callerid-help');
 createGeneric('rc-setting-country', 'input');
 byId['rc-setting-country'].value = '44';
 createButton('rc-run-now', ['btn', 'btn-warning']);
+createButton('rc-rule-test-email', ['btn', 'btn-default']);
 createGeneric('rc-rules-table', 'table');
 const rulesTbody = createGeneric('rc-rules-table-body', 'tbody');
 byId['rc-rules-table'].append(rulesTbody);
@@ -2350,7 +2377,7 @@ vm.createContext(context);
 let source = fs.readFileSync('/workspaces/repeatcaller/assets/js/repeatcaller.js', 'utf8');
 source = source.replace('function ajax(command, payload, done, onComplete, options) {', 'function ajax(command, payload, done, onComplete, options) { var interceptor = (globalThis && globalThis.__testAjaxInterceptor) || (globalThis && globalThis.window && globalThis.window.__testAjaxInterceptor); if (interceptor && typeof interceptor === \'function\') { return interceptor(command, payload, done, onComplete, options); }');
 source = source.replace('function renderAlertHistory(items) {', 'function renderAlertHistory(items) { window.__alertCallFailureSummary = alertCallFailureSummary;');
-source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, collectRouteList: collectRouteList, updateDidRouteListDefaults: updateDidRouteListDefaults, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory, loadInboundRoutes: loadInboundRoutes, updateDidScopeEditorState: updateDidScopeEditorState, updateDidRouteActionButtonState: updateDidRouteActionButtonState, applyDidRouteAction: applyDidRouteAction };\n})(jQuery);');
+source = source.replace('})(jQuery);', '\nwindow.__hooks = { loadRule: loadRule, saveRule: saveRule, collectRouteList: collectRouteList, updateDidRouteListDefaults: updateDidRouteListDefaults, clearAlertCallCallerIdSessionState: clearAlertCallCallerIdSessionState, setEditingRuleRow: setEditingRuleRow, updateRuleRowActionState: updateRuleRowActionState, updateStartAsEditorState: updateStartAsEditorState, updateAlertCallAndEmailState: updateAlertCallAndEmailState, updateAlertCallCallerIdState: updateAlertCallCallerIdState, updateAlertCallDestinationAddButtonState: updateAlertCallDestinationAddButtonState, addAlertCallDestinationsFromInput: addAlertCallDestinationsFromInput, triggerAlertCallDestinationAdd: triggerAlertCallDestinationAdd, handleAlertCallDestinationInputKeydown: handleAlertCallDestinationInputKeydown, applyAlertCallCallerIdSelfTriggerSafeguard: applyAlertCallCallerIdSelfTriggerSafeguard, applyAlertCallCallerIdSelfTriggerSafeguardForSave: applyAlertCallCallerIdSelfTriggerSafeguardForSave, syncAlertCallCallerIdSafeguardState: syncAlertCallCallerIdSafeguardState, showAlertCallSelfTriggerWarning: showAlertCallSelfTriggerWarning, showMessage: showMessage, alertCallSelfTriggerWarningDurationSeconds: alertCallSelfTriggerWarningDurationSeconds, alertCallSelfTriggerWarningTimeoutMs: alertCallSelfTriggerWarningTimeoutMs, initializeRunNowAvailabilityFromBootstrap: initializeRunNowAvailabilityFromBootstrap, renderAlertCallDestinations: renderAlertCallDestinations, updateAlertCallDestinationHiddenField: updateAlertCallDestinationHiddenField, updateAlertCallStrategyEditorState: updateAlertCallStrategyEditorState, renderAlertHistory: renderAlertHistory, loadInboundRoutes: loadInboundRoutes, updateDidScopeEditorState: updateDidScopeEditorState, updateDidRouteActionButtonState: updateDidRouteActionButtonState, applyDidRouteAction: applyDidRouteAction, addRouteToList: addRouteToList, addScheduleRowFromEditor: addScheduleRowFromEditor, getRuleEditorDirty: function () { return ruleEditorDirty; }, clearRuleEditorDirty: function () { ruleEditorDirty = false; updateRuleTestEmailState(); } };\n})(jQuery);');
 vm.runInContext(source, context, {timeout: 5000});
 context.ajax = function (command, payload, done, onComplete, options) {
 	payload = payload || {};
@@ -3008,6 +3035,87 @@ roundTripRows = readAlertCallDestinationStates();
 assert(roundTripRows[0].checkboxChecked === true && roundTripRows[1].checkboxChecked === false, 'switching back to Ordered should restore the original mixed Keep Trying choices');
 assert(roundTripRows[0].orderedState === '1' && roundTripRows[1].orderedState === '0', 'switching back to Ordered should keep the preserved Ordered-state values intact');
 
+// Test Email must become unavailable after custom editor mutations that emit no input/change event.
+function armTestEmail(label) {
+	$('#rc-rule-email-recipients').val('alerts@example.com');
+	hooks.clearRuleEditorDirty();
+	assert($('#rc-rule-test-email').prop('disabled') === false, label + ': Test Email should be available with clean state and valid saved recipients');
+}
+function assertTestEmailDisabled(label) {
+	assert(hooks.getRuleEditorDirty() === true && $('#rc-rule-test-email').prop('disabled') === true, label + ': Test Email should be unavailable after an unsaved editor mutation');
+}
+function assertTestEmailStillAvailable(label) {
+	assert(hooks.getRuleEditorDirty() === false && $('#rc-rule-test-email').prop('disabled') === false, label + ': Test Email should remain available');
+}
+function destinationOrder() {
+	return $('#rc-rule-alert-call-destination-list').find('li').els.map(function (element) { return element.attrs['data-destination']; });
+}
+
+$('#rc-rule-did-mode').val('selected');
+$('#rc-did-include-list, #rc-did-exclude-list').empty();
+hooks.updateDidRouteListDefaults();
+hooks.updateDidScopeEditorState();
+armTestEmail('DID load path');
+assert(hooks.addRouteToList($('#rc-did-exclude-list'), inboundRoutes[0], 'exclude') === true, 'rendering a saved exclusion should succeed');
+assertTestEmailStillAvailable('rendering saved DID rows');
+$('#rc-did-exclude-list').find('button').first().trigger('click');
+assert(hooks.collectRouteList($('#rc-did-exclude-list')).length === 0, 'route remove should remove the saved exclusion');
+assertTestEmailDisabled('removing a DID route');
+
+armTestEmail('DID add');
+$('#rc-route-pick').val('second|');
+hooks.updateDidRouteActionButtonState();
+assert(hooks.applyDidRouteAction('include') === true, 'Include Route should add the selected route');
+assertTestEmailDisabled('adding a DID route');
+armTestEmail('DID rejected add');
+assert(hooks.applyDidRouteAction('exclude') === false, 'Exclude Route should be rejected while includes exist');
+assertTestEmailStillAvailable('rejected DID route action');
+
+if (byId['rc-schedule-table'].children.indexOf(byId['rc-schedule-table-body']) === -1) {
+	byId['rc-schedule-table'].append(byId['rc-schedule-table-body']);
+}
+armTestEmail('Schedule add');
+const scheduleRowsBefore = $('#rc-schedule-table tbody tr').length;
+hooks.addScheduleRowFromEditor();
+assert($('#rc-schedule-table tbody tr').length === scheduleRowsBefore + 1, 'Add Schedule should add a schedule row');
+assertTestEmailDisabled('adding a schedule row');
+armTestEmail('Schedule remove');
+$('#rc-schedule-table tbody').find('.rc-schedule-remove').first().trigger('click');
+assertTestEmailDisabled('removing a schedule row');
+
+$('#rc-rule-alert-call-enabled').prop('checked', true);
+$('#rc-rule-alert-call-strategy').val('ordered');
+armTestEmail('Alert Call load path');
+hooks.renderAlertCallDestinations('100|1, 101|0', true);
+assertTestEmailStillAvailable('rendering saved Alert Call destinations');
+
+armTestEmail('Alert Call reorder');
+const reorderItems = $('#rc-rule-alert-call-destination-list').find('li');
+reorderItems.els[0].classes.add('rc-dragging');
+$(reorderItems.els[1]).trigger('drop', { preventDefault: function () {}, originalEvent: { dataTransfer: {} } });
+reorderItems.els[0].classes.delete('rc-dragging');
+assert(destinationOrder().join(',') === '101,100', 'drag/drop should reorder Alert Call destinations');
+assertTestEmailDisabled('reordering Alert Call destinations');
+
+armTestEmail('Alert Call remove');
+$('#rc-rule-alert-call-destination-list').find('.rc-alert-call-destination-remove').first().trigger('click');
+assert(destinationOrder().join(',') === '100', 'Remove should remove the Alert Call destination');
+assertTestEmailDisabled('removing an Alert Call destination');
+
+armTestEmail('Alert Call add');
+$('#rc-rule-alert-call-destination-input').val('2002');
+hooks.addAlertCallDestinationsFromInput();
+assert(destinationOrder().indexOf('2002') !== -1, 'Add should append the Alert Call destination');
+assertTestEmailDisabled('adding an Alert Call destination');
+armTestEmail('Alert Call duplicate add');
+$('#rc-rule-alert-call-destination-input').val('2002');
+hooks.addAlertCallDestinationsFromInput();
+assertTestEmailStillAvailable('duplicate Alert Call destination add');
+
+$('#rc-rule-email-recipients').val('');
+hooks.clearRuleEditorDirty();
+assert($('#rc-rule-test-email').prop('disabled') === true, 'Test Email should remain unavailable without valid recipients even when clean');
+
 process.stdout.write('OK');
 NODE;
 $behaviorOutput = shell_exec('node -e ' . escapeshellarg($behaviorScript));
@@ -3038,7 +3146,7 @@ assert_true(strpos($jsSource, 'function applyAlertCallCallerIdSelfTriggerSafegua
 assert_true(strpos($jsSource, 'function applyAlertCallCallerIdSelfTriggerSafeguardForSave(options) {') !== false, 'rule editor should define a save-time helper that only applies Caller ID safeguards when relevant changes occurred');
 assert_true(strpos($jsSource, 'function hasAlertCallCallerIdSafeguardTrigger(previousState, nextState) {') !== false, 'rule editor should define explicit safeguard trigger detection for relevant Caller ID and Alert Call transitions');
 assert_true(strpos($jsSource, "Alert Call Caller ID matches an Only monitor these callers entry.") !== false, 'Caller ID safeguard should provide explicit include-list conflict guidance');
-assert_true(strpos($jsSource, 'addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying);') !== false, 'Add action should still attempt to add Alert Call destination while preserving de-duplication');
+assert_true(strpos($jsSource, 'if (addAlertCallDestination(destinationRow.destination, destinationRow.keepTrying)) {') !== false, 'Add action should still attempt to add Alert Call destination while preserving de-duplication');
 assert_true(strpos($jsSource, "if (ensureCallerExcludeDestination(destinationRow.destination)) {") !== false, 'Add action should ensure Ignore callers contains the destination even when the destination already exists');
 assert_true(strpos($jsSource, "if (autoAddedIgnoreEntries > 0) {") !== false && strpos($jsSource, 'showAlertCallSelfTriggerWarning();') !== false, 'adding one or more new Alert Call destinations should show a one-time warning when Ignore callers entries are auto-added');
 assert_true(strpos($jsSource, 'showAlertCallSelfTriggerWarning(alertCallCallerIdSelfTriggerWarning);') !== false, 'Caller ID safeguard should show the dedicated Caller ID self-trigger warning text');

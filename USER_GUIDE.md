@@ -410,6 +410,18 @@ This incident has not been accepted. You can accept it by phone if Alert Calls a
 
 A successful handoff to the PBX mailer does not guarantee external delivery.
 
+### Test Email
+
+Each rule has a Test Email button beside its Email Recipients field.
+
+- It sends to the rule's saved recipients, not to unsaved values in the editor.
+- It is unavailable until the rule has valid saved recipients, and while the
+  rule editor has unsaved changes. Save the rule to make it available again.
+- It uses the same mail transport and From/Reply-To identity as real alert
+  emails, and the message includes the configured FreePBX System Identifier.
+- A success message means the local mailer accepted the message; it does not
+  confirm external delivery.
+
 If mail is missing, see the troubleshooting section below.
 
 ## Receiving Alert Calls
@@ -630,7 +642,7 @@ Check:
 
 Check:
 
-- Email enabled globally
+- Repeat Caller monitoring enabled
 - Email enabled for the rule
 - recipients configured
 - FreePBX mail settings
