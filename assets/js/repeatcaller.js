@@ -44,6 +44,7 @@
 		'#rc-schedule-table'
 	];
 	var ruleStatusTimers = {};
+	var ruleEditorDirty = false;
 	var alertCallSelfTriggerWarning = 'Alert Call destinations are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 	var alertCallCallerIdSelfTriggerWarning = 'Alert Call Caller IDs are automatically added to Ignore these callers to reduce the risk of self-triggering if an alert call routes back through a monitored DID.';
 	var alertCallSelfTriggerWarningDurationSeconds = 6;
@@ -1800,12 +1801,11 @@
 		if (routeListContains($('#rc-did-include-list'), route.route_key) || routeListContains($('#rc-did-exclude-list'), route.route_key)) {
 			return false;
 		}
-		if (listType === 'exclude' && collectRouteList($('#rc-did-include-list')).length) {
+		if (listType === 'include' && collectRouteList($('#rc-did-exclude-list')).length) {
 			return false;
 		}
-		if (listType === 'include' && !collectRouteList($('#rc-did-include-list')).length) {
-			$('#rc-did-exclude-list').empty();
-			updateDidRouteListDefaults();
+		if (listType === 'exclude' && collectRouteList($('#rc-did-include-list')).length) {
+			return false;
 		}
 		$list.find('.rc-route-list-default').remove();
 		var $li = $('<li/>').text((route.route_label || route.route_key) + ' [' + route.route_key + ']');
@@ -2272,6 +2272,8 @@
 		addScheduleRow(-1, '00:00', '24:00', true);
 		updateAlertCallAndEmailState();
 		syncAlertCallCallerIdSafeguardState();
+		ruleEditorDirty = false;
+		updateRuleTestEmailState();
 	}
 
 	function ensureRecordingOptionExists(recordingId) {
@@ -2314,10 +2316,11 @@
 	function updateDidRouteActionButtonState() {
 		var routeEditorEnabled = $('#rc-rule-did-mode').val() === 'selected';
 		var hasExplicitIncludes = collectRouteList($('#rc-did-include-list')).length > 0;
+		var hasExplicitExclusions = collectRouteList($('#rc-did-exclude-list')).length > 0;
 		var routeKey = $.trim(String($('#rc-route-pick').val() || ''));
 		var route = routeKey !== '' ? findRoute(routeKey) : null;
 		var routeAlreadyUsed = !!route && (routeListContains($('#rc-did-include-list'), routeKey) || routeListContains($('#rc-did-exclude-list'), routeKey));
-		var canInclude = routeEditorEnabled && !!route && !routeAlreadyUsed;
+		var canInclude = routeEditorEnabled && !hasExplicitExclusions && !!route && !routeAlreadyUsed;
 		var canExclude = routeEditorEnabled && !hasExplicitIncludes && !!route && !routeAlreadyUsed;
 
 		$('#rc-add-did-include').prop('disabled', !canInclude).toggleClass('disabled', !canInclude).show();
@@ -2350,13 +2353,15 @@
 
 	function updateDidScopeEditorState() {
 		var routeEditorEnabled = $('#rc-rule-did-mode').val() === 'selected';
+		var includesEnabled = routeEditorEnabled && collectRouteList($('#rc-did-exclude-list')).length === 0;
 		var exclusionsEnabled = routeEditorEnabled && collectRouteList($('#rc-did-include-list')).length === 0;
 		clearDidRouteActionState();
 		$('#rc-did-include-col, #rc-did-exclude-col').show();
 		$('#rc-route-pick').prop('disabled', !routeEditorEnabled).toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
-		$('#rc-did-route-actions-col, #rc-did-include-col').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
+		$('#rc-did-route-actions-col').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true');
+		$('#rc-did-include-col').toggleClass('rc-control-disabled', !includesEnabled).attr('aria-disabled', includesEnabled ? 'false' : 'true');
 		$('#rc-did-exclude-col').toggleClass('rc-control-disabled', !exclusionsEnabled).attr('aria-disabled', exclusionsEnabled ? 'false' : 'true');
-		$('#rc-did-include-list').toggleClass('rc-control-disabled', !routeEditorEnabled).attr('aria-disabled', routeEditorEnabled ? 'false' : 'true').find('button').prop('disabled', !routeEditorEnabled);
+		$('#rc-did-include-list').toggleClass('rc-control-disabled', !includesEnabled).attr('aria-disabled', includesEnabled ? 'false' : 'true').find('button').prop('disabled', !includesEnabled);
 		$('#rc-did-exclude-list').toggleClass('rc-control-disabled', !exclusionsEnabled).attr('aria-disabled', exclusionsEnabled ? 'false' : 'true').find('button').prop('disabled', !exclusionsEnabled);
 		updateDidRouteActionButtonState();
 	}
@@ -2628,6 +2633,23 @@
 		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate);
 	}
 
+	function hasValidRuleEmailRecipients() {
+		var recipients = normaliseRuleEmailRecipients($('#rc-rule-email-recipients').val());
+		if (!recipients.length) {
+			return false;
+		}
+		for (var i = 0; i < recipients.length; i += 1) {
+			if (!isValidRuleEmailRecipient(recipients[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	function updateRuleTestEmailState() {
+		$('#rc-rule-test-email').prop('disabled', ruleEditorDirty || !hasValidRuleEmailRecipients());
+	}
+
 	function saveRule(onDone) {
 		var schedules = collectSchedules();
 		if (schedules === null) {
@@ -2800,6 +2822,8 @@
 			updateAlertCallCallerIdState();
 			updateAlertCallAndEmailState();
 			syncAlertCallCallerIdSafeguardState();
+			ruleEditorDirty = false;
+			updateRuleTestEmailState();
 			scrollToRuleEditor();
 		});
 	}
@@ -3228,6 +3252,29 @@
 			}
 		});
 		$('#rc-rule-email-enabled').off('change.repeatcaller').on('change.repeatcaller', function () { updateAlertCallAndEmailState(); });
+		$('.rc-editor-panel').off('change.repeatcaller-dirty input.repeatcaller-dirty').on('change.repeatcaller-dirty input.repeatcaller-dirty', function () {
+			ruleEditorDirty = true;
+			updateRuleTestEmailState();
+		});
+		$('#rc-rule-test-email').off('click.repeatcaller').on('click.repeatcaller', function () {
+			var $button = $(this);
+			if ($button.prop('disabled')) {
+				return;
+			}
+			beginAction();
+			withBusy($button, function (done) {
+				$button.text('Sending...');
+				ajax('testruleemail', {
+					rule_id: $('#rc-rule-id').val()
+				}, function (response) {
+					showMessage(response.message || 'Test email sent.', 'success');
+				}, function () {
+					done();
+					updateRuleTestEmailState();
+					endAction();
+				});
+			});
+		});
 		$('#rc-save-rule').off('click.repeatcaller').on('click.repeatcaller', function () {
 			var $button = $(this);
 			if ($('#rc-rule-enabled').is(':checked') && !isValidDefaultCountryCode($('#rc-setting-country').val())) {

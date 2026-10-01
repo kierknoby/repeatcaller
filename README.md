@@ -1,10 +1,36 @@
-# Repeat Caller 1.0.3 for FreePBX 16 and 17
+# Repeat Caller 1.1.0 for FreePBX 16 and 17
 
-**Release date:** 21 September 2026
+**Release date:** Not yet released
+
+## Current Development: 1.1.0
+
+Repeat Caller 1.1.0 folds in the FreePBX UK signed-release preparation work
+alongside a new per-rule Test Email action:
+
+* Moves publisher, repository, licence, and module metadata to FreePBX UK.
+* Preserves explicitly configured display names from FreePBX's Email "From:"
+  Address and supports FreePBX 17 HTML-encoded sender identities while
+  retaining strict email-address and header-injection validation.
+* Uses the configured FreePBX dashboard brand for a bare sender address, with
+  `Repeat Caller` as the final display-name fallback.
+* Corrects the FreePBX 16 and 17 module metadata declarations.
+* Corrects the redundant Alert History `accepted` JavaScript condition without
+  changing its behaviour.
+* Improves the inbound-route editor so Select DIDs supports mutually exclusive
+  all-routes-minus-exclusions or exact-include sets, including immediate
+  first-route selection, and migrates legacy All-DIDs exclusions without
+  changing effective matching.
+* Adds a per-rule Test Email action so administrators can send a test message
+  to a rule's existing saved recipients, using the same email transport,
+  resolved From identity, and FreePBX System Identifier as real alert emails.
+  No global email recipient setting is introduced.
+* Adds regression coverage for sender identity parsing, email delivery,
+  recipient compatibility, release metadata, the Alert History condition, and
+  Test Email behaviour.
 
 ## Signed Release
 
-Repeat Caller 1.0.3 is the first signed FreePBX UK release of the module.
+Repeat Caller 1.1.0 will be the first signed FreePBX UK release of the module.
 Releases are signed with the author's developer GPG key, which is signed by the
 FreePBX Module Signing v2 master key, allowing FreePBX to verify module
 authenticity and integrity.
@@ -708,8 +734,8 @@ Reports > Repeat Caller includes these main sections:
   to Editing Rule when modifying an existing rule. DID scope uses Include All
   DIDs for unrestricted matching, or Select DIDs for route filtering. In Select
   DIDs, an empty Included Routes list means all routes minus Excluded Routes.
-  Once an explicit Included Route is added, the included routes become the exact
-  route set and exclusions are cleared and disabled.
+  Use Included Routes or Excluded Routes; once either list contains a route, the
+  opposite action is disabled until the final route is removed.
 - Rule controls: each rule row includes Status, Edit, and X (delete). While an
   existing rule is being edited, those row actions are greyed out and cannot be
   used until editing is cancelled or saved.
@@ -839,27 +865,6 @@ Future release consideration:
   routing policy while preserving bounded fail-safe behavior.
 
 ## Release History
-
-### 1.0.3, patch release, 21 September 2026
-
-Released by `@kierknoby, Kieran Knowles-Byrne // FreePBX UK`.
-
-* First signed FreePBX UK release of Repeat Caller.
-* Updates publisher, repository, licence, and module metadata for the move to
-  FreePBX UK.
-* Preserves explicitly configured display names from FreePBX's Email "From:"
-  Address and supports FreePBX 17 HTML-encoded sender identities while
-  retaining strict email-address and header-injection validation.
-* Uses the configured FreePBX dashboard brand for a bare sender address, with
-  `Repeat Caller` as the final display-name fallback.
-* Corrects the FreePBX 16 and 17 module metadata declarations.
-* Corrects the redundant Alert History `accepted` JavaScript condition without
-  changing its behaviour.
-* Improves the inbound-route editor so Select DIDs supports all-routes-minus-
-  exclusions or an exact explicit include set, including immediate first-route selection,
-  and migrates legacy All-DIDs exclusions without changing effective matching.
-* Adds regression coverage for sender identity parsing, email delivery,
-  recipient compatibility, release metadata, and the Alert History condition.
 
 ### 1.0.2, patch release, 24 August 2026
 

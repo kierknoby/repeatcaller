@@ -13,7 +13,7 @@ namespace FreePBX\modules;
 class Repeatcaller implements \BMO {
 
 	/** Fallback only. Authoritative version lives in module.xml. */
-	const VERSION = '1.0.3';
+	const VERSION = '1.1.0';
 	const CSRF_SESSION_KEY = 'repeatcaller_csrf_token';
 	const REPEAT_MODE_NEVER = 'never';
 	const REPEAT_MODE_FIVE_MINUTES = '5m';
@@ -42,6 +42,7 @@ class Repeatcaller implements \BMO {
 		'resumemonitoring',
 		'prunehistory',
 		'clearalerthistory',
+		'testruleemail',
 	];
 
 	private $settingsDefaults = [
@@ -264,6 +265,7 @@ class Repeatcaller implements \BMO {
 				case 'resumemonitoring': return $this->rcHandleResumeMonitoring();
 				case 'prunehistory': return $this->rcHandlePruneHistory();
 				case 'clearalerthistory': return $this->rcHandleClearAlertHistory();
+				case 'testruleemail': return $this->rcHandleTestRuleEmail();
 			}
 		} catch (\Throwable $e) {
 			$this->logError('AJAX command "' . $command . '" failed: ' . $e->getMessage());
@@ -632,6 +634,44 @@ class Repeatcaller implements \BMO {
 			return ['status' => false, 'message' => _('Rule not found or has been deleted.')];
 		}
 		return ['status' => true, 'rule' => $rule];
+	}
+
+	private function rcHandleTestRuleEmail(): array {
+		$ruleId = $this->positiveRequestId('rule_id');
+		if ($ruleId <= 0) {
+			return ['status' => false, 'message' => _('Missing rule ID.')];
+		}
+		$rule = $this->rcRepository()->loadRule($ruleId);
+		if (!is_array($rule)) {
+			return ['status' => false, 'message' => _('Rule not found or has been deleted.')];
+		}
+
+		$recipients = $this->normaliseRecipients((string)($rule['email_recipients'] ?? ''));
+		if (!$recipients) {
+			return ['status' => false, 'message' => _('No valid email recipients are configured for this rule.')];
+		}
+
+		$now = $this->now();
+		$sent = 0;
+		$failed = 0;
+		foreach ($recipients as $recipient) {
+			$subject = _('Repeat Caller: test email');
+			$message = 'Repeat Caller test email from ' . $this->getSystemIdentifier() . "\n\nTime: " . $now . "\nSource: manual test\n";
+			$result = $this->sendEmail($recipient, $subject, $message);
+			if ($result['status']) {
+				$sent++;
+			} else {
+				$failed++;
+			}
+		}
+
+		if ($sent === 0) {
+			return ['status' => false, 'message' => _('Test email failed for all recipients.')];
+		}
+		if ($failed > 0) {
+			return ['status' => true, 'message' => sprintf(_('Test email accepted by local mailer for %d recipient(s); %d failed. Delivery is not confirmed.'), $sent, $failed)];
+		}
+		return ['status' => true, 'message' => sprintf(_('Test email accepted by local mailer for %d recipient(s). Delivery is not confirmed.'), $sent)];
 	}
 
 	private function rcHandleSaveRule(): array {
@@ -1584,6 +1624,18 @@ class Repeatcaller implements \BMO {
 			return ['status' => false, 'message' => trim($result) !== '' ? trim($result) : 'Originate failed.'];
 		}
 		return ['status' => false, 'message' => 'Originate failed.'];
+	}
+
+	private function getSystemIdentifier(): string {
+		try {
+			$value = trim((string)\FreePBX::Config()->get('FREEPBX_SYSTEM_IDENT'));
+			if ($value !== '') {
+				return preg_replace('/\s+/', ' ', $value) ?? $value;
+			}
+		} catch (\Throwable $e) {
+		}
+
+		return 'unknown system';
 	}
 
 	private function getNotificationSenderIdentity(): array {

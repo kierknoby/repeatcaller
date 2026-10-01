@@ -70,8 +70,8 @@ $root = dirname(__DIR__);
 
 $moduleXml = simplexml_load_file($root . '/module.xml');
 assert_true($moduleXml !== false, 'module.xml should parse');
-assert_same('1.0.3', (string)$moduleXml->version, 'module.xml version must be 1.0.3 for this release');
-assert_same('1.0.3', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.0.3');
+assert_same('1.1.0', (string)$moduleXml->version, 'module.xml version must be 1.1.0 for this release');
+assert_same('1.1.0', Repeatcaller::VERSION, 'Repeatcaller fallback VERSION constant must match module.xml for release 1.1.0');
 assert_same('FreePBX UK', (string)$moduleXml->publisher, 'module.xml publisher must identify FreePBX UK');
 assert_same('https://github.com/freepbxUK/repeatcaller', (string)$moduleXml->{'more-info'}, 'module.xml more-info must use the stable FreePBX UK repository');
 assert_same('https://www.gnu.org/licenses/gpl-3.0.txt', (string)$moduleXml->licenselink, 'module.xml GPL link must use HTTPS');
@@ -89,7 +89,9 @@ assert_same(['16.0', '17.0'], $supportedVersions, 'module supported versions mus
 $moduleXmlSource = file_get_contents($root . '/module.xml');
 assert_true($moduleXmlSource !== false, 'module.xml source should be readable');
 assert_true(strpos($moduleXmlSource, '16.0' . '|' . '17.0') === false, 'module.xml must not use pipe-delimited FreePBX versions');
-assert_true(strpos((string)$moduleXml->changelog, '*1.0.3* First signed FreePBX UK release.') !== false, 'module.xml changelog must describe the first signed 1.0.3 release');
+assert_true(strpos((string)$moduleXml->changelog, '*1.1.0* First signed FreePBX UK release.') !== false, 'module.xml changelog must describe 1.1.0 as the first signed FreePBX UK release');
+assert_true(strpos((string)$moduleXml->changelog, 'Test Email action') !== false, 'module.xml changelog must describe the 1.1.0 Test Email feature');
+assert_true(strpos((string)$moduleXml->changelog, '*1.0.3*') === false, 'module.xml changelog must not retain a separate 1.0.3 release entry, since 1.0.3 was a development branch folded into 1.1.0');
 
 // --- 1-3: AJAX allowlist, dispatcher, and frontend command parity --------
 
@@ -209,8 +211,8 @@ assert_true(strpos($viewSource, 'Selected DIDs only') === false, 'rule editor sh
 
 $readmeSource = file_get_contents($root . '/README.md');
 assert_true($readmeSource !== false, 'README should be readable');
-assert_true(strpos($readmeSource, '# Repeat Caller 1.0.3 for FreePBX 16 and 17') !== false, 'README title should declare 1.0.3');
-assert_true(strpos($readmeSource, '**Release date:** 21 September 2026') !== false, 'README should declare the 1.0.3 release date');
+assert_true(strpos($readmeSource, '# Repeat Caller 1.1.0 for FreePBX 16 and 17') !== false, 'README title should declare 1.1.0');
+assert_true(strpos($readmeSource, '**Release date:** Not yet released') !== false, 'README should not present unreleased 1.1.0 with a false release date');
 assert_true(strpos($readmeSource, 'Repeat Caller supports two distinct operating modes') !== false, 'README should describe the module in user-facing language');
 assert_true(strpos($readmeSource, 'fwconsole ma installlocal repeatcaller') !== false, 'README must keep installlocal warning text');
 assert_true(strpos($readmeSource, 'git reset --hard FETCH_HEAD') !== false, 'README must keep deterministic update sequence');
@@ -220,8 +222,11 @@ assert_true(strpos($readmeSource, 'TESTING.md') !== false, 'README should link t
 assert_true(strpos($readmeSource, '## Introduction') !== false, 'README should include Introduction section');
 assert_true(strpos($readmeSource, '## Compatibility') !== false, 'README should include Compatibility section');
 assert_true(strpos($readmeSource, '## Release History') !== false, 'README should include a Release History section');
-assert_true(strpos($readmeSource, '### 1.0.3, patch release, 21 September 2026') !== false, 'README should include the current release history heading');
-assert_true(strpos($readmeSource, 'Repeat Caller 1.0.3 is the first signed FreePBX UK release') !== false, 'README should identify 1.0.3 as the first signed FreePBX UK release');
+assert_true(strpos($readmeSource, '### 1.0.3,') === false, 'README must not present 1.0.3 as a released version, since it was only a development branch folded into 1.1.0');
+assert_true(strpos($readmeSource, 'Repeat Caller 1.0.3 was the first signed FreePBX UK release') === false, 'README must not identify 1.0.3 as the first signed FreePBX UK release');
+assert_true(strpos($readmeSource, 'Repeat Caller 1.1.0 will be the first signed FreePBX UK release') !== false, 'README should identify 1.1.0 as the first signed FreePBX UK release');
+assert_true(strpos($readmeSource, 'Moves publisher, repository, licence, and module metadata to FreePBX UK.') !== false, 'README should carry the FreePBX UK metadata move forward under 1.1.0');
+assert_true(strpos($readmeSource, 'Adds a per-rule Test Email action') !== false, 'README should describe the 1.1.0 Test Email feature');
 assert_true(strpos($readmeSource, '### 1.0.2, patch release, 24 August 2026') !== false, 'README should include the 1.0.2 release history heading');
 assert_true(strpos($readmeSource, 'resolved playback languages, and clear original, adapted, or fallback status') !== false, 'README release history should document the Alert Call language status categories');
 assert_true(strpos($readmeSource, 'acceptance scenarios using the same prompt resolution as live Alert Calls') !== false, 'README release history should document Alert Call language sample playback');
